@@ -1,8 +1,5 @@
-//! CPU feature detection for SIMD dispatch
-
 use super::SimdLevel;
 
-/// Detect best available SIMD level on current CPU
 pub fn detect_simd_level() -> SimdLevel {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -11,7 +8,6 @@ pub fn detect_simd_level() -> SimdLevel {
 
     #[cfg(target_arch = "aarch64")]
     {
-        // All AArch64 CPUs have NEON
         if cfg!(target_feature = "sve") {
             return SimdLevel::Sve;
         }
@@ -43,7 +39,6 @@ fn detect_x86() -> SimdLevel {
     {
         let cpuid = raw_cpuid::CpuId::new();
 
-        // Extended features: AVX2, AVX-512, VAES
         if let Some(ext) = cpuid.get_extended_feature_info() {
             if ext.has_avx512f() && ext.has_vaes() {
                 return SimdLevel::Vaes;
@@ -56,18 +51,27 @@ fn detect_x86() -> SimdLevel {
             }
         }
 
-        // Basic features: SSE4.2, SSE2
         if let Some(feats) = cpuid.get_feature_info() {
-            if feats.has_sse42() {
+            let has_sse42 = feats.has_sse42();
+            let has_sse2 = feats.has_sse2();
+
+            // SHA-NI bit is in extended feature info (EBX bit 29)
+            let has_sha = cpuid.get_extended_feature_info()
+                .as_ref()
+                .map_or(false, |ext| ext.has_sha());
+
+            if has_sha && has_sse42 {
+                return SimdLevel::ShaNi;
+            }
+            if has_sse42 {
                 return SimdLevel::Sse42;
             }
-            if feats.has_sse2() {
+            if has_sse2 {
                 return SimdLevel::Sse2;
             }
         }
     }
 
-    // When simd-detect is disabled or detection fails:
     #[cfg(feature = "simd-avx512")]
     { return SimdLevel::Avx512; }
 
@@ -83,7 +87,6 @@ fn detect_x86() -> SimdLevel {
     SimdLevel::Scalar
 }
 
-/// Human-readable SIMD feature summary
 pub fn simd_summary() -> Vec<(&'static str, bool)> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -94,6 +97,7 @@ pub fn simd_summary() -> Vec<(&'static str, bool)> {
         vec![
             ("SSE2",      info.as_ref().map_or(false, |f| f.has_sse2())),
             ("SSE4.2",    info.as_ref().map_or(false, |f| f.has_sse42())),
+            ("SHA-NI",    ext.as_ref().map_or(false, |f| f.has_sha())),
             ("AVX2",      ext.as_ref().map_or(false, |f| f.has_avx2())),
             ("AVX-512F",  ext.as_ref().map_or(false, |f| f.has_avx512f())),
             ("VAES",      ext.as_ref().map_or(false, |f| f.has_vaes())),

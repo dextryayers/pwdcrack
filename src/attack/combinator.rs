@@ -1,10 +1,11 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+
 use rayon::prelude::*;
 
 use crate::hash::{HashCracker, HashEntry};
-use crate::attack::{CrackResult, setup_progress};
+use crate::attack::CrackResult;
 
 pub fn run_combinator(
     hashes: &[HashEntry],
@@ -14,13 +15,8 @@ pub fn run_combinator(
     threads: usize,
     quiet: bool,
 ) -> Vec<CrackResult> {
-    let file1 = match fs::File::open(Path::new(wordlist1)) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[!] Failed to open wordlist1: {}", e);
-            return Vec::new();
-        }
-    };
+    // For combinator, we must load wordlist2 fully (inner loop needs random access)
+    // But wordlist1 can stream
     let file2 = match fs::File::open(Path::new(wordlist2)) {
         Ok(f) => f,
         Err(e) => {
@@ -29,31 +25,41 @@ pub fn run_combinator(
         }
     };
 
-    let words1: Vec<String> = BufReader::new(file1).lines()
-        .filter_map(|l| l.ok())
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-
     let words2: Vec<String> = BufReader::new(file2).lines()
         .filter_map(|l| l.ok())
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .collect();
 
-    let total = words1.len().saturating_mul(words2.len());
+    let file1 = match fs::File::open(Path::new(wordlist1)) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("[!] Failed to open wordlist1: {}", e);
+            return Vec::new();
+        }
+    };
+
+    let reader = BufReader::new(file1);
 
     if !quiet {
-        eprintln!("[*] Wordlist1: {} words", words1.len());
-        eprintln!("[*] Wordlist2: {} words", words2.len());
-        eprintln!("[*] Total combinations: {}", total);
+        eprintln!("[*] Wordlist2: {} words (loaded)", words2.len());
+        eprintln!("[*] Wordlist1: streaming");
     }
 
-    let pb = setup_progress(total as u64, quiet);
+    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
+    let total_hashes = hashes.len();
 
-    let results: Vec<CrackResult> = words1.par_iter()
-        .with_max_len(if threads == 0 { 1 } else { words1.len() / threads + 1 })
-        .flat_map(|w1| {
+    reader.lines()
+        .par_bridge()
+        .for_each(|line_result| {
+            let w1 = match line_result {
+                Ok(w) => w.trim().to_string(),
+                Err(_) => return,
+            };
+            if w1.is_empty() {
+                return;
+            }
+
             let mut local = Vec::new();
             for w2 in &words2 {
                 let combined = format!("{}{}", w1, w2);
@@ -66,16 +72,18 @@ pub fn run_combinator(
                         });
                     }
                 }
-                if let Some(ref pb) = pb {
-                    pb.inc(1);
-                }
             }
-            local
-        })
-        .collect();
 
-    if let Some(ref pb) = pb {
-        pb.finish_with_message("Done!");
+            if !local.is_empty() {
+                let mut all = results.lock().unwrap();
+                all.extend(local);
+            }
+        });
+
+    let results = results.into_inner().unwrap();
+
+    if !quiet {
+        eprintln!("[*] Cracked {}/{} hashes", results.len(), total_hashes);
     }
 
     results

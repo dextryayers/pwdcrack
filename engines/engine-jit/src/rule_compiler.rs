@@ -7,8 +7,6 @@ impl RuleCompiler {
         RuleCompiler
     }
 
-    /// Parse a hashcat-style rule string into IR instructions
-    /// e.g. "l" → lowercase, "u" → uppercase, "sX-Y" → substitute
     pub fn compile(&self, rule: &str) -> Option<IrProgram> {
         let ops = self.parse_rules(rule)?;
         let mut prog = IrProgram::new();
@@ -18,7 +16,6 @@ impl RuleCompiler {
         Some(prog)
     }
 
-    /// Parse a single rule string into a list of RuleOp
     pub fn parse_rules(&self, rule: &str) -> Option<Vec<RuleOp>> {
         let mut ops = Vec::new();
         let bytes = rule.as_bytes();
@@ -75,7 +72,7 @@ impl RuleCompiler {
                 b'S' => {
                     if i + 2 < bytes.len() {
                         let pos = (bytes[i + 1] - b'0') as u32;
-                        let ch = if i + 2 < bytes.len() { bytes[i + 2] } else { return None; };
+                        let ch = bytes[i + 2];
                         i += 2;
                         RuleOp::Substitute(pos, ch)
                     } else { return None; }
@@ -128,8 +125,10 @@ impl RuleCompiler {
         Some(ops)
     }
 
-    /// Generate native code via Cranelift
-    pub fn jit_compile(&self, program: &IrProgram) -> Option<super::RuleFn> {
+    pub fn jit_compile(&self, _program: &IrProgram) -> Option<super::RuleFn> {
+        // Cranelift JIT for rule application
+        // Would compile the rule chain to native code for 3-5x speedup
+        // Uses cranelift-jit for function generation and memory management
         None
     }
 }

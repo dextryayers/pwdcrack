@@ -1,27 +1,23 @@
-//! SIMD dispatch layer — routes to best available implementation
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum SimdLevel {
     Scalar  = 0,
     Sse2    = 1,
     Sse42   = 2,
-    Avx2    = 3,
-    Avx512  = 4,
-    Vaes    = 5,
-    Neon32  = 6,
-    Neon64  = 7,
-    Sve     = 8,
+    ShaNi   = 3,
+    Avx2    = 4,
+    Avx512  = 5,
+    Vaes    = 6,
+    Neon32  = 7,
+    Neon64  = 8,
+    Sve     = 9,
 }
 
-/// Verify MD5 hash using best available SIMD
 pub fn md5_verify(password: &[u8], target_hex: &str) -> bool {
     let level = crate::current_level();
 
-    // Dispatch to optimal implementation
     #[cfg(any(feature = "simd-avx512", feature = "simd-detect"))]
-    if level >= SimdLevel::Vaes || level >= SimdLevel::Avx512 {
-        // AVX-512 + VAES path — fastest
+    if level >= SimdLevel::Avx512 {
         return avx512_md5_verify(password, target_hex);
     }
 
@@ -35,13 +31,52 @@ pub fn md5_verify(password: &[u8], target_hex: &str) -> bool {
         return neon_md5_verify(password, target_hex);
     }
 
-    // Fallback: scalar implementation
     scalar_md5_verify(password, target_hex)
 }
 
-// ---------------------------------------------------------------------------
-// Scalar fallback — works on ALL platforms (32-bit, ARM, no-SIMD, etc.)
-// ---------------------------------------------------------------------------
+pub fn sha256_verify(password: &[u8], target_hex: &str) -> bool {
+    let level = crate::current_level();
+
+    #[cfg(any(feature = "simd-avx2", feature = "simd-detect"))]
+    if level >= SimdLevel::ShaNi {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        return crate::x86::shani::sha256_verify(password, target_hex);
+    }
+
+    scalar_sha256_verify(password, target_hex)
+}
+
+pub fn sha1_verify(password: &[u8], target_hex: &str) -> bool {
+    let level = crate::current_level();
+
+    #[cfg(any(feature = "simd-avx2", feature = "simd-detect"))]
+    if level >= SimdLevel::ShaNi {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        return crate::x86::shani::sha1_verify(password, target_hex);
+    }
+
+    scalar_sha1_verify(password, target_hex)
+}
+
+pub fn sha256_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
+    #[cfg(any(feature = "simd-avx2", feature = "simd-detect"))]
+    if crate::current_level() >= SimdLevel::ShaNi {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        return crate::x86::shani::sha256_batch_verify(passwords, targets);
+    }
+    passwords.iter().zip(targets).map(|(pw, t)| scalar_sha256_verify(pw, t)).collect()
+}
+
+pub fn sha1_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
+    #[cfg(any(feature = "simd-avx2", feature = "simd-detect"))]
+    if crate::current_level() >= SimdLevel::ShaNi {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        return crate::x86::shani::sha1_batch_verify(passwords, targets);
+    }
+    passwords.iter().zip(targets).map(|(pw, t)| scalar_sha1_verify(pw, t)).collect()
+}
+
+// Scalar fallbacks
 pub fn scalar_md5_verify(password: &[u8], target_hex: &str) -> bool {
     use md5::{Md5, Digest};
     let mut hasher = Md5::new();
@@ -69,34 +104,18 @@ pub fn scalar_sha256_verify(password: &[u8], target_hex: &str) -> bool {
     computed.eq_ignore_ascii_case(target_hex)
 }
 
-// ---------------------------------------------------------------------------
-// SIMD stubs — actual implementation when feature flags are enabled
-// ---------------------------------------------------------------------------
-
+// SIMD multi-hash stubs
 #[cfg(any(feature = "simd-avx2", feature = "simd-detect"))]
 fn avx2_md5_verify(password: &[u8], target_hex: &str) -> bool {
-    // AVX2: 8 MD5 hashes in parallel
-    // Implementation: 8 independent MD5 computations using 256-bit registers
-    // Each lane processes one password
-    // @see https://github.com/RustCrypto/hashes for reference impl
-
-    // For now, fallback to scalar until AVX2 implementation is complete
     scalar_md5_verify(password, target_hex)
 }
 
 #[cfg(any(feature = "simd-avx512", feature = "simd-detect"))]
 fn avx512_md5_verify(password: &[u8], target_hex: &str) -> bool {
-    // AVX-512: 16 MD5 hashes in parallel
-    // Uses zmm registers for 16-way computation
-    // With VAES: AES-NI instruction set for SHA-256 acceleration
-
     scalar_md5_verify(password, target_hex)
 }
 
 #[cfg(any(feature = "simd-neon64", feature = "simd-detect"))]
 fn neon_md5_verify(password: &[u8], target_hex: &str) -> bool {
-    // ARM NEON: 4 MD5 hashes in parallel
-    // Uses 128-bit Q registers
-
     scalar_md5_verify(password, target_hex)
 }

@@ -51,7 +51,7 @@ simd-sve    = ["simd-neon64"]
 simd-detect = []
 
 # === I/O Sub-features ===
-mmap        = []
+mmap        = ["dep:memmap2"]
 io-stream   = []
 huge-pages  = ["mmap"]
 
@@ -123,6 +123,11 @@ engine-distributed = { path = "engines/engine-distributed", optional = true }
 engine-web  = { path = "engines/engine-web", optional = true }
 engine-android = { path = "engines/engine-android", optional = true }
 engine-bridge = { path = "engines/engine-bridge", optional = true }
+
+# mmap-based wordlist streaming
+[target.'cfg(any(unix, windows))'.dependencies.memmap2]
+version = "0.9"
+optional = true
 
 # Platform-specific
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]

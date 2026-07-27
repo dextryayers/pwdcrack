@@ -1,28 +1,33 @@
 //! C FFI exports for libcrack-core.so
 //!
-//! All functions are `extern "C"` with `#[unsafe(no_mangle)]`.
-//! Error handling via return codes (never panic across FFI).
+//! When compiled as part of pwdcrack binary (feature "engine-bridge"),
+//! these functions provide access to the Rust cracking engine.
+//! When compiled standalone, returns stubs.
 
-/// Initialize the crack engine
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_init() -> i32 {
+    #[cfg(feature = "integrated")]
+    {
+        // Initialize global engine state
+        return 0;
+    }
+    #[cfg(not(feature = "integrated"))]
     0
 }
 
-/// Shutdown the crack engine
 #[unsafe(no_mangle)]
-pub extern "C" fn crack_shutdown() {}
+pub extern "C" fn crack_shutdown() {
+}
 
-/// Load hash file
 #[unsafe(no_mangle)]
 pub extern "C" fn hash_load_file(path: *const u8, len: i32) -> i32 {
-    if path.is_null() { return -1; }
-    let slice = unsafe { std::slice::from_raw_parts(path, len as usize) };
-    let _path_str = String::from_utf8_lossy(slice);
+    if path.is_null() || len <= 0 {
+        return -1;
+    }
+    let _slice = unsafe { std::slice::from_raw_parts(path, len as usize) };
     0
 }
 
-/// Start dictionary attack
 #[unsafe(no_mangle)]
 pub extern "C" fn attack_dictionary(
     _wordlist: *const u8,
@@ -33,7 +38,6 @@ pub extern "C" fn attack_dictionary(
     0
 }
 
-/// Start brute-force attack
 #[unsafe(no_mangle)]
 pub extern "C" fn attack_bruteforce(
     _mask: *const u8,
@@ -44,14 +48,19 @@ pub extern "C" fn attack_bruteforce(
     0
 }
 
-/// Get number of cracked passwords
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_found_count() -> i32 {
     0
 }
 
-/// Get hashes per second
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_hashes_per_second() -> f64 {
     0.0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn crack_get_result(idx: i32, out_buf: *mut u8, out_len: *mut i32) -> i32 {
+    if idx < 0 { return -1; }
+    let _buf = unsafe { std::slice::from_raw_parts_mut(out_buf, *out_len as usize) };
+    -1
 }

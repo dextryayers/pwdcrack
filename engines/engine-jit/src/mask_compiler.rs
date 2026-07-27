@@ -1,5 +1,4 @@
 use crate::ir::{IrProgram, IrInstruction, MaskOp, CharClass};
-use target_lexicon::Triple;
 
 pub struct MaskCompiler;
 
@@ -8,8 +7,6 @@ impl MaskCompiler {
         MaskCompiler
     }
 
-    /// Parse a mask pattern into IR instructions
-    /// e.g. "?l?l?l?d" → 3 lowercase + 1 digit char classes concatenated
     pub fn compile(&self, mask: &str) -> Option<IrProgram> {
         let ops = self.parse(mask)?;
         let mut prog = IrProgram::new();
@@ -17,7 +14,6 @@ impl MaskCompiler {
         Some(prog)
     }
 
-    /// Parse mask string into MaskOp list
     pub fn parse(&self, mask: &str) -> Option<Vec<MaskOp>> {
         let mut ops = Vec::new();
         let bytes = mask.as_bytes();
@@ -33,31 +29,21 @@ impl MaskCompiler {
                     b'H' => CharClass::HexUpper,
                     b's' => CharClass::Special,
                     b'a' => CharClass::All,
-                    b'1' => CharClass::Custom,
-                    b'2' => CharClass::Custom,
-                    b'3' => CharClass::Custom,
+                    b'1'..=b'3' => CharClass::Custom,
                     _ => return None,
                 };
                 ops.push(MaskOp::CharClass { class });
                 i += 2;
             } else if bytes[i] == b'[' {
-                let end = i + 1;
-                let mut start_byte = 0u8;
-                let mut end_byte = 0u8;
-                if end < bytes.len() {
-                    start_byte = bytes[end];
-                }
-                let mut j = end + 1;
-                while j < bytes.len() && bytes[j] != b']' {
-                    if bytes[j] == b'-' && j + 1 < bytes.len() {
-                        end_byte = bytes[j + 1];
-                        j += 2;
-                    } else {
-                        j += 1;
-                    }
-                }
+                let start_byte = if i + 1 < bytes.len() { bytes[i + 1] } else { return None; };
+                let end_byte = if i + 2 < bytes.len() && bytes[i + 2] == b'-' && i + 3 < bytes.len() {
+                    bytes[i + 3]
+                } else {
+                    return None;
+                };
                 ops.push(MaskOp::Range { start: start_byte, end: end_byte });
-                i = j + 1;
+                i += 4;
+                if i < bytes.len() && bytes[i] == b']' { i += 1; }
             } else {
                 ops.push(MaskOp::Literal { byte: bytes[i] });
                 i += 1;
@@ -67,23 +53,10 @@ impl MaskCompiler {
         Some(ops)
     }
 
-    /// Generate native code via Cranelift
-    pub fn jit_compile(&self, program: &IrProgram) -> Option<super::MaskFn> {
-        let flag_builder = cranelift_codegen::isa::Builder::new(
-            Triple::host(),
-            cranelift_codegen::isa::CallConv::SystemV,
-        );
-        let isa = flag_builder.finish(cranelift_codegen::settings::Flags::new(
-            cranelift_codegen::settings::builder(),
-        )).ok()?;
-
-        let module = cranelift_module::Module::new(
-            cranelift_module::default_libcall_names(),
-            isa,
-            cranelift_module::Module::new(
-                cranelift_codegen::context::Context::new(),
-            ),
-        );
+    pub fn jit_compile(&self, _program: &IrProgram) -> Option<super::MaskFn> {
+        // Cranelift JIT code generation using cranelift-jit
+        // This would compile mask expansion to native code for 5-10x speedup
+        // For now, returns None to use the interpreter fallback
         None
     }
 }

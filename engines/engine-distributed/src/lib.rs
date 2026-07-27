@@ -1,11 +1,3 @@
-//! engine-distributed — distributed cracking across network nodes
-//!
-//! Master-worker architecture over ZeroMQ/TCP:
-//! - Master: keyspace partitioning, work distribution, result collection
-//! - Worker: batch processing with local CPU/GPU/FPGA, result reporting
-//! - Tier-aware dispatching
-//! - Checkpoint/resume per node
-
 pub mod master;
 pub mod worker;
 pub mod protocol;
@@ -29,6 +21,24 @@ impl Default for DistributedConfig {
             node_name: hostname(),
             heartbeat_secs: 5,
             checkpoint_interval: 60,
+        }
+    }
+}
+
+impl DistributedConfig {
+    pub fn is_master(&self) -> bool {
+        self.master_addr.is_none()
+    }
+
+    pub async fn run(&self) -> Result<(), String> {
+        if self.is_master() {
+            let master = master::MasterNode::new(&self.listen_addr.to_string());
+            master.run().await
+        } else {
+            let mut worker = worker::WorkerNode::new(
+                &self.master_addr.unwrap().to_string()
+            );
+            worker.run_worker_loop().await
         }
     }
 }

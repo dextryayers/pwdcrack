@@ -1,15 +1,22 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
 use rayon::prelude::*;
 
 use crate::hash::{HashCracker, HashEntry};
 use crate::attack::{CrackResult, setup_progress};
 
-const LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
-const UPPERCASE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const DIGITS: &[u8] = b"0123456789";
-const SPECIAL: &[u8] = b"!@#$%^&*()-_+=~`[]{}|;:',.<>?/";
-const HEX_LOWER: &[u8] = b"0123456789abcdef";
-const HEX_UPPER: &[u8] = b"0123456789ABCDEF";
+static LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+static UPPERCASE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static DIGITS: &[u8] = b"0123456789";
+static SPECIAL: &[u8] = b"!@#$%^&*()-_+=~`[]{}|;:',.<>?/";
+static HEX_LOWER: &[u8] = b"0123456789abcdef";
+static HEX_UPPER: &[u8] = b"0123456789ABCDEF";
+static ALL: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    [LOWERCASE, UPPERCASE, DIGITS, SPECIAL].concat()
+});
+static ALL_BYTES: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    (0..=255).collect()
+});
 
 #[derive(Debug, Clone)]
 pub enum MaskChar {
@@ -61,16 +68,10 @@ fn charset_for<'a>(mc: &'a MaskChar, custom: &'a [&'a [u8]]) -> &'a [u8] {
         MaskChar::Upper => UPPERCASE,
         MaskChar::Digit => DIGITS,
         MaskChar::Special => SPECIAL,
-        MaskChar::All => {
-            let v: Vec<u8> = [LOWERCASE, UPPERCASE, DIGITS, SPECIAL].concat();
-            Box::leak(v.into_boxed_slice())
-        }
+        MaskChar::All => &ALL,
         MaskChar::HexLower => HEX_LOWER,
         MaskChar::HexUpper => HEX_UPPER,
-        MaskChar::Byte => {
-            let v: Vec<u8> = (0..=255).collect();
-            Box::leak(v.into_boxed_slice())
-        }
+        MaskChar::Byte => &ALL_BYTES,
         MaskChar::Custom(i) => {
             if *i < custom.len() && !custom[*i].is_empty() {
                 custom[*i]
@@ -139,22 +140,21 @@ pub fn run_bruteforce(
 
     let pb = setup_progress(total, quiet);
 
-    let counter = AtomicUsize::new(0);
-    let chunk_size = (100_000).max(total as usize / (threads * 100).max(1));
+    let counter = AtomicU64::new(0);
+    let chunk_size = (100_000u64).max(total / (threads.max(1) as u64 * 100).max(1));
 
     let results: Vec<CrackResult> = (0..threads).into_par_iter()
         .flat_map(|_| {
             let mut local_results = Vec::new();
             loop {
-                let start = counter.fetch_add(chunk_size, Ordering::SeqCst) as u64;
+                let start = counter.fetch_add(chunk_size, Ordering::SeqCst);
                 if start >= total {
                     break;
                 }
-                let end = (start + chunk_size as u64).min(total);
+                let end = (start + chunk_size).min(total);
 
                 for idx in start..end {
                     let password = index_to_password(idx, &mask, &custom);
-
                     for entry in hashes.iter() {
                         if cracker.verify(&password, entry) {
                             local_results.push(CrackResult {
@@ -164,7 +164,6 @@ pub fn run_bruteforce(
                             });
                         }
                     }
-
                     if let Some(ref pb) = pb {
                         pb.inc(1);
                     }

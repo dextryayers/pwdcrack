@@ -7,6 +7,7 @@ pub mod server;
 pub mod routes;
 pub mod websocket;
 
+#[derive(Clone)]
 pub struct WebConfig {
     pub port: u16,
     pub host: String,
