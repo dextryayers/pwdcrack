@@ -1,0 +1,34 @@
+# pwdcrack Low-End Configuration
+# For: 32-bit CPUs, <1GB RAM, no SIMD, ARMv7, old x86
+
+[tier]
+mode = "low"
+
+[memory]
+io_mode = "stream"
+batch_size = 16
+arena_size_kb = 16
+max_wordlist_mb = 128
+huge_pages = false
+
+[threads]
+max = 2
+pin_to_cores = false
+numa_aware = false
+
+[hash]
+simd = "scalar"
+gpu = false
+fpga = false
+
+[power]
+management = "disabled"
+battery_aware = false
+
+[progress]
+style = "simple"
+refresh_ms = 5000
+
+[potfile]
+path = "pwdcrack.pot"
+sync_interval = 100

@@ -1,0 +1,8 @@
+# NTLM test vectors — hash:password
+# Format: <hex_ntlm_hash>:<plaintext_password>
+# Note: NTLM = MD4(UTF16-LE(password))
+8846f7eaee8fb117ad06bdd830b7586c:password
+f2477a144d5294aad0a6a3c5e6b93a77:hello
+f0d412bd764ffe81fad63a1b725d20b4:12345
+77e63c1090ee6f2ad1c6fe7b4e2eec15:Passw0rd
+cdb06e6a2d64b6469b3d77b1607af8bf:ILoveYou

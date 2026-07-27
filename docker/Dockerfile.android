@@ -1,0 +1,49 @@
+# ============================================================
+# pwdcrack Android — Cross-compilation environment
+# ============================================================
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    wget \
+    unzip \
+    file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install Android NDK
+ENV NDK_VERSION=r26b
+RUN cd /opt && \
+    wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" && \
+    unzip -q "android-ndk-${NDK_VERSION}-linux.zip" && \
+    rm "android-ndk-${NDK_VERSION}-linux.zip"
+
+ENV NDK_DIR="/opt/android-ndk-${NDK_VERSION}"
+ENV TOOLCHAIN="${NDK_DIR}/toolchains/llvm/prebuilt/linux-x86_64"
+
+# Rust Android targets
+RUN rustup target add aarch64-linux-android armv7-linux-androideabi
+
+# Configure linker
+RUN mkdir -p /root/.cargo && \
+    echo "[target.aarch64-linux-android]" >> /root/.cargo/config.toml && \
+    echo "linker = \"${TOOLCHAIN}/bin/aarch64-linux-android21-clang\"" >> /root/.cargo/config.toml && \
+    echo "[target.armv7-linux-androideabi]" >> /root/.cargo/config.toml && \
+    echo "linker = \"${TOOLCHAIN}/bin/armv7a-linux-androideabi21-clang\"" >> /root/.cargo/config.toml
+
+WORKDIR /build
+COPY . .
+
+CMD ["bash", "-c", "\
+    echo 'Building for Android ARM64...' && \
+    cargo build --release --target aarch64-linux-android --features tier-mid && \
+    echo 'Building for Android ARM32...' && \
+    cargo build --release --target armv7-linux-androideabi --features tier-low && \
+    echo 'Done!' && \
+    ls -lh target/*/release/pwdcrack \
+"]

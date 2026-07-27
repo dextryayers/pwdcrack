@@ -1,0 +1,46 @@
+# pwdcrack High-End Configuration
+# For: 64-bit CPUs, 16+ cores, AVX-512, dGPU, FPGA, 32GB+ RAM
+
+[tier]
+mode = "high"
+
+[memory]
+io_mode = "mmap"
+batch_size = 1024
+arena_size_mb = 1
+max_wordlist_mb = 64000
+huge_pages = true
+prefetch_distance = 16
+
+[threads]
+max = 0  # 0 = all available
+pin_to_cores = true
+numa_aware = true
+
+[hash]
+simd = "auto"
+gpu = true
+fpga = "auto"
+
+[power]
+management = "aggressive"
+battery_aware = false
+power_budget_w = 450
+
+[gpu]
+device_id = 0  # First GPU
+multi_gpu = true
+batch_size = 1048576  # 1M passwords per dispatch
+
+[fpga]
+device = "/dev/fpga0"
+core_count = 4
+frequency_mhz = 200
+
+[progress]
+style = "rich"
+refresh_ms = 100
+
+[potfile]
+path = "pwdcrack.pot"
+sync_interval = 1

@@ -1,0 +1,35 @@
+# pwdcrack Mid-Range Configuration
+# For: 64-bit CPUs, 4-8 cores, AVX2/NEON, 2-8GB RAM
+
+[tier]
+mode = "mid"
+
+[memory]
+io_mode = "mmap"
+batch_size = 64
+arena_size_kb = 256
+max_wordlist_mb = 2048
+huge_pages = true
+
+[threads]
+max = 8
+pin_to_cores = true
+numa_aware = true
+
+[hash]
+simd = "auto"
+gpu = false
+fpga = false
+
+[power]
+management = "basic"
+battery_aware = false
+power_budget_w = 65
+
+[progress]
+style = "rich"
+refresh_ms = 500
+
+[potfile]
+path = "pwdcrack.pot"
+sync_interval = 10

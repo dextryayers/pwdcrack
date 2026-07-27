@@ -1,0 +1,28 @@
+# ============================================================
+# pwdcrack Mid-Range — x86_64, AVX2 optimized
+# ============================================================
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build
+COPY . .
+
+RUN RUSTFLAGS="-C target-cpu=haswell" \
+    cargo build --release --features tier-mid && \
+    strip target/release/pwdcrack && \
+    cp target/release/pwdcrack /usr/bin/pwdcrack
+
+WORKDIR /data
+ENTRYPOINT ["pwdcrack"]
+CMD ["--help"]

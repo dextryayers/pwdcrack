@@ -1,0 +1,28 @@
+[package]
+name = "engine-simd"
+version = "0.1.0"
+edition = "2024"
+description = "SIMD-accelerated hash verification (x86 AVX2/AVX-512 + ARM NEON/SVE)"
+
+[features]
+default = ["simd-detect"]
+simd-detect = []
+simd-scalar = []
+simd-sse2   = ["simd-scalar"]
+simd-avx2   = ["simd-sse2"]
+simd-avx512 = ["simd-avx2"]
+simd-neon32 = ["simd-scalar"]
+simd-neon64 = ["simd-scalar"]
+simd-sve    = ["simd-neon64"]
+
+[dependencies]
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+md4 = "0.10"
+hex = "0.4"
+log = "0.4"
+
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+raw-cpuid = "11"
+

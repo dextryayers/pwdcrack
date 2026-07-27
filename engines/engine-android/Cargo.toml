@@ -1,0 +1,8 @@
+[package]
+name = "engine-android"
+version = "0.1.0"
+edition = "2024"
+description = "Android/Termux-specific optimizations"
+
+[dependencies]
+log = "0.4"

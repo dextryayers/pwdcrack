@@ -1,0 +1,9 @@
+# MD5 test vectors — hash:password
+# Format: <hex_md5_hash>:<plaintext_password>
+5d41402abc4b2a76b9719d911017c592:hello
+900150983cd24fb0d6963f7d28e17f72:abc
+827ccb0eea8a706c4c34a16891f84e7b:12345
+e99a18c428cb38d5f260853678922e03:abc123
+fae35605e1158a88c1a10ff5b6aeaac0:password123!
+d8578edf8458ce06fbc5bb76a58c5ca4:ILoveYou
+482c811da5d5b4bc6d497ffa98491e38:password123

@@ -1,0 +1,63 @@
+# Rust
+target/
+Cargo.lock
+
+# Build artifacts
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Perl
+blib/
+*.pm
+*.xs
+Makefile.old
+
+# FPGA
+*.bit
+*.dcp
+*.rpt
+*.jou
+*.log
+*.hw
+*.xpr
+*.cache/
+*.gen/
+*.ip_user_files/
+sim/*.vcd
+sim/*.wdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pwdcrack
+pwdcrack.pot
+pwdcrack.pot.bak
+*.pot
+*.pot.*
+
+# Wordlists (too large for repo, download separately)
+wordlists/*.txt
+wordlists/*.gz
+
+# Config (user overrides)
+configs/*.local.toml

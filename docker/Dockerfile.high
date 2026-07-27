@@ -1,0 +1,33 @@
+# ============================================================
+# pwdcrack High-End — x86_64, GPU passthrough, AVX-512
+# ============================================================
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    pkg-config \
+    libssl-dev \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build
+COPY . .
+
+RUN RUSTFLAGS="-C target-cpu=native" \
+    cargo build --release --features tier-high && \
+    strip target/release/pwdcrack && \
+    cp target/release/pwdcrack /usr/bin/pwdcrack
+
+# GPU access (Vulkan)
+RUN groupadd -r render -g 993 2>/dev/null || true
+
+WORKDIR /data
+ENTRYPOINT ["pwdcrack"]
+CMD ["--help"]

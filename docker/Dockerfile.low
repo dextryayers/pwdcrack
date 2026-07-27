@@ -1,0 +1,24 @@
+# ============================================================
+# pwdcrack Low-End Alpine — 32-bit, minimal size
+# ============================================================
+FROM i686/alpine:latest
+
+RUN apk add --no-cache \
+    musl-dev \
+    gcc \
+    rust \
+    cargo \
+    make \
+    file \
+    binutils
+
+WORKDIR /build
+COPY . .
+
+RUN cargo build --release --features tier-low && \
+    strip target/release/pwdcrack && \
+    cp target/release/pwdcrack /usr/bin/pwdcrack
+
+WORKDIR /data
+ENTRYPOINT ["pwdcrack"]
+CMD ["--help"]

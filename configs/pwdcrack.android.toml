@@ -1,0 +1,42 @@
+# pwdcrack Android/Termux Configuration
+# Auto-detected for ARM64 with NEON, battery-aware
+
+[tier]
+mode = "auto"  # Auto-detect
+
+[memory]
+io_mode = "auto"     # Stream if <512MB RAM, else mmap
+batch_size = 32
+arena_size_kb = 32
+max_wordlist_mb = 256
+huge_pages = false
+
+[threads]
+max = 0
+pin_to_cores = false
+numa_aware = false
+
+[hash]
+simd = "auto"  # NEON on ARM
+gpu = false
+fpga = false
+
+[power]
+management = "battery"
+battery_aware = true
+battery_pause_at = 20  # Pause at 20%
+battery_resume_at = 50 # Resume when charged to 50%
+thermal_limit_c = 65   # Throttle at 65°C
+thermal_stop_c = 80    # Stop at 80°C
+
+[progress]
+style = "simple"
+refresh_ms = 2000
+
+[potfile]
+path = "/sdcard/pwdcrack.pot"
+sync_interval = 5
+
+[android]
+termux_home = "/data/data/com.termux/files/home"
+data_dir = "/sdcard/pwdcrack"

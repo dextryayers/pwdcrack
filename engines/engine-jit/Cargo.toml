@@ -1,0 +1,8 @@
+[package]
+name = "engine-jit"
+version = "0.1.0"
+edition = "2024"
+description = "JIT compilation for mask expansion and rule application (Cranelift)"
+
+[dependencies]
+log = "0.4"

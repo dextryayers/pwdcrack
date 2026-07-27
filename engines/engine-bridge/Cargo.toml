@@ -1,0 +1,11 @@
+[package]
+name = "engine-bridge"
+version = "0.1.0"
+edition = "2024"
+description = "FFI bridges: C, Python (PyO3), Perl (XS)"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+log = "0.4"

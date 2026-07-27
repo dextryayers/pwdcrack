@@ -1,0 +1,162 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "engines/engine-simd",
+    "engines/engine-gpu",
+    "engines/engine-fpga",
+    "engines/engine-jit",
+    "engines/engine-power",
+    "engines/engine-distributed",
+    "engines/engine-web",
+    "engines/engine-android",
+    "engines/engine-bridge",
+]
+
+[package]
+name = "pwdcrack"
+version = "0.1.0"
+edition = "2024"
+description = "Universal password cracker — all hardware, all platforms"
+authors = ["pwdcrack team"]
+license = "MIT"
+repository = "https://github.com/pwdcrack/pwdcrack"
+
+# ============================================================
+# FEATURES — Hardware Tier System
+# ============================================================
+[features]
+default = ["tier-auto"]
+
+# Auto-detect hardware tier at runtime
+tier-auto = []
+
+# Manual tier selection
+tier-low   = ["simd-scalar", "io-stream", "progress-simple"]
+tier-mid   = ["simd-detect", "mmap", "progress-rich"]
+tier-high  = [
+    "simd-detect", "mmap", "huge-pages",
+    "engine-gpu", "engine-power",
+    "progress-rich"
+]
+
+# === SIMD Sub-features (mutually exclusive groups) ===
+simd-scalar = []
+simd-sse2   = ["simd-scalar"]
+simd-avx2   = ["simd-sse2"]
+simd-avx512 = ["simd-avx2"]
+simd-neon32 = ["simd-scalar"]
+simd-neon64 = ["simd-scalar"]
+simd-sve    = ["simd-neon64"]
+simd-detect = []
+
+# === I/O Sub-features ===
+mmap        = []
+io-stream   = []
+huge-pages  = ["mmap"]
+
+# === Progress Bar (always enabled, indicatif is a core dependency) ===
+progress-simple = []
+progress-rich   = []
+
+# === External Engine Integration ===
+engine-simd = ["dep:engine-simd"]
+engine-gpu  = ["dep:engine-gpu"]
+engine-fpga = ["dep:engine-fpga"]
+engine-jit  = ["dep:engine-jit"]
+engine-power = ["dep:engine-power"]
+engine-distributed = ["dep:engine-distributed"]
+engine-web  = ["dep:engine-web"]
+engine-android = ["dep:engine-android"]
+engine-bridge = ["dep:engine-bridge"]
+
+# === Platform-specific ===
+android = ["engine-android"]
+distributed = ["engine-distributed"]
+
+# ============================================================
+# DEPENDENCIES
+# ============================================================
+[dependencies]
+# Core libraries
+rayon = "1"
+crossbeam = "0.8"
+serde = { version = "1", features = ["derive"] }
+bincode = "2"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+thiserror = "1"
+parking_lot = "0.12"
+hashbrown = "0.14"
+dashmap = "6"
+cfg-if = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+
+# Hash — always included, pure Rust
+md-5 = "0.10"
+des = "0.9"
+cipher = "0.5"
+sha1 = "0.10"
+sha2 = "0.10"
+sha3 = "0.10"
+blake2 = "0.10"
+ripemd = "0.1"
+md4 = "0.10"
+bcrypt = "0.16"
+argon2 = "0.5"
+scrypt = "0.11"
+hex = "0.4"
+base64ct = "1"
+regex = "1"
+
+# Workspace engine crates (optional)
+engine-simd = { path = "engines/engine-simd", optional = true }
+engine-gpu  = { path = "engines/engine-gpu", optional = true }
+engine-fpga = { path = "engines/engine-fpga", optional = true }
+engine-jit  = { path = "engines/engine-jit", optional = true }
+engine-power = { path = "engines/engine-power", optional = true }
+engine-distributed = { path = "engines/engine-distributed", optional = true }
+engine-web  = { path = "engines/engine-web", optional = true }
+engine-android = { path = "engines/engine-android", optional = true }
+engine-bridge = { path = "engines/engine-bridge", optional = true }
+
+# Platform-specific
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { version = "0.7", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.58"
+features = ["Win32_System_Memory", "Win32_Storage_FileSystem"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# ============================================================
+# PROFILE CONFIGURATION
+# ============================================================
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Smaller binary for low-end targets
+[profile.release-low]
+inherits = "release"
+opt-level = "z"    # optimize for size
+lto = "thin"
+codegen-units = 16
+
+# Debug-friendly
+[profile.dev]
+opt-level = 0
+debug = true
+

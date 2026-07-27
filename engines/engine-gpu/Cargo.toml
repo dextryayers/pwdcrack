@@ -1,0 +1,15 @@
+[package]
+name = "engine-gpu"
+version = "0.1.0"
+edition = "2024"
+description = "GPU-accelerated hash cracking via wgpu/Vulkan — pure Rust, no C"
+
+[dependencies]
+wgpu = "30"
+naga = "30"
+naga_oil = "0.23"
+pollster = "0.4"
+log = "0.4"
+hex = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+thiserror = "2"

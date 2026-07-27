@@ -1,0 +1,13 @@
+[package]
+name = "engine-fpga"
+version = "0.1.0"
+edition = "2024"
+description = "FPGA hash acceleration — Verilog cores + Rust PCIe driver"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+thiserror = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
