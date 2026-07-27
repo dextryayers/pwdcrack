@@ -1,35 +1,38 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
 
 use crate::hash::{HashCracker, HashEntry};
-use crate::attack::CrackResult;
+use crate::attack::{CrackResult, ProgressStats};
+
+#[cfg(feature = "mmap")]
+use memmap2::Mmap;
+
+#[cfg(feature = "progress-rich")]
+fn print_speed(stats: &ProgressStats) {
+    eprint!("\r[*] {} H/s | {} tested | {}", stats.hash_rate(), stats.total_tested(), stats.eta());
+}
 
 pub fn run_combinator(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
     wordlist1: &str,
     wordlist2: &str,
-    threads: usize,
+    _threads: usize,
     quiet: bool,
 ) -> Vec<CrackResult> {
-    // For combinator, we must load wordlist2 fully (inner loop needs random access)
-    // But wordlist1 can stream
-    let file2 = match fs::File::open(Path::new(wordlist2)) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[!] Failed to open wordlist2: {}", e);
-            return Vec::new();
-        }
-    };
+    let words2 = load_wordlist(wordlist2);
+    if words2.is_empty() {
+        eprintln!("[!] Empty wordlist2");
+        return Vec::new();
+    }
 
-    let words2: Vec<String> = BufReader::new(file2).lines()
-        .filter_map(|l| l.ok())
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
+    if !quiet {
+        eprintln!("[*] Wordlist2: {} words", words2.len());
+    }
 
     let file1 = match fs::File::open(Path::new(wordlist1)) {
         Ok(f) => f,
@@ -38,16 +41,15 @@ pub fn run_combinator(
             return Vec::new();
         }
     };
-
     let reader = BufReader::new(file1);
+    let total_hashes = hashes.len();
+    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
+    let line_count = AtomicU64::new(0);
+    let progress = ProgressStats::new();
 
     if !quiet {
-        eprintln!("[*] Wordlist2: {} words (loaded)", words2.len());
         eprintln!("[*] Wordlist1: streaming");
     }
-
-    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
-    let total_hashes = hashes.len();
 
     reader.lines()
         .par_bridge()
@@ -56,9 +58,7 @@ pub fn run_combinator(
                 Ok(w) => w.trim().to_string(),
                 Err(_) => return,
             };
-            if w1.is_empty() {
-                return;
-            }
+            if w1.is_empty() { return; }
 
             let mut local = Vec::new();
             for w2 in &words2 {
@@ -78,13 +78,51 @@ pub fn run_combinator(
                 let mut all = results.lock().unwrap();
                 all.extend(local);
             }
+
+            let tested = words2.len() as u64;
+            line_count.fetch_add(1, Ordering::Relaxed);
+
+            #[cfg(feature = "progress-rich")]
+            {
+                progress.record_tested(tested);
+                if line_count.load(Ordering::Relaxed) % 1000 == 0 {
+                    print_speed(&progress);
+                }
+            }
         });
 
-    let results = results.into_inner().unwrap();
+    #[cfg(feature = "progress-rich")]
+    eprintln!();
 
+    let results = results.into_inner().unwrap();
     if !quiet {
         eprintln!("[*] Cracked {}/{} hashes", results.len(), total_hashes);
     }
-
     results
+}
+
+fn load_wordlist(path: &str) -> Vec<String> {
+    #[cfg(feature = "mmap")]
+    if let Ok(file) = fs::File::open(Path::new(path)) {
+        if let Ok(mmap) = unsafe { Mmap::map(&file) } {
+            let words: Vec<String> = mmap
+                .split(|b| *b == b'\n')
+                .filter(|l| !l.is_empty())
+                .filter_map(|l| std::str::from_utf8(l).ok())
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            return words;
+        }
+    }
+
+    let file = match fs::File::open(Path::new(path)) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+    BufReader::new(file).lines()
+        .filter_map(|l| l.ok())
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }

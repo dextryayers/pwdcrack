@@ -230,15 +230,30 @@ fn cmd_benchmark(detector: &Detector, hash_type: &str, threads: usize, _quiet: b
             password: None,
         };
 
-        let iterations = 1000;
+        let iterations = 100_000;
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = cracker.verify(test_pass, &entry);
         }
         let elapsed = start.elapsed();
         let per_sec = iterations as f64 / elapsed.as_secs_f64();
-
         println!("  {:20} : {:>8.0} H/s", cracker.name(), per_sec);
+
+        // SIMD batch verify benchmark
+        #[cfg(feature = "engine-simd")]
+        {
+            let batch_passwords: Vec<&[u8]> = (0..1000).map(|_| test_pass.as_bytes()).collect();
+            let batch_targets: Vec<&str> = (0..1000).map(|_| test_hash.as_str()).collect();
+            let bstart = Instant::now();
+            let simd_results = engine_simd::dispatch::sha256_batch_verify(
+                &batch_passwords, &batch_targets,
+            );
+            let belapsed = bstart.elapsed();
+            if simd_results.len() == 1000 {
+                let bps = 1000.0 / belapsed.as_secs_f64();
+                println!("  {:20} : {:>8.0} H/s (SIMD batch)", cracker.name(), bps);
+            }
+        }
     }
 }
 

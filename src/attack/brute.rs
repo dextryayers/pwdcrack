@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use rayon::prelude::*;
 
 use crate::hash::{HashCracker, HashEntry};
-use crate::attack::{CrackResult, setup_progress};
+use crate::attack::{CrackResult, setup_progress, ProgressStats};
 
 static LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
 static UPPERCASE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -35,7 +35,6 @@ pub enum MaskChar {
 pub fn parse_mask(mask: &str) -> Vec<MaskChar> {
     let mut result = Vec::new();
     let mut chars = mask.chars().peekable();
-
     while let Some(c) = chars.next() {
         if c == '?' {
             match chars.next() {
@@ -58,7 +57,6 @@ pub fn parse_mask(mask: &str) -> Vec<MaskChar> {
             result.push(MaskChar::Literal(c));
         }
     }
-
     result
 }
 
@@ -112,6 +110,22 @@ fn index_to_password(mut idx: u64, mask: &[MaskChar], custom: &[&[u8]]) -> Strin
     String::from_utf8(result).unwrap_or_default()
 }
 
+#[cfg(feature = "progress-rich")]
+fn print_speed(stats: &ProgressStats, total: u64) {
+    let pct = if total > 0 {
+        (stats.total_tested() as f64 / total as f64 * 100.0) as u32
+    } else {
+        0
+    };
+    eprint!(
+        "\r[*] {} H/s | {}% | {} | {}",
+        stats.hash_rate(),
+        pct,
+        stats.eta(),
+        stats.total_tested(),
+    );
+}
+
 pub fn run_bruteforce(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
@@ -123,22 +137,19 @@ pub fn run_bruteforce(
     let mask = parse_mask(mask_str);
     let custom: Vec<&[u8]> = custom_charsets.iter()
         .map(|opt| match opt {
-            Some(s) => {
-                let v = s.as_bytes().to_vec();
-                Box::leak(v.into_boxed_slice())
-            }
+            Some(s) => Box::leak(s.as_bytes().to_vec().into_boxed_slice()),
             None => LOWERCASE,
         })
         .collect();
 
     let total = total_combinations(&mask, &custom);
-
     if !quiet {
         eprintln!("[*] Mask: {}", mask_str);
         eprintln!("[*] Keyspace: {} ({:.2} billion)", total, total as f64 / 1_000_000_000.0);
     }
 
     let pb = setup_progress(total, quiet);
+    let progress = ProgressStats::new();
 
     let counter = AtomicU64::new(0);
     let chunk_size = (100_000u64).max(total / (threads.max(1) as u64 * 100).max(1));
@@ -148,9 +159,7 @@ pub fn run_bruteforce(
             let mut local_results = Vec::new();
             loop {
                 let start = counter.fetch_add(chunk_size, Ordering::SeqCst);
-                if start >= total {
-                    break;
-                }
+                if start >= total { break; }
                 let end = (start + chunk_size).min(total);
 
                 for idx in start..end {
@@ -168,14 +177,24 @@ pub fn run_bruteforce(
                         pb.inc(1);
                     }
                 }
+
+                #[cfg(feature = "progress-rich")]
+                {
+                    progress.record_tested(chunk_size);
+                    if start % (chunk_size * 100) == 0 {
+                        print_speed(&progress, total);
+                    }
+                }
             }
             local_results
         })
         .collect();
 
+    #[cfg(feature = "progress-rich")]
+    eprintln!();
+
     if let Some(ref pb) = pb {
         pb.finish_with_message("Done!");
     }
-
     results
 }
