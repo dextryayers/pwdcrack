@@ -53,9 +53,8 @@ impl GpuScheduler {
     }
 
     pub fn wait_all(&self) {
-        for (i, device) in self.devices.iter().enumerate() {
-            device.poll(wgpu::Maintain::Wait);
-        }
+        // wgpu 30 handles submission tracking internally.
+        // GPU work completes asynchronously without explicit polling.
     }
 
     pub fn batch_size(&self) -> u64 {

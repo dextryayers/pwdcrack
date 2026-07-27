@@ -25,6 +25,14 @@ pub struct Cli {
     /// Quiet mode (no progress bar)
     #[arg(short = 'q', long, global = true)]
     pub quiet: bool,
+
+    /// Power budget in watts (0 = no limit). Requires engine-power.
+    #[arg(long, global = true, default_value = "0")]
+    pub power_budget: f64,
+
+    /// Android battery-safe mode (auto-pause on low battery)
+    #[arg(long, global = true)]
+    pub battery_safe: bool,
 }
 
 #[derive(Subcommand, Debug)]

@@ -11,6 +11,9 @@ use hash::detector::Detector;
 use attack::CrackResult;
 use potfile::Potfile;
 
+#[cfg(feature = "engine-power")]
+use std::sync::Arc;
+
 fn main() {
     env_logger::init();
     let args = Cli::parse();
@@ -26,20 +29,69 @@ fn main() {
         .build_global()
         .unwrap();
 
+    #[cfg(feature = "engine-power")]
+    let _power_mgr = if args.power_budget > 0.0 || args.battery_safe {
+        let pm = Arc::new(engine_power::PowerManager::new(args.power_budget));
+        if args.battery_safe {
+            let _ = std::thread::spawn({
+                let pm = Arc::clone(&pm);
+                move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    pm.sample();
+                    let workload = pm.current_workload();
+                    engine_power::governor::apply_workload_policy(workload);
+                }
+            });
+            log::info!("Battery-safe mode active");
+        }
+        if args.power_budget > 0.0 {
+            log::info!("Power budget: {}W", args.power_budget);
+        }
+        Some(pm)
+    } else {
+        None
+    };
+
+    #[cfg(feature = "engine-android")]
+    let mut _android_engine = {
+        let mut ae = engine_android::AndroidEngine::new();
+        ae.init();
+        log::info!("Android: {}", ae.info());
+        if ae.should_throttle() {
+            log::warn!("Android throttling: {:?}", ae.throttle_reason());
+        }
+        ae
+    };
+
     match &args.command {
         Commands::Identify { hash_file } => cmd_identify(&detector, hash_file),
         Commands::Dictionary { hash_file, wordlist, rules, skip_self: _ } => {
-            cmd_dictionary(&detector, hash_file, wordlist, rules.as_deref(), threads, &args)
+            #[cfg(feature = "engine-power")]
+            if let Some(ref pm) = _power_mgr {
+                pm.set_workload(engine_power::WorkloadType::MemoryBound);
+            }
+            cmd_dictionary(&detector, hash_file, wordlist, rules.as_deref(), threads, &args);
         }
         Commands::BruteForce { hash_file, mask, charset1, charset2, charset3, charset4 } => {
-            cmd_bruteforce(&detector, hash_file, mask, &[charset1.clone(), charset2.clone(), charset3.clone(), charset4.clone()], threads, &args)
+            #[cfg(feature = "engine-power")]
+            if let Some(ref pm) = _power_mgr {
+                pm.set_workload(engine_power::WorkloadType::ComputeBound);
+            }
+            cmd_bruteforce(&detector, hash_file, mask, &[charset1.clone(), charset2.clone(), charset3.clone(), charset4.clone()], threads, &args);
         }
         Commands::Combinator { hash_file, wordlist1, wordlist2 } => {
-            cmd_combinator(&detector, hash_file, wordlist1, wordlist2, threads, &args)
+            #[cfg(feature = "engine-power")]
+            if let Some(ref pm) = _power_mgr {
+                pm.set_workload(engine_power::WorkloadType::Mixed);
+            }
+            cmd_combinator(&detector, hash_file, wordlist1, wordlist2, threads, &args);
         }
         Commands::Benchmark { hash_type } => cmd_benchmark(&detector, hash_type, threads, args.quiet),
         Commands::Show { potfile, show_type } => cmd_show(potfile, *show_type),
     }
+
+    #[cfg(feature = "engine-android")]
+    _android_engine.shutdown();
 }
 
 fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, HashEntry)> {

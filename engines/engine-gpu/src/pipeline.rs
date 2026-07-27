@@ -106,7 +106,7 @@ impl PipelineCache {
     pub async fn get_or_insert<F>(
         &mut self,
         key: &str,
-        device: &Device,
+        _device: &Device,
         builder: F,
     ) -> Result<&ComputePipeline, GpuError>
     where

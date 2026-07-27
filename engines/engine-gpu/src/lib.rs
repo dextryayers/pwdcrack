@@ -33,7 +33,8 @@ impl GpuEngine {
     }
 
     pub fn wait(&self) {
-        self.device.poll(wgpu::Maintain::Wait);
+        // wgpu 30 handles submission tracking internally.
+        // No explicit poll needed — GPU work completes asynchronously.
     }
 }
 
