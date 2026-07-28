@@ -320,6 +320,38 @@ pub enum HashType {
     Argon2id,
     /// scrypt (memory-hard key-derivation function).
     Scrypt,
+    /// LM CHAPv2 (MS-CHAPv2 challenge/response).
+    LMCHAPV2,
+    /// Domain Cached Credentials v3.
+    DCC3,
+    /// SAP CODVN B (BCODE).
+    SAPCODVNB,
+    /// SAP CODVN F/G (PASSCODE).
+    SAPCODVNFG,
+    /// EPiServer (EPi).
+    EPI,
+    /// PunBB forum hash.
+    PUNBB,
+    /// Novell LDAP SHA1.
+    NSLDAP,
+    /// Lotus Notes / Domino.
+    LOTUSNOTES,
+    /// CRAM-MD5 challenge alternate format.
+    CHALLENGE,
+    /// GOST R 34.11-94 HMAC version (Test S-box).
+    GOST94HMAC,
+    /// HMAC-BLAKE2b-224.
+    HMACBLAKE2B224,
+    /// HMAC-BLAKE2b-384.
+    HMACBLAKE2B384,
+    /// SHA-256 Crypt with $rounds= prefix.
+    SHA256CRYPTROUNDS,
+    /// HMAC-SHA1 with username prefix format.
+    HMACSHA1USER,
+    /// SKIP32 (Skipjack 32-bit checksum).
+    SKIP32,
+    /// xxHash32.
+    XXHASH32,
     /// Unrecognized or unsupported hash format.
     Unknown,
 }
@@ -472,6 +504,22 @@ impl HashType {
             HashType::Argon2d => "Argon2d",
             HashType::Argon2id => "Argon2id",
             HashType::Scrypt => "scrypt",
+            HashType::LMCHAPV2 => "LM CHAPv2",
+            HashType::DCC3 => "DCC3",
+            HashType::SAPCODVNB => "SAP CODVN B",
+            HashType::SAPCODVNFG => "SAP CODVN F/G",
+            HashType::EPI => "EPi",
+            HashType::PUNBB => "PunBB",
+            HashType::NSLDAP => "NSLDAP",
+            HashType::LOTUSNOTES => "Lotus Notes",
+            HashType::CHALLENGE => "Challenge",
+            HashType::GOST94HMAC => "GOST94 HMAC",
+            HashType::HMACBLAKE2B224 => "HMAC-BLAKE2b-224",
+            HashType::HMACBLAKE2B384 => "HMAC-BLAKE2b-384",
+            HashType::SHA256CRYPTROUNDS => "SHA-256 Crypt ($rounds$)",
+            HashType::HMACSHA1USER => "HMAC-SHA1 (username)",
+            HashType::SKIP32 => "SKIP32",
+            HashType::XXHASH32 => "xxHash32",
             HashType::Unknown => "Unknown",
         }
     }
@@ -569,6 +617,22 @@ impl HashType {
             HashType::CRC64 => Some(64),
             HashType::NTLM => Some(128),
             HashType::LM => Some(64),
+            HashType::LMCHAPV2 => Some(128),
+            HashType::DCC3 => Some(128),
+            HashType::SAPCODVNB => None,
+            HashType::SAPCODVNFG => None,
+            HashType::EPI => Some(128),
+            HashType::PUNBB => Some(160),
+            HashType::NSLDAP => Some(160),
+            HashType::LOTUSNOTES => None,
+            HashType::CHALLENGE => Some(128),
+            HashType::GOST94HMAC => Some(256),
+            HashType::HMACBLAKE2B224 => Some(224),
+            HashType::HMACBLAKE2B384 => Some(384),
+            HashType::SHA256CRYPTROUNDS => Some(256),
+            HashType::HMACSHA1USER => Some(160),
+            HashType::SKIP32 => Some(32),
+            HashType::XXHASH32 => Some(32),
             _ => None,
         }
     }

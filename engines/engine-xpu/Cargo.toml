@@ -1,0 +1,19 @@
+[package]
+name = "engine-xpu"
+version = "0.1.0"
+edition = "2024"
+description = "Intel XPU/oneAPI unified acceleration for hash cracking"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+pwdcrack = { path = "../../" }
+oneapi = { version = "0.1", optional = true }
+leveldb = { version = "0.1", optional = true }
+
+[features]
+default = []
+xpu = ["dep:oneapi"]
+leveldb = ["dep:leveldb"]

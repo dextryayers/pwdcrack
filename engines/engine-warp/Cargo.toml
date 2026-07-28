@@ -1,0 +1,19 @@
+[package]
+name = "engine-warp"
+version = "0.1.0"
+edition = "2024"
+description = "NVIDIA Warp framework integration for hash cracking"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+pwdcrack = { path = "../../" }
+warp-core = { version = "0.1", optional = true }
+cuda = { version = "0.1", optional = true }
+
+[features]
+default = []
+warp = ["dep:warp-core"]
+cuda = ["dep:cuda"]

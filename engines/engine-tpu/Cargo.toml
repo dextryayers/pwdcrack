@@ -1,0 +1,19 @@
+[package]
+name = "engine-tpu"
+version = "0.1.0"
+edition = "2024"
+description = "Google TPU acceleration for hash cracking via tpu-worker"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+pwdcrack = { path = "../../" }
+tpu-worker = { version = "0.1", optional = true }
+tensorflow = { version = "0.20", optional = true }
+
+[features]
+default = []
+tpu = ["dep:tpu-worker"]
+tensorflow = ["dep:tensorflow"]

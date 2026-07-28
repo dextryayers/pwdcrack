@@ -1,0 +1,19 @@
+[package]
+name = "engine-tensor"
+version = "0.1.0"
+edition = "2024"
+description = "Tensor operation acceleration for hash cracking (ONNX/TensorRT)"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+pwdcrack = { path = "../../" }
+tract-onnx = { version = "0.21", optional = true }
+tract-tensorflow = { version = "0.21", optional = true }
+
+[features]
+default = []
+tensor = ["dep:tract-onnx"]
+tensorflow = ["dep:tract-tensorflow"]
