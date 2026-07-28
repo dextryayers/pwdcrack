@@ -5,61 +5,97 @@ BOLD='\033[1m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 PREFIX="${PREFIX:-/usr/local}"
 BINDIR="${PREFIX}/bin"
 DATADIR="${PREFIX}/share/pwdcrack"
-MANDIR="${PREFIX}/share/man/man1"
-PROFILE_DIR="/etc/profile.d"
-COMPLETION_DIR="${PREFIX}/share/bash-completion/completions"
 
-print_step()  { printf "${BOLD}${CYAN}[*]${NC} %s\n" "$1"; }
-print_ok()    { printf "${GREEN}[✓]${NC} %s\n" "$1"; }
-print_err()   { printf "${RED}[✗]${NC} %s\n" "$1"; }
+print_step() { printf "\r${BOLD}${CYAN}[*]${NC} %s\n" "$1"; }
+print_ok()   { printf "\r${GREEN}[✓]${NC} %s\n" "$1"; }
+print_err()  { printf "\r${RED}[✗]${NC} %s\n" "$1"; }
+print_info() { printf "  ${YELLOW}%s${NC}\n" "$1"; }
+
+# ── Spinner ──────────────────────────────────────────────────────────
+spin() {
+  local pid=$1 msg=$2
+  local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "\r${BOLD}${CYAN}[${spin:$((i%${#spin})):1}]${NC} %s ..." "$msg"
+    i=$((i+1))
+    sleep 0.1
+  done
+  printf "\r${BOLD}${CYAN}[${GREEN}✓${CYAN}]${NC} %s ... ${GREEN}done${NC}\n" "$msg"
+}
+
+run_with_spinner() {
+  local msg=$1; shift
+  ("$@" &>/tmp/pwdcrack_uninstall.log) &
+  local pid=$!
+  spin "$pid" "$msg"
+  wait "$pid" || true
+}
+
+# ── Header ───────────────────────────────────────────────────────────
+printf "\n${BOLD}╔══════════════════════════════════╗${NC}\n"
+printf "${BOLD}║    ${RED}pwdcrack uninstaller${CYAN} v0.1.0${BOLD}   ║${NC}\n"
+printf "${BOLD}╚══════════════════════════════════╝${NC}\n\n"
+
+# ── Root / sudo ──────────────────────────────────────────────────────
+IS_ROOT=0
+[ "$(id -u)" -eq 0 ] && IS_ROOT=1
 
 NEED_SUDO=0
-if [ ! -w "$PREFIX" ] && [ "$PREFIX" != "/usr/local" ]; then
+if [ "$IS_ROOT" -eq 0 ]; then
+  if ! mkdir -p "$BINDIR" 2>/dev/null; then
     NEED_SUDO=1
-elif [ "$PREFIX" = "/usr/local" ] && [ ! -w "/usr/local" ]; then
-    NEED_SUDO=1
+  fi
 fi
 
 if [ "$NEED_SUDO" -eq 1 ]; then
-    if command -v sudo &>/dev/null; then
-        exec sudo bash "$0" "$@"
-        exit 0
-    else
-        print_err "Need root but sudo not available"
-        echo "  Run with sudo or set PREFIX to a writable directory"
-        exit 1
-    fi
+  if command -v sudo &>/dev/null; then
+    print_info "sudo required for ${PREFIX}"
+    exec sudo bash "$0" "$@"
+    exit 0
+  else
+    print_err "Need root but sudo not available"
+    print_info "Run with sudo or set PREFIX to a writable directory"
+    print_info "  PREFIX=\$HOME/.local $0"
+    exit 1
+  fi
 fi
 
+# ── Remove files ─────────────────────────────────────────────────────
 REMOVED=0
 
-remove_if_exists() {
-    if [ -f "$1" ] || [ -d "$1" ]; then
-        rm -rf "$1"
-        print_ok "Removed: $1"
-        REMOVED=$((REMOVED + 1))
-    fi
+remove_item() {
+  local path=$1 label=$2
+  if [ -f "$path" ] || [ -d "$path" ]; then
+    run_with_spinner "Removing ${label}" rm -rf "$path"
+    REMOVED=$((REMOVED+1))
+  fi
 }
 
-print_step "Uninstalling pwdcrack"
+print_step "Scanning installed files"
 
-remove_if_exists "${BINDIR}/pwdcrack"
-remove_if_exists "${DATADIR}"
-remove_if_exists "${MANDIR}/pwdcrack.1"
-remove_if_exists "${PROFILE_DIR}/pwdcrack.sh"
-remove_if_exists "${COMPLETION_DIR}/pwdcrack"
+remove_item "${BINDIR}/pwdcrack" "binary"
+remove_item "${DATADIR}"          "shared data"
+remove_item "${PREFIX}/share/man/man1/pwdcrack.1" "man page"
+remove_item "/etc/profile.d/pwdcrack.sh"          "profile script"
+remove_item "${PREFIX}/share/bash-completion/completions/pwdcrack" "completions"
 
-if [ "$REMOVED" -eq 0 ]; then
-    print_err "pwdcrack not found in ${PREFIX} — nothing to remove"
-    echo "  Was it installed with a different PREFIX?"
-    echo "  Try: PREFIX=/usr ./uninstall.sh"
-    echo "  Try: PREFIX=$HOME/.local ./uninstall.sh"
+# ── Result ───────────────────────────────────────────────────────────
+echo ""
+if [ "$REMOVED" -gt 0 ]; then
+  printf "  ${GREEN}${BOLD}✔${NC} ${REMOVED} file(s) removed.\n"
+  printf "  ${YELLOW}ℹ${NC}  Source directory is kept:\n"
+  printf "     %s\n" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
-    echo ""
-    printf "${GREEN}${BOLD}✔ Uninstall complete!${NC}  ${REMOVED} file(s) removed.\n"
+  print_err "Nothing to remove at ${PREFIX}"
+  print_info "Was it installed with a different PREFIX?"
+  print_info "Try: PREFIX=/usr $0"
+  print_info "Try: PREFIX=\$HOME/.local $0"
 fi
+echo ""
