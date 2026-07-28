@@ -1,0 +1,17 @@
+[package]
+name = "engine-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "WebAssembly runtime engine for portable hash verification kernels"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+wasmtime = { version = "25", optional = true }
+pwdcrack = { path = "../../" }
+
+[features]
+default = []
+wasm = ["dep:wasmtime"]

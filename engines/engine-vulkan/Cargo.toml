@@ -1,0 +1,17 @@
+[package]
+name = "engine-vulkan"
+version = "0.1.0"
+edition = "2024"
+description = "Direct Vulkan compute engine — SPIR-V kernels for hash cracking"
+
+[dependencies]
+log = "0.4"
+hex = "0.4"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+ash = { version = "0.38", optional = true }
+pwdcrack = { path = "../../" }
+
+[features]
+default = []
+vulkan = ["dep:ash"]

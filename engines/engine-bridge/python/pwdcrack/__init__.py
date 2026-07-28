@@ -1,51 +1,28 @@
-"""pwdcrack — Python bindings to Rust core engine.
+"""
+pwdcrack — high-performance hash cracker with GPU/FPGA/CLI support.
+
+Python API providing full access to pwdcrack's hash detection,
+verification, and cracking capabilities.
 
 Usage:
     import pwdcrack
-
-    # Auto-detect hardware
     info = pwdcrack.detect()
-    print(info)
-
-    # Load hashes
-    hashes = pwdcrack.load_file("hashes.txt")
-
-    # Dictionary attack
-    for result in pwdcrack.attack_dictionary("rockyou.txt"):
-        print(f"{result}")
-
-    # GPU benchmark
-    print(pwdcrack.benchmark("md5"))
-
-    # Verify one password
-    if pwdcrack.verify_one("password123", hash_str):
-        print("Cracked!")
+    results = pwdcrack.attack_dictionary("hashes.txt", "wordlist.txt")
+    for r in results:
+        print(f"{r['hash']}:{r['password']}")
 """
 
 from pwdcrack._native import (
-    detect,
-    load_file,
-    load_buffer,
-    identify,
-    attack_dictionary,
-    attack_bruteforce,
-    verify_one,
-    found_count,
-    get_result,
-    benchmark,
-    version,
+    detect, load_file, load_buffer, identify,
+    attack_dictionary, attack_bruteforce, attack_combinator,
+    verify_one, verify_batch, found_count, get_result, get_all_results,
+    benchmark, version, suggest_attack, rule_apply,
 )
 
 __all__ = [
-    "detect",
-    "load_file",
-    "load_buffer",
-    "identify",
-    "attack_dictionary",
-    "attack_bruteforce",
-    "verify_one",
-    "found_count",
-    "get_result",
-    "benchmark",
-    "version",
+    'detect', 'load_file', 'load_buffer', 'identify',
+    'attack_dictionary', 'attack_bruteforce', 'attack_combinator',
+    'verify_one', 'verify_batch',
+    'found_count', 'get_result', 'get_all_results',
+    'benchmark', 'version', 'suggest_attack', 'rule_apply',
 ]

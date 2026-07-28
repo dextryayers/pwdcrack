@@ -210,6 +210,64 @@ pub enum HashType {
     SSHA1,
     /// LDAP SSHA256 (Salted SHA256 in base64).
     SSHA256,
+    /// HMAC-SHA512/224.
+    HMACSHA512_224,
+    /// HMAC-SHA512/256.
+    HMACSHA512_256,
+    /// HMAC-SHA3-224.
+    HMACSHA3224,
+    /// HMAC-SHA3-256.
+    HMACSHA3256,
+    /// HMAC-SHA3-384.
+    HMACSHA3384,
+    /// HMAC-SHA3-512.
+    HMACSHA3512,
+    /// HMAC-BLAKE2b-256.
+    HMACBLAKE2B256,
+    /// HMAC-BLAKE2s-256.
+    HMACBLAKE2S256,
+    /// HMAC-BLAKE2b-512.
+    HMACBLAKE2B512,
+    /// HMAC-RIPEMD128.
+    HMACRIPEMD128,
+    /// HMAC-RIPEMD256.
+    HMACRIPEMD256,
+    /// HMAC-RIPEMD320.
+    HMACRIPEMD320,
+    /// HMAC-Whirlpool.
+    HMACWHIRLPOOL,
+    /// HMAC-Streebog-256.
+    HMACSTREEBOG256,
+    /// HMAC-Streebog-512.
+    HMACSTREEBOG512,
+    /// PBKDF2-SHA384.
+    PBKDF2SHA384,
+    /// PBKDF2-HMAC-SHA224.
+    PBKDF2SHA224,
+    /// Salted SHA-224 (SHA224(password + salt)).
+    SALTEDSHA224,
+    /// Triple MD5 (MD5(MD5(MD5(password)))).
+    TRIPLEMD5,
+    /// MD5 Half (first 16 hex chars of MD5).
+    MD5HALF,
+    /// CRC-8/ITU.
+    CRC8ITU,
+    /// CRC-16/CCITT.
+    CRC16CCITT,
+    /// CRC-16/MODBUS.
+    CRC16MODBUS,
+    /// CRC-32/BZIP2.
+    CRC32BZIP2,
+    /// CRC-32/MPEG2.
+    CRC32MPEG2,
+    /// CRC-64/ECMA-182.
+    CRC64ECMA,
+    /// NTLMv1 (NetNTLMv1 challenge/response).
+    NTLMV1,
+    /// CRAM-MD5 (mail auth digest).
+    CRAMMD5,
+    /// PLAINTEXT / identity hash.
+    PLAINTEXT,
     /// CRC8 checksum.
     CRC8,
     /// CRC16 checksum.

@@ -6,7 +6,11 @@ use crate::{GpuEngine, pipeline::ComputePipeline, error::GpuError, buffer::{GpuB
 const WGSL_MD5: &str = include_str!("shaders/md5.wgsl");
 const WGSL_SHA1: &str = include_str!("shaders/sha1.wgsl");
 const WGSL_SHA256: &str = include_str!("shaders/sha256.wgsl");
+const WGSL_SHA512: &str = include_str!("shaders/sha512.wgsl");
 const WGSL_NTLM: &str = include_str!("shaders/ntlm.wgsl");
+const WGSL_MD4: &str = include_str!("shaders/md4.wgsl");
+const WGSL_RIPEMD160: &str = include_str!("shaders/ripemd160.wgsl");
+const WGSL_BLAKE2B: &str = include_str!("shaders/blake2b.wgsl");
 
 pub struct GpuCracker {
     engine: Arc<GpuEngine>,
@@ -27,8 +31,20 @@ impl GpuCracker {
         if let Ok(p) = Self::build_pipeline(&engine, WGSL_SHA256, "sha256").await {
             pipelines.push(("sha256".to_string(), p));
         }
+        if let Ok(p) = Self::build_pipeline(&engine, WGSL_SHA512, "sha512").await {
+            pipelines.push(("sha512".to_string(), p));
+        }
         if let Ok(p) = Self::build_pipeline(&engine, WGSL_NTLM, "ntlm").await {
             pipelines.push(("ntlm".to_string(), p));
+        }
+        if let Ok(p) = Self::build_pipeline(&engine, WGSL_MD4, "md4").await {
+            pipelines.push(("md4".to_string(), p));
+        }
+        if let Ok(p) = Self::build_pipeline(&engine, WGSL_RIPEMD160, "ripemd160").await {
+            pipelines.push(("ripemd160".to_string(), p));
+        }
+        if let Ok(p) = Self::build_pipeline(&engine, WGSL_BLAKE2B, "blake2b").await {
+            pipelines.push(("blake2b".to_string(), p));
         }
         let count = pipelines.len();
         log::info!("GPU: {} compute pipelines built", count);

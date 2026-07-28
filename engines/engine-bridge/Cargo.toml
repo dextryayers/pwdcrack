@@ -2,7 +2,7 @@
 name = "engine-bridge"
 version = "0.1.0"
 edition = "2024"
-description = "FFI bridges: C, Python (PyO3), Perl (XS)"
+description = "FFI bridges: C, Python (PyO3), Perl (XS), Node.js (N-API), Ruby"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
@@ -22,4 +22,6 @@ pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 [features]
 python = ["dep:pyo3"]
 perl = []
+node = []
+ruby = []
 default = []

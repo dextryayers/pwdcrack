@@ -30,8 +30,30 @@ HARDWARE ENGINES (optional features)
   Power  RAPL / AMD hwmon power capping
   Dist   multi-node TCP cluster cracking
   Web    real-time dashboard + WebSocket stats",
-    version = "1.1.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nHigh-performance password hash cracker written in Rust",
+    version = "1.2.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nHigh-performance password hash cracker written in Rust",
     author = "Hanif Abdur - AniipID",
+    override_help = None,
+    help_template = "\
+{before-help}{name} v{version}
+{about-with-newline}
+{author-with-newline}
+
+USAGE: {usage}
+
+{all-args}
+
+HARDWARE ENGINES (detected at init):
+  CPU  {n-cores}-core {cpu-vendor} {cpu-model}
+  SIMD {simd-level}
+  GPU  {gpu-devices}
+  FPGA {fpga-status}
+
+{caption} {usage}:
+
+SUBCOMMANDS:
+{subcommands}
+
+{after-help}",
 )]
 pub struct Cli {
     #[command(subcommand)]

@@ -25,6 +25,27 @@ fn main() {
         .build_global()
         .unwrap();
 
+    // ── Engine init ──
+    #[cfg(feature = "engine-simd")]
+    {
+        engine_simd::init();
+        log::info!("SIMD: {:?}", engine_simd::current_level());
+    }
+
+    #[cfg(feature = "engine-gpu")]
+    let _gpu_engine = if args.gpu {
+        match pollster::block_on(engine_gpu::GpuEngine::init()) {
+            Some(gpu) => {
+                log::info!("GPU: {}", gpu.info());
+                Some(std::sync::Arc::new(gpu))
+            }
+            None => {
+                log::warn!("GPU: no compatible device found");
+                None
+            }
+        }
+    } else { None };
+
     #[cfg(feature = "engine-power")]
     let _power_mgr = if args.power_budget > 0.0 || args.battery_safe {
         let pm = Arc::new(engine_power::PowerManager::new(args.power_budget));
@@ -47,6 +68,11 @@ fn main() {
     } else {
         None
     };
+
+    #[cfg(feature = "engine-distributed")]
+    let _dist_engine = if args.distributed {
+        Some(engine_distributed::DistributedNode::new("0.0.0.0:0"))
+    } else { None };
 
     #[cfg(feature = "engine-android")]
     let mut _android_engine = {
@@ -775,45 +801,48 @@ fn cmd_suggest(detector: &Detector, hash: &str) {
             println!("\nSuggested attacks:");
             println!("{:=<60}", "");
 
-            match ht {
-                HashType::MD5 | HashType::SHA1 | HashType::SHA224
-                | HashType::SHA256 | HashType::SHA384 | HashType::SHA512
-                | HashType::SHA3512 | HashType::BLAKE2B256 | HashType::BLAKE2B512
-                | HashType::RIPEMD160 | HashType::NTLM => {
-                    let speed = match ht {
-                        HashType::BCrypt | HashType::BCryptA => "~1 K/s",
-                        _ => "> 1 M/s",
-                    };
-                    let bits = ht.bit_length().unwrap_or(0);
-                    println!("  🏆  Dictionary + rules    (fast: {})", speed);
-                    println!("  🥈  Brute-force mask       (8-char lower: {} combos)", "26^8 = 208B");
-                    println!("  🥉  Combinator             (if two wordlists available)");
-                    println!("");
-                    if bits <= 128 {
-                        println!("  ⚡  This hash is fast — susceptible to GPU/FPGA acceleration");
-                    }
-                    if bits >= 256 {
-                        println!("  🔒  This hash is slow — dictionary + rules is most efficient");
-                    }
-                }
-                HashType::BCrypt | HashType::BCryptA => {
-                    println!("  🏆  Dictionary + rules    (bcrypt is intentionally slow)");
-                    println!("  🥈  Small brute-force     (up to 6 characters)");
-                    println!("");
-                    println!("  ⚠  bcrypt is resistant to GPU acceleration");
-                    println!("  ⚠  Focus on dictionary with good rules");
-                }
-                HashType::Argon2i | HashType::Argon2d | HashType::Argon2id | HashType::Scrypt => {
-                    println!("  🏆  Dictionary + rules    (memory-hard, very slow to brute-force)");
-                    println!("");
-                    println!("  ⚠  Memory-hard hash — GPU resistance is high");
-                    println!("  ⚠  Best approach: targeted dictionary with context-aware rules");
-                }
-                _ => {
-                    println!("  🏆  Dictionary + rules");
-                    println!("  🥈  Brute-force mask");
-                    println!("  🥉  Combinator");
-                }
+            let bits = ht.bit_length().unwrap_or(0);
+            let is_slow = matches!(ht, HashType::BCrypt | HashType::BCryptA
+                | HashType::Argon2i | HashType::Argon2d | HashType::Argon2id | HashType::Scrypt
+                | HashType::PBKDF2SHA256 | HashType::PBKDF2SHA512 | HashType::PBKDF2SHA1
+                | HashType::PHPASS | HashType::DRUPAL7);
+            let is_medium = matches!(ht, HashType::SHA512 | HashType::SHA384
+                | HashType::SHA256 | HashType::SHA3512 | HashType::WHIRLPOOL
+                | HashType::STREEBOG512 | HashType::JH512 | HashType::SKEIN512
+                | HashType::SHABAL512 | HashType::BLAKE2B512 | HashType::SALTEDSHA512
+                | HashType::HMACSHA256 | HashType::HMACSHA512 | HashType::SSHA256);
+            let is_fast = !is_slow && !is_medium;
+            let has_gpu_accel = matches!(ht, HashType::MD5 | HashType::NTLM
+                | HashType::SHA1 | HashType::SHA256 | HashType::MD4
+                | HashType::CRC32 | HashType::CRC64 | HashType::CRC16 | HashType::CRC32C
+                | HashType::ADLER32);
+            let speed_str = if is_slow {
+                if matches!(ht, HashType::BCrypt | HashType::BCryptA) { "~1 K/s" }
+                else if matches!(ht, HashType::Argon2i | HashType::Argon2d | HashType::Argon2id | HashType::Scrypt) { "~100 H/s" }
+                else { "~10 K/s" }
+            } else if is_medium { "~500 K/s" } else { "> 10 M/s" };
+            println!("  🏆  Dictionary + rules    ({})", speed_str);
+            if is_fast && bits <= 128 {
+                println!("  🥈  Brute-force mask       (up to 8 chars recommended)");
+                println!("  🥉  Combinator             (if two wordlists available)");
+            }
+            if has_gpu_accel {
+                println!("  ⚡  This hash is fast — GPU/FPGA acceleration available");
+            }
+            if is_slow {
+                println!("  🔒  Slow hash — GPU resistance is high, focus on dictionary");
+            }
+            if bits >= 256 && !is_fast {
+                println!("  🔒  256+ bit hash — dictionary + rules is most efficient");
+            }
+            if matches!(ht, HashType::NTLM | HashType::LM | HashType::NTLMV2 | HashType::DCC1 | HashType::DCC2) {
+                println!("  💻  Windows hash — try common Windows password patterns (P@ssw0rd, etc.)");
+            }
+            if matches!(ht, HashType::MD5Crypt | HashType::SHA256Crypt | HashType::SHA512Crypt) {
+                println!("  🐧  Unix shadow hash — try common Linux password patterns");
+            }
+            if matches!(ht, HashType::PHPASS | HashType::DRUPAL7) {
+                println!("  🌐  CMS hash — try username/service-related passwords");
             }
 
             // Print hash details

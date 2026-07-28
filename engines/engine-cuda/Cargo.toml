@@ -1,0 +1,17 @@
+[package]
+name = "engine-cuda"
+version = "0.1.0"
+edition = "2024"
+description = "NVIDIA CUDA kernel engine for GPU-accelerated hash cracking via rust-cuda"
+
+[dependencies]
+cudarc = { version = "0.13", features = ["nvrtc"], optional = true }
+log = "0.4"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+pwdcrack = { path = "../../" }
+
+[features]
+default = []
+cuda = ["dep:cudarc"]
