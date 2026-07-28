@@ -154,6 +154,29 @@ impl HashParser for Gost94_512Hash {
     }
 }
 
+pub struct Md2Hash;
+
+impl HashCracker for Md2Hash {
+    fn hash_type(&self) -> HashType { HashType::MD2 }
+    fn name(&self) -> &'static str { "MD2" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Md2Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 32 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::MD2,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim();
+        t.len() == 32 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
 impl_raw_hash!(Blake2b384Hash, HashType::BLAKE2B384, Blake2b<digest::consts::U48>, 384);
 impl_raw_hash!(Blake2b224Hash, HashType::BLAKE2B224, Blake2b<digest::consts::U28>, 224);
 impl_raw_hash!(Blake2b160Hash, HashType::BLAKE2B160, Blake2b<digest::consts::U20>, 160);

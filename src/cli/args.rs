@@ -3,52 +3,32 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(
     name = "pwdcrack",
-    about = "🏴 Universal password cracker — CPU / GPU / FPGA / Distributed / Web",
+    about = "Advanced multi-architecture password hash recovery toolkit — CPU · GPU · FPGA · TPU · Accelerated",
     long_about = "\
-pwdcrack — high-performance hash cracker written in Rust.
+Professional-grade hash recovery suite supporting 350+ hash types across all major
+algorithm families: MDx, SHA-1/2/3, BLAKE2/3, RIPEMD, Whirlpool, Streebog,
+GOST94, Tiger, JH, Skein, Shabal, Snefru, SM3, HAS-160, and more.
 
-SUPPORTED HASHES (50+)
-  MD5, SHA-1/224/256/384/512/512-224/512-256,
-  SHA3-224/256/384/512, BLAKE2b-256/224/160/384/512,
-  BLAKE2s-256/128/160, BLAKE3-256, MD4,
-  Whirlpool, Streebog-256/512, Tiger-192, JH-224/256/384/512,
-  Skein-256/512, Shabal-192/224/256/384/512, GOST94-256/512,
-  RIPEMD-128/160/256/320, NTLM, LM, bcrypt ($2a$/$2b$/$2y$),
-  Argon2i/d/id, scrypt, MD5Crypt, SHA256Crypt, SHA512Crypt,
-  Apache MD5, MySQL 4.1, PostgreSQL MD5, CRC32, CRC64
+Cracking engines: dictionary (with rule-based mangling), brute-force mask,
+combinator, PRINCE, toggle-case, substitution, and hybrid attacks.
 
-ATTACK MODES
-  dictionary   wordlist + rule-based mangling (John/Hashcat rules)
-  brute-force  mask-based enumeration with custom charsets
-  combinator   concatenate words from two wordlists
+Hardware backends: CPU with auto-detected SIMD (SSE2/AVX2/AVX-512/NEON/SVE),
+GPU (Vulkan/CUDA/OpenCL/Metal/SYCL), FPGA, TPU, DSP, RISC-V vector, Intel XPU,
+and distributed cluster mode.
 
-HARDWARE ENGINES (optional features)
-  SIMD   SSE2 / AVX2 / AVX-512 / NEON / SVE (auto-detected)
-  GPU    Vulkan compute via wgpu
-  FPGA   PCIe DMA acceleration
-  JIT    Cranelift JIT for mask/rule speedup
-  Power  RAPL / AMD hwmon power capping
-  Dist   multi-node TCP cluster cracking
-  Web    real-time dashboard + WebSocket stats",
-    version = "1.2.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nHigh-performance password hash cracker written in Rust",
+Optimized for both high-end workstations and low-end/embedded devices.",
+    version = "1.2.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nProfessional hash recovery toolkit — 350+ hash types, multi-architecture",
     author = "Hanif Abdur - AniipID",
     override_help = None,
+    display_name = "pwdcrack",
     help_template = "\
 {before-help}{name} v{version}
+
 {about-with-newline}
-{author-with-newline}
 
 USAGE: {usage}
 
 {all-args}
-
-HARDWARE ENGINES (detected at init):
-  CPU  {n-cores}-core {cpu-vendor} {cpu-model}
-  SIMD {simd-level}
-  GPU  {gpu-devices}
-  FPGA {fpga-status}
-
-{caption} {usage}:
 
 SUBCOMMANDS:
 {subcommands}
@@ -109,6 +89,24 @@ pub struct Cli {
 
     #[arg(long = "disable-simd", global = true, help = "Disable SIMD auto-detection")]
     pub disable_simd: bool,
+
+    #[arg(short = 'r', long, global = true, help = "Global rules file for all applicable attacks")]
+    pub rules_file: Option<String>,
+
+    #[arg(long, global = true, help = "Disable colored output")]
+    pub no_color: bool,
+
+    #[arg(long, global = true, help = "Batch mode — suppress interactive prompts")]
+    pub batch: bool,
+
+    #[arg(long, global = true, help = "Resume from last session checkpoint")]
+    pub resume: bool,
+
+    #[arg(long, global = true, help = "Enable hardware monitoring (temp, power, utilization)")]
+    pub hwmon: bool,
+
+    #[arg(long, global = true, help = "Enable verbose logging")]
+    pub verbose: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,5 +312,140 @@ pub enum Commands {
     Suggest {
         #[arg(help = "Hash string to analyze for attack strategy")]
         hash: String,
+    },
+
+    /// PRINCE attack — probability-based word generation
+    ///
+    /// Uses the PRINCE algorithm to generate password candidates
+    /// from a wordlist based on probability. Efficient for targeted
+    /// attacks where the password follows common patterns.
+    ///
+    /// Example: pwdcrack prince hashes.txt wordlist.txt
+    Prince {
+        /// Hash file containing target hashes
+        hash_file: String,
+        /// Wordlist for PRINCE candidate generation
+        wordlist: String,
+        /// Minimum password length
+        #[arg(long, default_value_t = 1)]
+        min_length: usize,
+        /// Maximum password length
+        #[arg(long, default_value_t = 32)]
+        max_length: usize,
+        /// Only test this many candidates
+        #[arg(long)]
+        limit: Option<u64>,
+        /// Save/resume session
+        #[arg(long)]
+        session: Option<String>,
+    },
+
+    /// Toggle-case attack — case variants of dictionary words
+    ///
+    /// For each word in the list, tries all case permutations
+    /// at toggle points. Effective against simple capitalization.
+    ///
+    /// Example: pwdcrack toggle-case hashes.txt wordlist.txt
+    ToggleCase {
+        /// Hash file containing target hashes
+        hash_file: String,
+        /// Base wordlist
+        wordlist: String,
+        /// Maximum toggle points per word
+        #[arg(long, default_value_t = 4)]
+        max_toggle: usize,
+        /// Only test this many candidates per word
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+
+    /// Substitution attack — leet/character substitution
+    ///
+    /// Applies common character substitutions to dictionary words
+    /// (e.g. a→@, e→3, o→0, s→$). Multiple substitution sets available.
+    ///
+    /// Example: pwdcrack substitute hashes.txt wordlist.txt
+    Substitute {
+        /// Hash file containing target hashes
+        hash_file: String,
+        /// Base wordlist
+        wordlist: String,
+        /// Substitution level 1-3 (default: 2)
+        #[arg(long, default_value_t = 2)]
+        level: u8,
+        /// Only test this many candidates per word
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+
+    /// Apply rules to a wordlist — dry-run rule engine
+    ///
+    /// Reads a wordlist and rule file, applies the rules, and
+    /// writes the resulting candidates. Useful for testing rules.
+    ///
+    /// Example: pwdcrack rules rockyou.txt rules.rule -o output.txt
+    Rules {
+        /// Input wordlist
+        wordlist: String,
+        /// Rules file (John/Hashcat syntax)
+        rules_file: String,
+        /// Output file for generated candidates
+        #[arg(short = 'o', long)]
+        output: Option<String>,
+        /// Only generate this many candidates
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+
+    /// Show potfile statistics — breakdown, charts, trends
+    ///
+    /// Analyzes the potfile and shows cracking statistics:
+    /// cracked vs remaining, hash type breakdown, timing info.
+    ///
+    /// Example: pwdcrack stats, pwdcrack stats -v
+    Stats {
+        #[arg(default_value = "pwdcrack.pot", help = "Potfile path to analyze")]
+        potfile: String,
+        #[arg(short = 'v', long, help = "Show detailed statistics")]
+        verbose: bool,
+        #[arg(long, help = "Show breakdown by hash length/complexity")]
+        by_complexity: bool,
+    },
+
+    /// Expand a mask pattern — show all matching candidates
+    ///
+    /// Fully expands a mask pattern to show all possible passwords.
+    /// WARNING: large keyspaces may produce massive output.
+    ///
+    /// Example: pwdcrack expand ?d?d?d -l 10
+    Expand {
+        /// Mask pattern to expand (max 4 chars for safety)
+        mask: String,
+        #[arg(short = '1', long, help = "Custom charset for ?1")]
+        charset1: Option<String>,
+        #[arg(short = '2', long, help = "Custom charset for ?2")]
+        charset2: Option<String>,
+        #[arg(short = '3', long, help = "Custom charset for ?3")]
+        charset3: Option<String>,
+        #[arg(short = '4', long, help = "Custom charset for ?4")]
+        charset4: Option<String>,
+        /// Maximum candidates to show
+        #[arg(long, default_value_t = 10000)]
+        limit: u64,
+    },
+
+    /// Check/validate a hash file — syntax, format, uniqueness
+    ///
+    /// Validates all hashes in a file for correct format and length.
+    /// Reports invalid entries and duplicate detection.
+    ///
+    /// Example: pwdcrack check hashes.txt
+    Check {
+        /// Hash file to validate
+        hash_file: String,
+        #[arg(short = 'v', long, help = "Show details for each hash")]
+        verbose: bool,
+        #[arg(long, help = "Remove invalid hashes and write cleaned file")]
+        clean: bool,
     },
 }

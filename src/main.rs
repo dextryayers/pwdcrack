@@ -151,6 +151,27 @@ fn main() {
         Commands::List { verbose, filter } => cmd_list(*verbose, filter.as_deref()),
         Commands::Mask { mask, charset1, charset2, charset3, charset4, count, offset } => cmd_mask(mask, &[charset1.clone(), charset2.clone(), charset3.clone(), charset4.clone()], *count, *offset),
         Commands::Suggest { hash } => cmd_suggest(&detector, hash),
+        Commands::Prince { hash_file, wordlist, min_length, max_length, limit, session } => {
+            cmd_prince(&detector, hash_file, wordlist, threads, &args, *min_length, *max_length, *limit, session.as_deref())
+        }
+        Commands::ToggleCase { hash_file, wordlist, max_toggle, limit } => {
+            cmd_toggle_case(&detector, hash_file, wordlist, threads, &args, *max_toggle, *limit)
+        }
+        Commands::Substitute { hash_file, wordlist, level, limit } => {
+            cmd_substitute(&detector, hash_file, wordlist, threads, &args, *level, *limit)
+        }
+        Commands::Rules { wordlist, rules_file, output, limit } => {
+            cmd_rules(wordlist, rules_file, output.as_deref(), *limit)
+        }
+        Commands::Stats { potfile, verbose, by_complexity } => {
+            cmd_stats(potfile, *verbose, *by_complexity)
+        }
+        Commands::Expand { mask, charset1, charset2, charset3, charset4, limit } => {
+            cmd_expand(mask, &[charset1.clone(), charset2.clone(), charset3.clone(), charset4.clone()], *limit)
+        }
+        Commands::Check { hash_file, verbose, clean } => {
+            cmd_check(&detector, hash_file, *verbose, *clean)
+        }
     };
 
     #[cfg(feature = "engine-android")]
@@ -818,6 +839,199 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         ("HMAC-SHA1 (username)", HashType::HMACSHA1USER, "<hash>:<user>:<salt>", 160, "HMAC"),
         ("SKIP32", HashType::SKIP32, "<8 hex chars>", 32, "Checksum"),
         ("xxHash32", HashType::XXHASH32, "<8 hex chars>", 32, "Checksum"),
+        ("SM3", HashType::SM3, "<64 hex chars>", 256, "Raw hex"),
+        ("HAS-160", HashType::HAS160, "<40 hex chars>", 160, "Raw hex"),
+        ("Groestl-224", HashType::Groestl224, "<56 hex chars>", 224, "Raw hex"),
+        ("Groestl-256", HashType::Groestl256, "<64 hex chars>", 256, "Raw hex"),
+        ("Groestl-384", HashType::Groestl384, "<96 hex chars>", 384, "Raw hex"),
+        ("Groestl-512", HashType::Groestl512, "<128 hex chars>", 512, "Raw hex"),
+        ("BMW-224", HashType::BMW224, "<56 hex chars>", 224, "Raw hex"),
+        ("BMW-256", HashType::BMW256, "<64 hex chars>", 256, "Raw hex"),
+        ("BMW-384", HashType::BMW384, "<96 hex chars>", 384, "Raw hex"),
+        ("BMW-512", HashType::BMW512, "<128 hex chars>", 512, "Raw hex"),
+        ("Echo-224", HashType::Echo224, "<56 hex chars>", 224, "Raw hex"),
+        ("Echo-256", HashType::Echo256, "<64 hex chars>", 256, "Raw hex"),
+        ("Echo-384", HashType::Echo384, "<96 hex chars>", 384, "Raw hex"),
+        ("Echo-512", HashType::Echo512, "<128 hex chars>", 512, "Raw hex"),
+        ("SHAvite-3-224", HashType::Shavite2224, "<56 hex chars>", 224, "Raw hex"),
+        ("SHAvite-3-256", HashType::Shavite2256, "<64 hex chars>", 256, "Raw hex"),
+        ("SHAvite-3-384", HashType::Shavite2384, "<96 hex chars>", 384, "Raw hex"),
+        ("SHAvite-3-512", HashType::Shavite2512, "<128 hex chars>", 512, "Raw hex"),
+        ("SIMD-224", HashType::SIMD224, "<56 hex chars>", 224, "Raw hex"),
+        ("SIMD-256", HashType::SIMD256, "<64 hex chars>", 256, "Raw hex"),
+        ("SIMD-384", HashType::SIMD384, "<96 hex chars>", 384, "Raw hex"),
+        ("SIMD-512", HashType::SIMD512, "<128 hex chars>", 512, "Raw hex"),
+        ("Luffa-224", HashType::Luffa224, "<56 hex chars>", 224, "Raw hex"),
+        ("Luffa-256", HashType::Luffa256, "<64 hex chars>", 256, "Raw hex"),
+        ("Luffa-384", HashType::Luffa384, "<96 hex chars>", 384, "Raw hex"),
+        ("Luffa-512", HashType::Luffa512, "<128 hex chars>", 512, "Raw hex"),
+        ("CubeHash-224", HashType::CubeHash224, "<56 hex chars>", 224, "Raw hex"),
+        ("CubeHash-256", HashType::CubeHash256, "<64 hex chars>", 256, "Raw hex"),
+        ("CubeHash-384", HashType::CubeHash384, "<96 hex chars>", 384, "Raw hex"),
+        ("CubeHash-512", HashType::CubeHash512, "<128 hex chars>", 512, "Raw hex"),
+        ("Fugue-224", HashType::Fugue224, "<56 hex chars>", 224, "Raw hex"),
+        ("Fugue-256", HashType::Fugue256, "<64 hex chars>", 256, "Raw hex"),
+        ("Fugue-384", HashType::Fugue384, "<96 hex chars>", 384, "Raw hex"),
+        ("Fugue-512", HashType::Fugue512, "<128 hex chars>", 512, "Raw hex"),
+        ("Hamsi-224", HashType::Hamsi224, "<56 hex chars>", 224, "Raw hex"),
+        ("Hamsi-256", HashType::Hamsi256, "<64 hex chars>", 256, "Raw hex"),
+        ("Hamsi-384", HashType::Hamsi384, "<96 hex chars>", 384, "Raw hex"),
+        ("Hamsi-512", HashType::Hamsi512, "<128 hex chars>", 512, "Raw hex"),
+        ("Panama-128", HashType::Panama128, "<32 hex chars>", 128, "Raw hex"),
+        ("RadioGatún-32", HashType::RadioGatun32, "<8 hex chars>", 32, "Raw hex"),
+        ("RadioGatún-64", HashType::RadioGatun64, "<16 hex chars>", 64, "Raw hex"),
+        ("Haval-128", HashType::Haval128, "<32 hex chars>", 128, "Raw hex"),
+        ("Haval-160", HashType::Haval160, "<40 hex chars>", 160, "Raw hex"),
+        ("Haval-192", HashType::Haval192, "<48 hex chars>", 192, "Raw hex"),
+        ("Haval-224", HashType::Haval224, "<56 hex chars>", 224, "Raw hex"),
+        ("Haval-256", HashType::Haval256, "<64 hex chars>", 256, "Raw hex"),
+        ("FSB-160", HashType::FSB160, "<40 hex chars>", 160, "Raw hex"),
+        ("FSB-224", HashType::FSB224, "<56 hex chars>", 224, "Raw hex"),
+        ("FSB-256", HashType::FSB256, "<64 hex chars>", 256, "Raw hex"),
+        ("FSB-384", HashType::FSB384, "<96 hex chars>", 384, "Raw hex"),
+        ("FSB-512", HashType::FSB512, "<128 hex chars>", 512, "Raw hex"),
+        ("ECOH-128", HashType::ECOH128, "<32 hex chars>", 128, "Raw hex"),
+        ("ECOH-192", HashType::ECOH192, "<48 hex chars>", 192, "Raw hex"),
+        ("ECOH-256", HashType::ECOH256, "<64 hex chars>", 256, "Raw hex"),
+        ("CRC-10", HashType::CRC10, "<3 hex chars>", 10, "Checksum"),
+        ("CRC-11", HashType::CRC11, "<3 hex chars>", 11, "Checksum"),
+        ("CRC-12", HashType::CRC12, "<3 hex chars>", 12, "Checksum"),
+        ("CRC-13", HashType::CRC13, "<4 hex chars>", 13, "Checksum"),
+        ("CRC-14", HashType::CRC14, "<4 hex chars>", 14, "Checksum"),
+        ("CRC-15", HashType::CRC15, "<4 hex chars>", 15, "Checksum"),
+        ("CRC-17", HashType::CRC17, "<5 hex chars>", 17, "Checksum"),
+        ("CRC-21", HashType::CRC21, "<6 hex chars>", 21, "Checksum"),
+        ("CRC-24C", HashType::CRC24C, "<6 hex chars>", 24, "Checksum"),
+        ("CRC-30", HashType::CRC30, "<8 hex chars>", 30, "Checksum"),
+        ("CRC-31", HashType::CRC31, "<8 hex chars>", 31, "Checksum"),
+        ("CRC-40", HashType::CRC40, "<10 hex chars>", 40, "Checksum"),
+        ("CRC-82", HashType::CRC82, "<21 hex chars>", 82, "Checksum"),
+        ("CRC-DNP", HashType::CRCDNP, "<6 hex chars>", 24, "Checksum"),
+        ("CRC-JAM", HashType::CRCJAM, "<8 hex chars>", 32, "Checksum"),
+        ("Fletcher-4", HashType::Fletcher4, "<1 hex chars>", 4, "Checksum"),
+        ("Fletcher-8", HashType::Fletcher8, "<2 hex chars>", 8, "Checksum"),
+        ("Fletcher-16", HashType::Fletcher16, "<4 hex chars>", 16, "Checksum"),
+        ("Fletcher-32", HashType::Fletcher32, "<8 hex chars>", 32, "Checksum"),
+        ("XOR-8", HashType::XOR8, "<2 hex chars>", 8, "Checksum"),
+        ("Sum-8", HashType::Sum8, "<2 hex chars>", 8, "Checksum"),
+        ("Sum-16", HashType::Sum16, "<4 hex chars>", 16, "Checksum"),
+        ("Sum-24", HashType::Sum24, "<6 hex chars>", 24, "Checksum"),
+        ("Sum-32", HashType::Sum32, "<8 hex chars>", 32, "Checksum"),
+        ("Sum-64", HashType::Sum64, "<16 hex chars>", 64, "Checksum"),
+        ("Django MD5", HashType::DjangoMD5, "<salt>$<32hex>", 128, "Application"),
+        ("Django SHA-256", HashType::DjangoSHA256, "$<iter>$<salt>$<64hex>", 256, "Application"),
+        ("Django PBKDF2", HashType::DjangoPBKDF2, "pbkdf2_sha256$<iter>$<salt>$<hash>", 0, "Application"),
+        ("Joomla MD5", HashType::JoomlaMD5, "<32hex>:<salt>", 128, "Application"),
+        ("Joomla SHA-256", HashType::JoomlaSHA256, "<64hex>:<salt>", 256, "Application"),
+        ("Drupal 8", HashType::Drupal8, "$S$...", 256, "Application"),
+        ("XenForo", HashType::XenForo, "<40hex>:<salt>", 160, "Application"),
+        ("Woltlab", HashType::Woltlab, "<40hex>:<salt>", 160, "Application"),
+        ("MyBB 1.x", HashType::MyBBHash, "<32hex>:<salt>", 128, "Application"),
+        ("Vanilla", HashType::Vanilla, "<32hex>:<salt>", 128, "Application"),
+        ("FluxBB", HashType::FluxBB, "<32hex>:<salt>", 128, "Application"),
+        ("CakePHP", HashType::CakePHP, "<32hex>:<salt>", 128, "Application"),
+        ("CodeIgniter", HashType::CodeIgniter, "<32hex>:<salt>", 128, "Application"),
+        ("Laravel bcrypt", HashType::LaravelBCrypt, "$2y$...", 0, "Application"),
+        ("Magento", HashType::Magento, "<32hex>:<salt>", 128, "Application"),
+        ("MODX", HashType::MODX, "<32hex>:<salt>", 128, "Application"),
+        ("Moodle", HashType::Moodle, "<32hex>:<salt>", 128, "Application"),
+        ("PrestaShop", HashType::PrestaShop, "<32hex>:<salt>", 128, "Application"),
+        ("TYPO3", HashType::TYPO3, "<32hex>:<salt>", 128, "Application"),
+        ("Umbraco", HashType::Umbraco, "<32hex>:<salt>", 128, "Application"),
+        ("WHMCS", HashType::WHMCS, "<32hex>:<salt>", 128, "Application"),
+        ("Zikula", HashType::Zikula, "<32hex>:<salt>", 128, "Application"),
+        ("Elgg", HashType::Elgg, "<32hex>:<salt>", 128, "Application"),
+        ("WordPress PHPass", HashType::WordPressPHPass, "$P$...", 128, "Application"),
+        ("PHP Hash", HashType::PHPHash, "<hash>:<salt>", 0, "Application"),
+        ("Oracle 8", HashType::Oracle8, "<16 hex chars>", 64, "Database"),
+        ("Oracle 9", HashType::Oracle9, "<16 hex chars>", 64, "Database"),
+        ("Oracle 12c", HashType::Oracle12c, "T_HASH<128hex>", 512, "Database"),
+        ("IBM DB2", HashType::IBMDB2, "<32 hex chars>", 128, "Database"),
+        ("Progress", HashType::Progress, "<16 hex chars>", 64, "Database"),
+        ("Sybase", HashType::Sybase, "<32 hex chars>", 128, "Database"),
+        ("Teradata", HashType::Teradata, "<16 hex chars>", 64, "Database"),
+        ("MSSQL 2000", HashType::MSSQL2000, "<44 hex chars>", 0, "Database"),
+        ("MSSQL 2008", HashType::MSSQL2008, "<32 hex chars>", 0, "Database"),
+        ("MSSQL 2017", HashType::MSSQL2017, "<64 hex chars>", 0, "Database"),
+        ("MySQL 5", HashType::MySQL5, "*<40hex>", 256, "Database"),
+        ("MySQL 8", HashType::MySQL8, "$A$...", 256, "Database"),
+        ("PostgreSQL SCRAM", HashType::PostgreSQLSCRAM, "SCRAM-SHA-256$...", 0, "Database"),
+        ("MongoDB", HashType::MongoDB, "<32 hex chars>", 128, "Database"),
+        ("Redis", HashType::Redis, "<32 hex chars>", 128, "Database"),
+        ("RavenDB", HashType::RavenDB, "<64 hex chars>", 0, "Database"),
+        ("CouchDB", HashType::CouchDB, "<16 hex chars>", 0, "Database"),
+        ("Cisco Type 7", HashType::CiscoType7, "<encrypted>", 0, "Enterprise"),
+        ("Juniper", HashType::Juniper, "$9$...", 0, "Enterprise"),
+        ("Huawei", HashType::Huawei, "<32 hex chars>", 0, "Enterprise"),
+        ("Nokia", HashType::Nokia, "<16 hex chars>", 0, "Enterprise"),
+        ("Alcatel", HashType::Alcatel, "<32 hex chars>", 0, "Enterprise"),
+        ("ZTE", HashType::ZTE, "<32 hex chars>", 0, "Enterprise"),
+        ("Ericsson", HashType::Ericsson, "<32 hex chars>", 0, "Enterprise"),
+        ("SNMP", HashType::SNMP, "<community string>", 0, "Enterprise"),
+        ("RADIUS CHAP", HashType::RADIUSCHAP, "<user>:<challenge>:<32hex>", 128, "Enterprise"),
+        ("Kerberos 5", HashType::Kerberos5, "$krb5$...", 0, "Enterprise"),
+        ("AFS", HashType::AFS, "<16 hex chars>", 0, "Enterprise"),
+        ("DPAPI", HashType::DPAPI, "<encoded>", 0, "Enterprise"),
+        ("BitLocker", HashType::BitLocker, "<recovery>", 0, "Enterprise"),
+        ("TrueCrypt", HashType::TrueCrypt, "<volume>", 0, "Enterprise"),
+        ("FileVault", HashType::FileVault, "<recovery>", 0, "Enterprise"),
+        ("LUKS", HashType::LUKS, "<header>", 0, "Enterprise"),
+        ("VeraCrypt", HashType::VeraCrypt, "<volume>", 0, "Enterprise"),
+        ("Windows Hello", HashType::WindowsHello, "<PIN hash>", 0, "Enterprise"),
+        ("X11", HashType::X11, "<64 hex chars>", 256, "Blockchain"),
+        ("X13", HashType::X13, "<64 hex chars>", 256, "Blockchain"),
+        ("X15", HashType::X15, "<64 hex chars>", 256, "Blockchain"),
+        ("X17", HashType::X17, "<64 hex chars>", 256, "Blockchain"),
+        ("Quark", HashType::Quark, "<64 hex chars>", 256, "Blockchain"),
+        ("NeoScrypt", HashType::Neoscrypt, "<64 hex chars>", 256, "Blockchain"),
+        ("Lyra2RE", HashType::Lyra2RE, "<64 hex chars>", 256, "Blockchain"),
+        ("yescrypt", HashType::Yescrypt, "<64 hex chars>", 256, "Blockchain"),
+        ("scrypt-N", HashType::ScryptN, "<64 hex chars>", 256, "Blockchain"),
+        ("scrypt-J", HashType::ScryptJ, "<64 hex chars>", 256, "Blockchain"),
+        ("Bitcoin", HashType::Bitcoin, "<64 hex chars>", 256, "Blockchain"),
+        ("Ethereum", HashType::Ethereum, "<40 hex chars>", 160, "Blockchain"),
+        ("Litecoin", HashType::Litecoin, "<64 hex chars>", 256, "Blockchain"),
+        ("Dogecoin", HashType::Dogecoin, "<64 hex chars>", 256, "Blockchain"),
+        ("Ripple", HashType::Ripple, "<64 hex chars>", 256, "Blockchain"),
+        ("Monero", HashType::Monero, "<64 hex chars>", 256, "Blockchain"),
+        ("Dash", HashType::Dash, "<64 hex chars>", 256, "Blockchain"),
+        ("Zcash", HashType::Zcash, "<64 hex chars>", 256, "Blockchain"),
+        ("Namecoin", HashType::Namecoin, "<64 hex chars>", 256, "Blockchain"),
+        ("Peercoin", HashType::Peercoin, "<64 hex chars>", 256, "Blockchain"),
+        ("DES Crypt", HashType::DESCrypt, "<13 chars>", 64, "Legacy"),
+        ("BSD Auth", HashType::BSDAuth, "_<20+ chars>", 0, "Legacy"),
+        ("MD5 Crypt APR", HashType::MD5CryptAPR, "$apr1$...", 0, "Legacy"),
+        ("Blowfish OpenBSD", HashType::BlowfishOpenBSD, "$2a$...", 0, "Legacy"),
+        ("Linux Overflow", HashType::LinuxOverflow, "<overflow hash>", 0, "Legacy"),
+        ("Unix Old", HashType::UnixOld, "<13 DES chars>", 64, "Legacy"),
+        ("DES BSDi", HashType::DESBSDi, "_<20+ chars>", 64, "Legacy"),
+        ("HP Managed", HashType::HPManaged, "<32 hex chars>", 128, "Legacy"),
+        ("SNEFRU-128 Legacy", HashType::SNEFRU128Legacy, "<32 hex chars>", 128, "Legacy"),
+        ("HMAC-SHA256-128", HashType::HMACSHA256_128, "<32 hex chars>", 128, "HMAC"),
+        ("HMAC-SHA1-96", HashType::HMACSHA1_96, "<24 hex chars>", 96, "HMAC"),
+        ("GPG", HashType::GPG, "-----BEGIN PGP...", 0, "Encryption"),
+        ("PGP S2K", HashType::PGPS2K, "<salt>:<hash>", 0, "Encryption"),
+        ("Lotus Notes 5", HashType::LotusNotes5, "<hex>:<salt>", 0, "Application"),
+        ("MSSQL Old", HashType::MSSQLOld, "<hex>:<salt>", 0, "Database"),
+        ("MySQL Old", HashType::MySQLOld1, "<16 hex chars>", 64, "Database"),
+        ("PostgreSQL SCRAM-SHA-256", HashType::PostgreSQLSCRAMSHA256, "SCRAM-SHA-256$...", 256, "Database"),
+        ("FreeRADIUS MD5", HashType::FreeRADIUSMD5, "<32 hex chars>", 128, "Application"),
+        ("OpenVPN MD5", HashType::OpenVPNMD5, "<32 hex chars>", 128, "Application"),
+        ("Digest-MD5", HashType::DigestMD5, "<32 hex chars>", 128, "Application"),
+        ("AWS4-HMAC-SHA256", HashType::AWS4HMACSHA256, "<64 hex chars>", 256, "HMAC"),
+        ("Ethereum Wallet", HashType::EthereumWallet, "0x...", 0, "Blockchain"),
+        ("Ripple Wallet", HashType::RippleWallet, "r...", 0, "Blockchain"),
+        ("Stellar", HashType::Stellar, "G...", 0, "Blockchain"),
+        ("Cardano", HashType::Cardano, "addr...", 0, "Blockchain"),
+        ("Polkadot", HashType::Polkadot, "1...", 0, "Blockchain"),
+        ("Solana", HashType::Solana, "sol...", 0, "Blockchain"),
+        ("WPA PBKDF2", HashType::WPAPBKDF2, "<64 hex chars>", 256, "WiFi"),
+        ("WPA2 PMKID", HashType::WPA2PMKID, "<prefix>:<64 hex>", 256, "WiFi"),
+        ("WPA3 SAE", HashType::WPA3SAE, "<64 hex chars>", 256, "WiFi"),
+        ("iSCSI CHAP", HashType::iSCSI_CHAP, "<32 hex chars>", 128, "Application"),
+        ("Python MD5", HashType::PythonMD5, "<32 hex chars>", 128, "Application"),
+        ("RabbitMQ MD5", HashType::RabbitMQMD5, "<32 hex chars>", 128, "Application"),
+        ("Redis MD5", HashType::RedisMD5, "<32 hex chars>", 128, "Application"),
         ("Unknown", HashType::Unknown, "—", 0, "Fallback"),
     ];
 
@@ -879,6 +1093,139 @@ fn cmd_mask(mask: &str, charsets: &[Option<String>], count: usize, offset: u64) 
         println!("  {:<8} {}", idx, pw);
     }
     println!("{:=<40}", "");
+}
+
+// ── New Attack Commands ──────────────────────────────────────────────────
+
+fn cmd_prince(detector: &Detector, hash_file: &str, wordlist: &str, _threads: usize, args: &Cli, _min_length: usize, _max_length: usize, _limit: Option<u64>, _session: Option<&str>) {
+    let potfile = Potfile::new(&args.potfile);
+    let loaded = load_hashes(detector, hash_file);
+    let mut hashes: Vec<HashEntry> = loaded.iter().map(|(_, e)| e.clone()).collect();
+    filter_uncracked(args, &mut hashes);
+    if hashes.is_empty() {
+        eprintln!("[!] All hashes already cracked"); return;
+    }
+    let cracker = &loaded[0].0;
+    eprintln!("[*] PRINCE attack");
+    eprintln!("[*] Hash type : {}", cracker.name());
+    eprintln!("[*] Target    : {} hashes", hashes.len());
+    eprintln!("[*] Wordlist  : {}", wordlist);
+    let results = pwdcrack::attack::prince::run_prince(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    emit_results(&results, args, &potfile);
+}
+
+fn cmd_toggle_case(detector: &Detector, hash_file: &str, wordlist: &str, _threads: usize, args: &Cli, _max_toggle: usize, _limit: Option<u64>) {
+    let potfile = Potfile::new(&args.potfile);
+    let loaded = load_hashes(detector, hash_file);
+    let mut hashes: Vec<HashEntry> = loaded.iter().map(|(_, e)| e.clone()).collect();
+    filter_uncracked(args, &mut hashes);
+    if hashes.is_empty() {
+        eprintln!("[!] All hashes already cracked"); return;
+    }
+    let cracker = &loaded[0].0;
+    eprintln!("[*] Toggle-case attack");
+    eprintln!("[*] Hash type : {}", cracker.name());
+    eprintln!("[*] Target    : {} hashes", hashes.len());
+    eprintln!("[*] Wordlist  : {}", wordlist);
+    let results = pwdcrack::attack::toggle::run_toggle(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    emit_results(&results, args, &potfile);
+}
+
+fn cmd_substitute(detector: &Detector, hash_file: &str, wordlist: &str, _threads: usize, args: &Cli, _level: u8, _limit: Option<u64>) {
+    let potfile = Potfile::new(&args.potfile);
+    let loaded = load_hashes(detector, hash_file);
+    let mut hashes: Vec<HashEntry> = loaded.iter().map(|(_, e)| e.clone()).collect();
+    filter_uncracked(args, &mut hashes);
+    if hashes.is_empty() {
+        eprintln!("[!] All hashes already cracked"); return;
+    }
+    let cracker = &loaded[0].0;
+    eprintln!("[*] Substitution attack");
+    eprintln!("[*] Hash type : {}", cracker.name());
+    eprintln!("[*] Target    : {} hashes", hashes.len());
+    eprintln!("[*] Wordlist  : {}", wordlist);
+    let results = pwdcrack::attack::substitute::run_substitute(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    emit_results(&results, args, &potfile);
+}
+
+fn cmd_rules(wordlist: &str, rules_file: &str, output: Option<&str>, _limit: Option<u64>) {
+    use std::io::{BufRead, Write};
+    let rules_content = std::fs::read_to_string(rules_file).unwrap_or_else(|e| {
+        eprintln!("[!] Failed to read rules file: {}", e); std::process::exit(1);
+    });
+    let rules: Vec<&str> = rules_content.lines().collect();
+    let file = std::fs::File::open(wordlist).unwrap_or_else(|e| {
+        eprintln!("[!] Failed to open wordlist: {}", e); std::process::exit(1);
+    });
+    let reader = std::io::BufReader::new(file);
+    let mut out: Box<dyn Write> = match output {
+        Some(path) => Box::new(std::fs::File::create(path).unwrap()),
+        None => Box::new(std::io::stdout()),
+    };
+    for line in reader.lines() {
+        let word = line.unwrap_or_default();
+        for rule in &rules {
+            let _ = writeln!(out, "{}:{}", rule, word);
+        }
+    }
+    eprintln!("[*] Rules applied: {} rules × wordlist", rules.len());
+}
+
+fn cmd_stats(potfile_path: &str, _verbose: bool, _by_complexity: bool) {
+    let potfile = Potfile::new(potfile_path);
+    let entries = potfile.entries();
+    println!("Potfile statistics: {}", potfile_path);
+    println!("{:=<50}", "");
+    println!("  Total entries  : {}", entries.len());
+    if entries.is_empty() { return; }
+    let _: Vec<_> = entries.iter().map(|(h, p)| {
+        println!("  {}  →  {}", h, p);
+    }).collect();
+    println!("{:=<50}", "");
+}
+
+fn cmd_expand(mask: &str, charsets: &[Option<String>], limit: u64) {
+    use pwdcrack::attack::brute::{parse_mask, index_to_password, total_combinations};
+    let custom_slices: Vec<&[u8]> = charsets.iter()
+        .filter_map(|c| c.as_ref().map(|s| s.as_bytes()))
+        .collect();
+    let parsed = parse_mask(mask);
+    let total = total_combinations(&parsed, &custom_slices);
+    let show = limit.min(total).min(1_000_000);
+    eprintln!("Mask: {}  (keyspace: {}, showing {})", mask, total, show);
+    for i in 0..show {
+        println!("{}", index_to_password(i, &parsed, &custom_slices));
+    }
+}
+
+fn cmd_check(detector: &Detector, hash_file: &str, _verbose: bool, clean: bool) {
+    let content = match std::fs::read_to_string(hash_file) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("[!] Failed to read: {}", e); return; }
+    };
+    let mut valid = 0u32;
+    let mut invalid = 0u32;
+    let mut cleaned = String::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        if let Some((_, _)) = detector.detect(trimmed) {
+            valid += 1;
+            cleaned.push_str(line);
+            cleaned.push('\n');
+        } else {
+            invalid += 1;
+            eprintln!("[!] Invalid: {}", trimmed);
+        }
+    }
+    println!("  Valid: {}  Invalid: {}", valid, invalid);
+    if clean && invalid > 0 {
+        let cleaned_path = format!("{}.clean", hash_file);
+        std::fs::write(&cleaned_path, &cleaned).unwrap_or_else(|e| {
+            eprintln!("[!] Failed to write cleaned file: {}", e);
+        });
+        println!("  Cleaned file written: {}", cleaned_path);
+    }
 }
 
 fn cmd_suggest(detector: &Detector, hash: &str) {

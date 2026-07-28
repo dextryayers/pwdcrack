@@ -2,6 +2,9 @@ pub mod dictionary;
 pub mod brute;
 pub mod combinator;
 pub mod rules;
+pub mod prince;
+pub mod toggle;
+pub mod substitute;
 
 use std::time::Instant;
 use std::sync::atomic::{AtomicU64, Ordering};
