@@ -9,11 +9,7 @@ log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-metal = { version = "0.29", optional = true }
-objc = { version = "0.2", optional = true }
 
 [features]
 default = []
-metal = ["dep:metal"]
-objc = ["dep:objc"]
+metal = []

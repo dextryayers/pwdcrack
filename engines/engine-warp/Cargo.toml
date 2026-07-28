@@ -9,11 +9,7 @@ log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-warp-core = { version = "0.1", optional = true }
-cuda = { version = "0.1", optional = true }
 
 [features]
 default = []
-warp = ["dep:warp-core"]
-cuda = ["dep:cuda"]
+warp = []

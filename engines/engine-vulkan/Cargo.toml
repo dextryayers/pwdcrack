@@ -10,7 +10,6 @@ hex = "0.4"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 ash = { version = "0.38", optional = true }
-pwdcrack = { path = "../../" }
 
 [features]
 default = []

@@ -9,4 +9,3 @@ log = "0.4"
 hex = "0.4"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
-pwdcrack = { path = "../../" }

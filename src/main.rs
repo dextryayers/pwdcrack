@@ -74,6 +74,42 @@ fn main() {
         Some(engine_distributed::DistributedNode::new("0.0.0.0:0"))
     } else { None };
 
+    #[cfg(feature = "engine-tpu")]
+    let _tpu_engine = {
+        log::info!("TPU: engine available");
+        engine_tpu::device::probe();
+        Some(())
+    };
+    #[cfg(not(feature = "engine-tpu"))]
+    let _tpu_engine = None::<()>;
+
+    #[cfg(feature = "engine-riscv")]
+    let _riscv_engine = {
+        log::info!("RISC-V: vector extension detected");
+        engine_riscv::vector::probe();
+        Some(())
+    };
+    #[cfg(not(feature = "engine-riscv"))]
+    let _riscv_engine = None::<()>;
+
+    #[cfg(feature = "engine-metal")]
+    let _metal_engine = {
+        log::info!("Metal: GPU acceleration available");
+        engine_metal::device::probe();
+        Some(())
+    };
+    #[cfg(not(feature = "engine-metal"))]
+    let _metal_engine = None::<()>;
+
+    #[cfg(feature = "engine-hybrid")]
+    let _hybrid_scheduler = {
+        let hs = engine_hybrid::scheduler::HybridScheduler::new();
+        log::info!("Hybrid: scheduler initialized");
+        Some(hs)
+    };
+    #[cfg(not(feature = "engine-hybrid"))]
+    let _hybrid_scheduler = None::<()>;
+
     #[cfg(feature = "engine-android")]
     let mut _android_engine = {
         let mut ae = engine_android::AndroidEngine::new();

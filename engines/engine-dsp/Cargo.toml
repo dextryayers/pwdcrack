@@ -2,16 +2,14 @@
 name = "engine-dsp"
 version = "0.1.0"
 edition = "2024"
-description = "Digital Signal Processor acceleration for hash cracking (Hexagon, CEVA)"
+description = "Digital Signal Processor acceleration for hash cracking"
 
 [dependencies]
 log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-hexagon = { version = "0.1", optional = true }
 
 [features]
 default = []
-dsp = ["dep:hexagon"]
+dsp = []

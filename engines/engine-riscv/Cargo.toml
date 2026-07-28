@@ -9,9 +9,8 @@ log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-riscv-vec = { version = "0.1", optional = true }
+raw-cpuid = "11"
 
 [features]
 default = []
-riscv = ["dep:riscv-vec"]
+riscv = []

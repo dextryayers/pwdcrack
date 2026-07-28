@@ -9,10 +9,8 @@ log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-amd-zen = { version = "0.1", optional = true }
 raw-cpuid = "11"
 
 [features]
 default = []
-zen = ["dep:amd-zen"]
+zen = []

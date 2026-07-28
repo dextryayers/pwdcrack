@@ -11,6 +11,23 @@ members = [
     "engines/engine-web",
     "engines/engine-android",
     "engines/engine-bridge",
+    "engines/engine-cuda",
+    "engines/engine-opencl",
+    "engines/engine-sycl",
+    "engines/engine-vulkan",
+    "engines/engine-julia",
+    "engines/engine-go",
+    "engines/engine-wasm",
+    "engines/engine-tpu",
+    "engines/engine-riscv",
+    "engines/engine-zen",
+    "engines/engine-xpu",
+    "engines/engine-warp",
+    "engines/engine-metal",
+    "engines/engine-dsp",
+    "engines/engine-tensor",
+    "engines/engine-embedded",
+    "engines/engine-hybrid",
 ]
 
 [package]
@@ -68,6 +85,23 @@ engine-power = ["dep:engine-power"]
 engine-distributed = ["dep:engine-distributed"]
 engine-web  = ["dep:engine-web"]
 engine-android = ["dep:engine-android"]
+engine-cuda = ["dep:engine-cuda"]
+engine-opencl = ["dep:engine-opencl"]
+engine-sycl = ["dep:engine-sycl"]
+engine-vulkan = ["dep:engine-vulkan"]
+engine-julia = ["dep:engine-julia"]
+engine-go = ["dep:engine-go"]
+engine-wasm = ["dep:engine-wasm"]
+engine-tpu = ["dep:engine-tpu"]
+engine-riscv = ["dep:engine-riscv"]
+engine-zen = ["dep:engine-zen"]
+engine-xpu = ["dep:engine-xpu"]
+engine-warp = ["dep:engine-warp"]
+engine-metal = ["dep:engine-metal"]
+engine-dsp = ["dep:engine-dsp"]
+engine-tensor = ["dep:engine-tensor"]
+engine-embedded = ["dep:engine-embedded"]
+engine-hybrid = ["dep:engine-hybrid"]
 
 # === Platform-specific ===
 android = ["engine-android"]
@@ -143,6 +177,23 @@ engine-power = { path = "engines/engine-power", optional = true }
 engine-distributed = { path = "engines/engine-distributed", optional = true }
 engine-web  = { path = "engines/engine-web", optional = true }
 engine-android = { path = "engines/engine-android", optional = true }
+engine-cuda = { path = "engines/engine-cuda", optional = true }
+engine-opencl = { path = "engines/engine-opencl", optional = true }
+engine-sycl = { path = "engines/engine-sycl", optional = true }
+engine-vulkan = { path = "engines/engine-vulkan", optional = true }
+engine-julia = { path = "engines/engine-julia", optional = true }
+engine-go = { path = "engines/engine-go", optional = true }
+engine-wasm = { path = "engines/engine-wasm", optional = true }
+engine-tpu = { path = "engines/engine-tpu", optional = true }
+engine-riscv = { path = "engines/engine-riscv", optional = true }
+engine-zen = { path = "engines/engine-zen", optional = true }
+engine-xpu = { path = "engines/engine-xpu", optional = true }
+engine-warp = { path = "engines/engine-warp", optional = true }
+engine-metal = { path = "engines/engine-metal", optional = true }
+engine-dsp = { path = "engines/engine-dsp", optional = true }
+engine-tensor = { path = "engines/engine-tensor", optional = true }
+engine-embedded = { path = "engines/engine-embedded", optional = true }
+engine-hybrid = { path = "engines/engine-hybrid", optional = true }
 
 [lib]
 crate-type = ["lib", "cdylib"]

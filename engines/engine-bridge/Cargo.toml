@@ -8,7 +8,7 @@ description = "FFI bridges: C, Python (PyO3), Perl (XS), Node.js (N-API), Ruby"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-pwdcrack = { path = "../../" }
+
 log = "0.4"
 hex = "0.4"
 md-5 = "0.10"

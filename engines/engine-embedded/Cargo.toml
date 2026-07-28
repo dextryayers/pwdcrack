@@ -9,11 +9,7 @@ log = "0.4"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-pwdcrack = { path = "../../" }
-cortex-a = { version = "0.1", optional = true }
-neon-sys = { version = "0.1", optional = true }
 
 [features]
 default = []
-embedded = ["dep:cortex-a"]
-neon = ["dep:neon-sys"]
+embedded = []
