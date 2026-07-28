@@ -4,41 +4,71 @@ use std::fs;
 use std::path::Path;
 use crate::WorkloadType;
 
-/// Set CPU frequency scaling governor
+/// Returns CPU numbers that have a cpufreq interface (online CPUs with cpufreq driver).
+fn online_cpus() -> Vec<u32> {
+    let mut cpus = Vec::new();
+    if let Ok(entries) = fs::read_dir("/sys/devices/system/cpu") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(n) = name.strip_prefix("cpu") {
+                if let Ok(n) = n.parse::<u32>() {
+                    let cpufreq = format!("/sys/devices/system/cpu/cpu{n}/cpufreq");
+                    if Path::new(&cpufreq).exists() {
+                        cpus.push(n);
+                    }
+                }
+            }
+        }
+    }
+    cpus.sort();
+    cpus
+}
+
+/// Set CPU frequency scaling governor on all online CPUs
 pub fn set_governor(governor: &str) -> std::io::Result<()> {
-    let path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
-    if Path::new(path).exists() {
-        fs::write(path, governor)?;
+    for cpu in online_cpus() {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor");
+        if Path::new(&path).exists() {
+            fs::write(&path, governor)?;
+        }
     }
     Ok(())
 }
 
-/// Set CPU frequency (kHz)
+/// Set CPU frequency (kHz) on all online CPUs
 pub fn set_frequency(freq_khz: u64) -> std::io::Result<()> {
-    let path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed";
-    if Path::new(path).exists() {
-        fs::write(path, freq_khz.to_string())?;
+    for cpu in online_cpus() {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_setspeed");
+        if Path::new(&path).exists() {
+            fs::write(&path, freq_khz.to_string())?;
+        }
     }
     Ok(())
 }
 
-/// Get current frequency (kHz)
+/// Get current frequency (kHz) from the first online CPU
 pub fn current_frequency() -> Option<u64> {
-    let path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq";
+    let cpus = online_cpus();
+    let cpu = *cpus.first()?;
+    let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq");
     let s = fs::read_to_string(path).ok()?;
     s.trim().parse().ok()
 }
 
-/// Get min frequency (kHz)
+/// Get min frequency (kHz) from the first online CPU
 pub fn min_frequency() -> Option<u64> {
-    let path = "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq";
+    let cpus = online_cpus();
+    let cpu = *cpus.first()?;
+    let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/cpuinfo_min_freq");
     let s = fs::read_to_string(path).ok()?;
     s.trim().parse().ok()
 }
 
-/// Get max frequency (kHz)
+/// Get max frequency (kHz) from the first online CPU
 pub fn max_frequency() -> Option<u64> {
-    let path = "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq";
+    let cpus = online_cpus();
+    let cpu = *cpus.first()?;
+    let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/cpuinfo_max_freq");
     let s = fs::read_to_string(path).ok()?;
     s.trim().parse().ok()
 }

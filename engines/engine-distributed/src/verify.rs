@@ -22,7 +22,7 @@ pub fn verify(hash_type: &str, hash_str: &str, password: &str) -> bool {
 fn verify_raw<D: Digest>(hash_str: &str, password: &str) -> bool {
     let computed = hex::encode(D::digest(password.as_bytes()));
     let clean_hash = hash_str.trim().to_lowercase();
-    clean_hash.starts_with(&computed) || clean_hash.contains(&computed)
+    clean_hash == computed
 }
 
 fn verify_ntlm(hash_str: &str, password: &str) -> bool {
@@ -30,7 +30,7 @@ fn verify_ntlm(hash_str: &str, password: &str) -> bool {
     let bytes: Vec<u8> = encoded.iter().flat_map(|c| c.to_le_bytes()).collect();
     let digest = hex::encode(md4::Md4::digest(&bytes));
     let clean = hash_str.trim().to_lowercase();
-    clean.contains(&digest)
+    clean == digest
 }
 
 #[cfg(test)]

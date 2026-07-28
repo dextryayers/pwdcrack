@@ -24,6 +24,7 @@ pub fn sha1_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     passwords.iter().zip(targets).map(|(pw, t)| sha1_verify(pw, t)).collect()
 }
 
+// NOTE: Actual SHA-NI intrinsics not yet implemented; falls back to scalar.
 // `target_feature(enable = "sha")` tells the compiler to emit SHA-NI instructions
 // (_mm_sha256rnds2_epu32, _mm_sha1rnds4_epu32 etc) for the scalar hash body.
 // Combined with `is_x86_feature_detected!("sha")` runtime guard.

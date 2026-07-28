@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 use std::ffi::{CStr, CString};
 
-use pwdcrack::hash::{HashCracker, HashEntry, HashType};
+use pwdcrack::hash::{HashCracker, HashEntry};
 use pwdcrack::hash::detector::Detector;
 use pwdcrack::attack::CrackResult;
 
@@ -34,17 +34,22 @@ static ENGINE: LazyLock<Mutex<EngineState>> =
 
 // ── Helper: convert C string to Rust str ─────────────────────
 
+/// SAFETY: `ptr` must be valid for reads of `len` bytes, and `len` must
+/// reflect the exact number of valid bytes (not including any null terminator).
 unsafe fn cstr_to_str<'a>(ptr: *const u8, len: i32) -> Option<&'a str> {
     if ptr.is_null() || len <= 0 {
         return None;
     }
-    let slice = std::slice::from_raw_parts(ptr, len as usize);
+    // SAFETY: Caller guarantees ptr is valid for len bytes.
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
     std::str::from_utf8(slice).ok()
 }
 
 #[allow(dead_code)]
+/// SAFETY: Same as `cstr_to_str`.
 unsafe fn cstr_to_cstring(ptr: *const u8, len: i32) -> Option<CString> {
-    let s = cstr_to_str(ptr, len)?;
+    // SAFETY: Delegates to `cstr_to_str` which has the same safety contract.
+    let s = unsafe { cstr_to_str(ptr, len)? };
     CString::new(s).ok()
 }
 
@@ -76,6 +81,7 @@ pub extern "C" fn hash_load_file(path: *const std::os::raw::c_char) -> i32 {
     if path.is_null() {
         return -1;
     }
+    // SAFETY: `path` is a valid null-terminated C string (caller guarantees).
     let c_str = unsafe { CStr::from_ptr(path) };
     let path_str = match c_str.to_str() {
         Ok(s) => s,
@@ -110,6 +116,7 @@ pub extern "C" fn hash_load_buffer(
     hash_str: *const u8,
     hash_len: i32,
 ) -> i32 {
+    // SAFETY: `cstr_to_str` checks null/len and requires valid pointer.
     let s = unsafe {
         match cstr_to_str(hash_str, hash_len) {
             Some(s) => s,
@@ -137,6 +144,11 @@ pub extern "C" fn hash_count() -> i32 {
 // ── Attacks ──────────────────────────────────────────────────
 
 /// Run dictionary attack against loaded hashes.
+///
+/// **Note:** The internal `ENGINE` lock is held for the **entire duration** of this
+/// call, which may be hours long. No other FFI functions that lock `ENGINE` will
+/// be able to proceed concurrently.
+///
 /// wordlist: null-terminated file path.
 /// rules: null-terminated rules string (can be empty).
 /// Returns number of passwords cracked, or negative on error.
@@ -150,6 +162,7 @@ pub extern "C" fn attack_dictionary(
         return -1;
     }
 
+    // SAFETY: `wordlist` is a valid null-terminated C string (caller guarantees).
     let wl = unsafe { CStr::from_ptr(wordlist) };
     let wl_str = match wl.to_str() {
         Ok(s) => s,
@@ -157,6 +170,7 @@ pub extern "C" fn attack_dictionary(
     };
 
     let rules_str: Option<&str> = if !rules.is_null() {
+        // SAFETY: `rules` is a valid null-terminated C string (caller guarantees).
         unsafe { CStr::from_ptr(rules).to_str().ok() }
     } else {
         None
@@ -194,6 +208,11 @@ pub extern "C" fn attack_dictionary(
 }
 
 /// Run brute-force attack.
+///
+/// **Note:** The internal `ENGINE` lock is held for the **entire duration** of this
+/// call, which may be hours long. No other FFI functions that lock `ENGINE` will
+/// be able to proceed concurrently.
+///
 /// mask: pattern string (e.g., "?l?l?d?d").
 /// start_idx: starting keyspace index (0-based).
 /// end_idx: ending keyspace index (exclusive).
@@ -201,7 +220,7 @@ pub extern "C" fn attack_dictionary(
 #[unsafe(no_mangle)]
 pub extern "C" fn attack_bruteforce(
     mask: *const std::os::raw::c_char,
-    start_idx: u64,
+    _start_idx: u64,
     _end_idx: u64,
     threads: i32,
 ) -> i32 {
@@ -209,6 +228,7 @@ pub extern "C" fn attack_bruteforce(
         return -1;
     }
 
+    // SAFETY: `mask` is a valid null-terminated C string (caller guarantees).
     let m = unsafe { CStr::from_ptr(mask) };
     let mask_str = match m.to_str() {
         Ok(s) => s,
@@ -274,9 +294,13 @@ pub extern "C" fn crack_get_result(
     let r = &engine.results[idx];
     if let Some(ref pw) = r.password {
         if let Ok(h) = CString::new(r.original.as_bytes()) {
+            // SAFETY: `out_hash` is a valid, non-null pointer to `*mut c_char`
+            // (caller guarantees).
             unsafe { *out_hash = h.into_raw() };
         }
         if let Ok(p) = CString::new(pw.as_bytes()) {
+            // SAFETY: `out_password` is a valid, non-null pointer to `*mut c_char`
+            // (caller guarantees).
             unsafe { *out_password = p.into_raw() };
         }
         0
@@ -289,6 +313,8 @@ pub extern "C" fn crack_get_result(
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_free_string(s: *mut std::os::raw::c_char) {
     if !s.is_null() {
+        // SAFETY: `s` must be a pointer previously obtained from
+        // `CString::into_raw()`, which is safe to reconstruct and drop.
         unsafe { let _ = CString::from_raw(s); }
     }
 }
@@ -301,7 +327,8 @@ pub extern "C" fn crack_hashes_per_second() -> f64 {
     0.0 // Returned in real-time by the engine; static for now
 }
 
-/// Get version string.
+/// Returns a C string that MUST NOT be freed by the caller.
+/// The string lives for the program's lifetime.
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_version() -> *mut std::os::raw::c_char {
     let v = CString::new(env!("CARGO_PKG_VERSION")).unwrap();
@@ -311,6 +338,7 @@ pub extern "C" fn crack_version() -> *mut std::os::raw::c_char {
 // ── Information ──────────────────────────────────────────────
 
 /// Detect hardware tier. Returns string like "HighEnd", "MidRange", "LowEnd".
+/// The returned string MUST NOT be freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn crack_detect_tier() -> *mut std::os::raw::c_char {
     let tier = "Auto";
@@ -325,6 +353,7 @@ pub extern "C" fn crack_identify_hash(
     hash_str: *const u8,
     hash_len: i32,
 ) -> *mut std::os::raw::c_char {
+    // SAFETY: `cstr_to_str` checks null/len and requires valid pointer.
     let s = unsafe {
         match cstr_to_str(hash_str, hash_len) {
             Some(s) => s,

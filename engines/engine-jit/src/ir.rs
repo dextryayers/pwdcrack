@@ -107,10 +107,12 @@ impl IrProgram {
         self.instructions.push(inst);
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.instructions.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.instructions.is_empty()
     }

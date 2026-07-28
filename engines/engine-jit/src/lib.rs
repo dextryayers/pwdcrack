@@ -1,3 +1,15 @@
+//! engine-jit — JIT compilation for mask expansion and rule application.
+//!
+//! Uses Cranelift to compile mask patterns and mutation rules into native
+//! functions for fast password candidate generation.
+//!
+//! # Architecture
+//!
+//! - [`ir`] — Intermediate representation for masks and rules
+//! - [`mask_compiler`] — Parses mask patterns and JIT-compiles them
+//! - [`rule_compiler`] — Parses mutation rules and JIT-compiles them
+//! - [`JitEngine`] — Top-level facade
+
 pub mod mask_compiler;
 pub mod rule_compiler;
 pub mod ir;

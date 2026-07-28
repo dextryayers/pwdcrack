@@ -1,4 +1,4 @@
-use sha2::{Sha256, Sha384, Sha512, Digest as Sha2Digest};
+use sha2::{Sha224, Sha256, Sha384, Sha512, Digest as Sha2Digest};
 use sha1::Sha1;
 use md5::Md5;
 use sha3::Sha3_512;
@@ -11,6 +11,7 @@ use super::{HashCracker, HashEntry, HashType, HashParser};
 
 macro_rules! impl_raw_hash {
     ($name:ident, $hash_type:expr, $digest:ty, $bit_len:expr) => {
+        /// Hash cracker and parser for a raw hex-encoded hash type.
         pub struct $name;
 
         impl HashCracker for $name {
@@ -24,6 +25,8 @@ macro_rules! impl_raw_hash {
                 let computed = hex::encode(result);
                 computed.eq_ignore_ascii_case(&entry.raw)
             }
+
+            fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
         }
 
         impl HashParser for $name {
@@ -54,7 +57,7 @@ macro_rules! impl_raw_hash {
 
 impl_raw_hash!(Md5Hash, HashType::MD5, Md5, 128);
 impl_raw_hash!(Sha1Hash, HashType::SHA1, Sha1, 160);
-impl_raw_hash!(Sha224Hash, HashType::SHA224, Sha256, 224);
+impl_raw_hash!(Sha224Hash, HashType::SHA224, Sha224, 224);
 impl_raw_hash!(Sha256Hash, HashType::SHA256, Sha256, 256);
 impl_raw_hash!(Sha384Hash, HashType::SHA384, Sha384, 384);
 impl_raw_hash!(Sha512Hash, HashType::SHA512, Sha512, 512);
@@ -63,6 +66,7 @@ impl_raw_hash!(Blake2b512Hash, HashType::BLAKE2B512, Blake2b512, 512);
 impl_raw_hash!(Blake2s256Hash, HashType::BLAKE2B256, Blake2s256, 256);
 impl_raw_hash!(Ripemd160Hash, HashType::RIPEMD160, Ripemd160, 160);
 
+/// Cracker and parser for NTLM hashes (MD4, 32 hex chars).
 pub struct NtlmHash;
 
 impl HashCracker for NtlmHash {
@@ -80,6 +84,8 @@ impl HashCracker for NtlmHash {
         let computed = hex::encode(result);
         computed.eq_ignore_ascii_case(&entry.raw)
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for NtlmHash {
@@ -186,6 +192,7 @@ fn lm_hash_raw(password: &str) -> Option<Vec<u8>> {
     Some([block1.to_vec(), block2.to_vec()].concat())
 }
 
+/// Cracker and parser for LM (LAN Manager) hashes (DES, 32 hex chars).
 pub struct LmHash;
 
 impl HashCracker for LmHash {
@@ -199,6 +206,8 @@ impl HashCracker for LmHash {
             None => false,
         }
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for LmHash {

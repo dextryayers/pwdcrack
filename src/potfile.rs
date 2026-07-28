@@ -4,12 +4,14 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 
+/// Tracks cracked hashes and persists them to a potfile on disk.
 pub struct Potfile {
     path: String,
     cracked: Mutex<HashSet<String>>,
 }
 
 impl Potfile {
+    /// Opens or creates a potfile at the given path, loading any existing entries.
     pub fn new(path: &str) -> Self {
         let cracked = if Path::new(path).exists() {
             fs::read_to_string(path)
@@ -34,10 +36,12 @@ impl Potfile {
         }
     }
 
+    /// Returns `true` if the given hash has already been cracked.
     pub fn is_cracked(&self, hash: &str) -> bool {
         self.cracked.lock().unwrap().contains(hash)
     }
 
+    /// Records a cracked hash and appends `hash:password` to the potfile.
     pub fn save(&self, hash: &str, password: &str) {
         {
             let mut cracked = self.cracked.lock().unwrap();
@@ -69,43 +73,7 @@ impl Potfile {
         { let _ = file.sync_all(); }
     }
 
-    pub fn save_batch(&self, entries: &[(String, String)]) {
-        let mut batch = String::new();
-        {
-            let mut cracked = self.cracked.lock().unwrap();
-            for (hash, password) in entries {
-                if cracked.contains(hash) {
-                    continue;
-                }
-                cracked.insert(hash.clone());
-                batch.push_str(&format!("{}:{}\n", hash, password));
-            }
-        }
-
-        if batch.is_empty() {
-            return;
-        }
-
-        let mut file = match fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-        {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("[!] Failed to open potfile: {}", e);
-                return;
-            }
-        };
-
-        if let Err(e) = file.write_all(batch.as_bytes()) {
-            eprintln!("[!] Failed to write potfile batch: {}", e);
-        }
-        let _ = file.flush();
-        #[cfg(any(unix, windows))]
-        { let _ = file.sync_all(); }
-    }
-
+    /// Returns all `(hash, password)` pairs currently stored in the potfile.
     pub fn entries(&self) -> Vec<(String, String)> {
         let content = fs::read_to_string(&self.path).unwrap_or_default();
         content.lines()
@@ -117,6 +85,7 @@ impl Potfile {
             .collect()
     }
 
+    /// Returns the number of unique hashes recorded as cracked.
     pub fn count(&self) -> usize {
         self.cracked.lock().unwrap().len()
     }

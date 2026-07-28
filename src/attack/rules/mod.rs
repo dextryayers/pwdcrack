@@ -3,6 +3,7 @@ pub mod engine;
 use std::fs;
 use std::path::Path;
 
+/// Reads rules from a file, skipping blank lines and comments.
 pub fn load_rules(path: &str) -> Result<Vec<String>, String> {
     let content = fs::read_to_string(Path::new(path))
         .map_err(|e| format!("Failed to read rules file: {}", e))?;

@@ -2,36 +2,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::io::AsyncReadExt;
 use tokio::time;
 
 use crate::verify;
 use crate::protocol::{
-    Message, WorkerStats, Capabilities, CrackedEntry, WorkUnit, AttackType,
+    self, Message, WorkerStats, Capabilities, CrackedEntry, WorkUnit, AttackType,
 };
-
-async fn read_msg<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Result<Option<Message>, String> {
-    let mut len_buf = [0u8; 4];
-    if reader.read_exact(&mut len_buf).await.is_err() {
-        return Ok(None);
-    }
-    let len = u32::from_be_bytes(len_buf) as usize;
-    if len > 10 * 1024 * 1024 {
-        return Err("message too large".to_string());
-    }
-    let mut data = vec![0u8; len];
-    reader.read_exact(&mut data).await.map_err(|e| e.to_string())?;
-    serde_json::from_slice(&data).map(Some).map_err(|e| e.to_string())
-}
-
-async fn write_msg<W: tokio::io::AsyncWrite + Unpin>(writer: &mut W, msg: &Message) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-    let data = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
-    let len = (data.len() as u32).to_be_bytes();
-    writer.write_all(&len).await.map_err(|e| e.to_string())?;
-    writer.write_all(&data).await.map_err(|e| e.to_string())?;
-    Ok(())
-}
 
 pub struct WorkerNode {
     pub master_addr: String,
@@ -72,7 +48,7 @@ impl WorkerNode {
                 ram_mb: 4096,
             },
         };
-        write_msg(stream, &handshake).await?;
+        protocol::write_msg(stream, &handshake).await?;
         log::info!("Sent handshake as '{}'", self.node_name);
         Ok(())
     }
@@ -192,17 +168,18 @@ impl WorkerNode {
         self.connect().await?;
         self.send_handshake().await?;
 
-        let mut stream = self.stream.take().ok_or("stream already taken")?;
-        let (mut reader, mut writer) = tokio::io::split(&mut stream);
-
+        let stream = self.stream.take().unwrap();
+        let (mut reader, mut writer) = tokio::io::split(stream);
         let node_name = self.node_name.clone();
-        let _tested = Arc::clone(&self.tested);
+        let tested = Arc::clone(&self.tested);
         let cracked = Arc::clone(&self.cracked);
+
+
         let mut hb_interval = time::interval(Duration::from_secs(5));
         hb_interval.tick().await;
 
         loop {
-            let read_fut = read_msg(&mut reader);
+            let read_fut = protocol::read_msg(&mut reader);
 
             tokio::select! {
                 msg_result = read_fut => {
@@ -216,10 +193,10 @@ impl WorkerNode {
                                 batch_id,
                                 cracked: cracked_entries,
                             };
-                            write_msg(&mut writer, &result).await?;
+                            protocol::write_msg(&mut writer, &result).await?;
                         }
                         Some(Message::Ping) => {
-                            write_msg(&mut writer, &Message::Pong).await?;
+                            protocol::write_msg(&mut writer, &Message::Pong).await?;
                         }
                         Some(Message::Shutdown { reason }) => {
                             log::info!("Master shutdown: {}", reason);
@@ -242,7 +219,7 @@ impl WorkerNode {
                             temperature_c: 0.0,
                         },
                     };
-                    write_msg(&mut writer, &hb).await?;
+                    protocol::write_msg(&mut writer, &hb).await?;
                 }
             }
         }
@@ -320,7 +297,6 @@ fn generate_candidate(mask_chars: &[MaskChar], charsets: &[Vec<u8>], idx: u64, b
 }
 
 fn parse_rule(rule: &str) -> Result<Vec<RuleOp>, String> {
-    // Minimal rule parser for common operations
     let mut ops = Vec::new();
     let bytes = rule.as_bytes();
     let mut i = 0;

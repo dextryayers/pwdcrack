@@ -32,7 +32,8 @@ pub fn build_crack_packet(
     hash_type: HashType,
     passwords: &[u8],
 ) -> Vec<u8> {
-    let count = passwords.len() / 64; // 64 bytes per password
+    assert!(passwords.len() % 64 == 0, "passwords length must be a multiple of 64");
+    let count = passwords.len() / 64;
     let mut packet = Vec::with_capacity(16 + passwords.len());
 
     packet.extend_from_slice(&MAGIC_HOST.to_le_bytes());
@@ -41,14 +42,15 @@ pub fn build_crack_packet(
     packet.push(hash_type as u8);
     packet.extend_from_slice(&(count as u32).to_le_bytes());
     packet.extend_from_slice(passwords);
-    packet.extend_from_slice(&crc32(&packet).to_le_bytes());
+    let crc = crc32(&packet);
+    packet.extend_from_slice(&crc.to_le_bytes());
 
     packet
 }
 
 /// Parse FPGA response
 pub fn parse_response(data: &[u8]) -> Option<Response> {
-    if data.len() < 16 { return None; }
+    if data.len() < 17 { return None; }
 
     let magic = u32::from_le_bytes(data[0..4].try_into().ok()?);
     if magic != MAGIC_FPGA { return None; }

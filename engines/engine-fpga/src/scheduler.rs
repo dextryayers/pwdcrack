@@ -72,7 +72,7 @@ impl FpgaScheduler {
         }
 
         let cores_count = avail_cores.len();
-        let per_core = total / cores_count;
+        let per_core = std::cmp::min(total / cores_count, 32);
         let mut results = vec![false; total];
 
         for (ci, &core_id) in avail_cores.iter().enumerate() {
@@ -102,12 +102,10 @@ impl FpgaScheduler {
 
             // Parse response
             if let Some(response) = protocol::parse_response(&resp_buf) {
-                if response.crc != 0 {
-                    // Verify CRC by recalculating
-                    let calc = protocol::crc32(&resp_buf[..13]);
-                    if calc != response.crc {
-                        return Err(crate::error::FpgaError::CrcMismatch);
-                    }
+                // Verify CRC by recalculating
+                let calc = protocol::crc32(&resp_buf[..13]);
+                if calc != response.crc {
+                    return Err(crate::error::FpgaError::CrcMismatch);
                 }
 
                 // Mark results for this core's portion
@@ -136,7 +134,8 @@ impl FpgaScheduler {
         packet.extend_from_slice(&seq_id.to_le_bytes());
         packet.push(hash_type as u8);
         packet.extend_from_slice(&iterations.to_le_bytes());
-        packet.extend_from_slice(&protocol::crc32(&packet).to_le_bytes());
+        let crc = protocol::crc32(&packet);
+        packet.extend_from_slice(&crc.to_le_bytes());
 
         self.dma.send_command(&packet)?;
 
@@ -161,7 +160,8 @@ impl FpgaScheduler {
         packet.extend_from_slice(&protocol::MAGIC_HOST.to_le_bytes());
         packet.push(Command::Reset as u8);
         packet.extend_from_slice(&seq_id.to_le_bytes());
-        packet.extend_from_slice(&protocol::crc32(&packet).to_le_bytes());
+        let crc = protocol::crc32(&packet);
+        packet.extend_from_slice(&crc.to_le_bytes());
 
         self.dma.send_command(&packet)?;
         Ok(())

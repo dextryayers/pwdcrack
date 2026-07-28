@@ -25,6 +25,7 @@ fn is_sha512_crypt(s: &str) -> bool {
     s.starts_with("$6$")
 }
 
+/// Cracker and parser for Unix `$1$` MD5-crypt hashes.
 pub struct Md5Crypt;
 
 impl Md5Crypt {
@@ -118,6 +119,8 @@ impl HashCracker for Md5Crypt {
         let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes());
         computed == entry.raw
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Md5Crypt {
@@ -153,6 +156,7 @@ fn parse_rounds(raw: &str, prefix: &str) -> Option<u32> {
     }
 }
 
+/// Cracker and parser for Unix `$5$` SHA-256 crypt hashes.
 pub struct Sha256Crypt;
 
 impl Sha256Crypt {
@@ -275,6 +279,8 @@ impl HashCracker for Sha256Crypt {
         let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes(), rounds);
         computed == entry.raw
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Sha256Crypt {
@@ -312,6 +318,7 @@ impl HashParser for Sha256Crypt {
     }
 }
 
+/// Cracker and parser for Unix `$6$` SHA-512 crypt hashes.
 pub struct Sha512Crypt;
 
 impl Sha512Crypt {
@@ -446,6 +453,8 @@ impl HashCracker for Sha512Crypt {
         let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes(), rounds);
         computed == entry.raw
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Sha512Crypt {

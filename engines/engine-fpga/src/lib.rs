@@ -69,26 +69,38 @@ impl FpgaDevice {
 
     /// Crack passwords on FPGA — auto-distributes across available cores
     pub fn crack_md5(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
-        self.scheduler.as_mut().unwrap()
-            .crack_batch(protocol::HashType::MD5, passwords)
+        if let Some(ref mut sched) = self.scheduler {
+            sched.crack_batch(protocol::HashType::MD5, passwords)
+        } else {
+            Err(error::FpgaError::CoreNotReady)
+        }
     }
 
     /// Crack passwords on FPGA — SHA-256
     pub fn crack_sha256(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
-        self.scheduler.as_mut().unwrap()
-            .crack_batch(protocol::HashType::SHA256, passwords)
+        if let Some(ref mut sched) = self.scheduler {
+            sched.crack_batch(protocol::HashType::SHA256, passwords)
+        } else {
+            Err(error::FpgaError::CoreNotReady)
+        }
     }
 
     /// Crack passwords on FPGA — NTLM
     pub fn crack_ntlm(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
-        self.scheduler.as_mut().unwrap()
-            .crack_batch(protocol::HashType::NTLM, passwords)
+        if let Some(ref mut sched) = self.scheduler {
+            sched.crack_batch(protocol::HashType::NTLM, passwords)
+        } else {
+            Err(error::FpgaError::CoreNotReady)
+        }
     }
 
     /// Benchmark FPGA hash cores
     pub fn bench(&mut self, hash_type: protocol::HashType) -> FpgaResult<scheduler::BenchResult> {
-        self.scheduler.as_mut().unwrap()
-            .bench(hash_type, 1_000_000)
+        if let Some(ref mut sched) = self.scheduler {
+            sched.bench(hash_type, 1_000_000)
+        } else {
+            Err(error::FpgaError::CoreNotReady)
+        }
     }
 
     /// Reset FPGA cores

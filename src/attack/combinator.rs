@@ -16,6 +16,8 @@ fn print_speed(stats: &ProgressStats) {
     eprint!("\r[*] {} H/s | {} tested | {}", stats.hash_rate(), stats.total_tested(), stats.eta());
 }
 
+/// Runs a combinator attack: concatenates every word from wordlist1 with every word
+/// from wordlist2 and tests each combination.
 pub fn run_combinator(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
@@ -34,6 +36,13 @@ pub fn run_combinator(
         eprintln!("[*] Wordlist2: {} words", words2.len());
     }
 
+    let w1_count = fs::File::open(Path::new(wordlist1)).ok().map(|f| {
+        BufReader::new(f).lines()
+            .filter_map(|l| l.ok())
+            .filter(|l| !l.trim().is_empty())
+            .count() as u64
+    }).unwrap_or(0);
+
     let file1 = match fs::File::open(Path::new(wordlist1)) {
         Ok(f) => f,
         Err(e) => {
@@ -45,10 +54,11 @@ pub fn run_combinator(
     let total_hashes = hashes.len();
     let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
     let line_count = AtomicU64::new(0);
+    let total_est = w1_count * words2.len() as u64;
     #[cfg(feature = "progress-rich")]
-    let progress = ProgressStats::new();
+    let progress = ProgressStats::new(total_est);
     #[cfg(not(feature = "progress-rich"))]
-    let _progress = ProgressStats::new();
+    let _progress = ProgressStats::new(total_est);
 
     if !quiet {
         eprintln!("[*] Wordlist1: streaming");
@@ -99,7 +109,7 @@ pub fn run_combinator(
     #[cfg(feature = "progress-rich")]
     eprintln!();
 
-    let results = results.into_inner().unwrap();
+    let results = results.into_inner().unwrap_or_else(|_| Vec::new());
     if !quiet {
         eprintln!("[*] Cracked {}/{} hashes", results.len(), total_hashes);
     }
@@ -109,7 +119,12 @@ pub fn run_combinator(
 fn load_wordlist(path: &str) -> Vec<String> {
     #[cfg(feature = "mmap")]
     if let Ok(file) = fs::File::open(Path::new(path)) {
-        if let Ok(mmap) = unsafe { Mmap::map(&file) } {
+        if let Ok(mmap) = unsafe {
+            // SAFETY: Mmap::map is safe because `file` is a valid open File handle
+            // with read permissions. The returned mmap is read-only and its lifetime
+            // is scoped to this function via the `chunks` local variable.
+            Mmap::map(&file)
+        } {
             let words: Vec<String> = mmap
                 .split(|b| *b == b'\n')
                 .filter(|l| !l.is_empty())

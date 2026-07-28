@@ -211,7 +211,11 @@ impl MaskCompiler {
         module.define_function(func_id, &mut ctx).ok()?;
         module.finalize_definitions().ok()?;
         let code = module.get_finalized_function(func_id);
-        let fn_ptr: super::MaskFn = unsafe { std::mem::transmute(code) };
+        // SAFETY: `code` is a `*const u8` pointing to executable memory containing
+        // a valid function with the signature `MaskFn`. Data and function pointers
+        // have the same representation on x86_64 and AArch64 (our only supported
+        // targets), so this transmute is safe.
+        let fn_ptr: super::MaskFn = unsafe { std::mem::transmute::<*const u8, super::MaskFn>(code) };
         Some(fn_ptr)
     }
 }

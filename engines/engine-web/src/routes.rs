@@ -94,7 +94,7 @@ async fn get_status(
         total_cracked: *state.total_cracked.read().await,
         total_tested: *state.total_tested.read().await,
         uptime_secs: state.start_time.elapsed().as_secs(),
-        status: format!("{:?}", *state.status.read().await),
+        status: state.status.read().await.to_string(),
         workers,
         session: state.session_name.read().await.clone(),
         attack_config: state.attack_config.read().await.clone(),
@@ -108,7 +108,7 @@ pub struct StartRequest {
     pub target_hashes: Option<Vec<String>>,
     pub mask: Option<String>,
     pub wordlist: Option<String>,
-    pub rules: Option<Vec<String>>,
+    pub rules: Option<String>,
 }
 
 async fn start_attack(
@@ -126,7 +126,7 @@ async fn start_attack(
         target_hashes: req.target_hashes.unwrap_or_default(),
         mask: req.mask,
         wordlist: req.wordlist,
-        rules: req.rules.unwrap_or_default(),
+        rules: req.rules.as_ref().map(|r| r.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default(),
     };
 
     *state.attack_config.write().await = Some(config.clone());

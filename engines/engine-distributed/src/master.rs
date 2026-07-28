@@ -2,12 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Instant, Duration};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::time;
 
 use crate::protocol::{
-    Message, WorkerStats, CrackedEntry, WorkUnit, Capabilities, AttackType,
+    read_msg, write_msg, Message, WorkerStats, CrackedEntry, WorkUnit, Capabilities, AttackType,
 };
 
 #[derive(Debug, Clone)]
@@ -56,14 +55,14 @@ impl MasterNode {
         }
     }
 
-    pub fn enqueue_work(&self, work: WorkUnit) -> u64 {
+    pub async fn enqueue_work(&self, work: WorkUnit) -> u64 {
         let bid = self.next_batch_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let mut q = self.work_queue.blocking_lock();
+        let mut q = self.work_queue.lock().await;
         q.push_back(PendingWork { batch_id: bid, work });
         bid
     }
 
-    pub fn enqueue_batches(
+    pub async fn enqueue_batches(
         &self,
         target_hash: String,
         hash_type: String,
@@ -95,17 +94,17 @@ impl MasterNode {
                 keyspace_start: start,
                 keyspace_end: end,
             };
-            self.enqueue_work(wu);
+            self.enqueue_work(wu).await;
             count += 1;
             start = end;
         }
         count
     }
 
-    pub fn save_checkpoint(&self) -> Result<(), String> {
-        let completed = self.completed.blocking_lock();
-        let in_flight = self.in_flight.blocking_lock();
-        let q = self.work_queue.blocking_lock();
+    pub async fn save_checkpoint(&self) -> Result<(), String> {
+        let completed = self.completed.lock().await;
+        let in_flight = self.in_flight.lock().await;
+        let q = self.work_queue.lock().await;
         #[derive(serde::Serialize)]
         struct Checkpoint {
             completed: Vec<CrackedEntry>,
@@ -126,7 +125,7 @@ impl MasterNode {
         Ok(())
     }
 
-    pub fn load_checkpoint(&self) -> Result<(), String> {
+    pub async fn load_checkpoint(&self) -> Result<(), String> {
         let data = std::fs::read_to_string(&self.checkpoint_path).map_err(|e| e.to_string())?;
         #[derive(serde::Deserialize)]
         struct Checkpoint {
@@ -140,7 +139,7 @@ impl MasterNode {
             timestamp: String,
         }
         let cp: Checkpoint = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        let mut completed = self.completed.blocking_lock();
+        let mut completed = self.completed.lock().await;
         *completed = cp.completed;
         log::info!("Checkpoint loaded: {} previously cracked", completed.len());
         Ok(())
@@ -168,11 +167,11 @@ impl MasterNode {
     }
 
     #[allow(dead_code)]
-    fn reclaim_orphaned(&self) {
+    async fn reclaim_orphaned(&self) {
         let now = Instant::now();
-        let mut inflight = self.in_flight.blocking_lock();
-        let mut q = self.work_queue.blocking_lock();
-        let workers = self.workers.blocking_lock();
+        let mut inflight = self.in_flight.lock().await;
+        let mut q = self.work_queue.lock().await;
+        let workers = self.workers.lock().await;
 
         let mut orphaned = Vec::new();
         inflight.retain(|bid, infl| {
@@ -278,28 +277,6 @@ impl MasterNode {
     pub fn assign_id(&self) -> u64 {
         self.next_batch_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
-}
-
-async fn read_msg(socket: &mut TcpStream) -> Result<Option<Message>, String> {
-    let mut len_buf = [0u8; 4];
-    if socket.read_exact(&mut len_buf).await.is_err() {
-        return Ok(None);
-    }
-    let len = u32::from_be_bytes(len_buf) as usize;
-    if len > 10 * 1024 * 1024 {
-        return Err("message too large".to_string());
-    }
-    let mut data = vec![0u8; len];
-    socket.read_exact(&mut data).await.map_err(|e| e.to_string())?;
-    serde_json::from_slice(&data).map(Some).map_err(|e| e.to_string())
-}
-
-async fn write_msg(socket: &mut TcpStream, msg: &Message) -> Result<(), String> {
-    let data = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
-    let len = (data.len() as u32).to_be_bytes();
-    socket.write_all(&len).await.map_err(|e| e.to_string())?;
-    socket.write_all(&data).await.map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 async fn handle_worker(
@@ -432,11 +409,30 @@ async fn handle_worker(
 fn total_keyspace(attack: &AttackType) -> u64 {
     match attack {
         AttackType::BruteForce { mask } => {
-            // Estimate total keyspace from mask placeholders
-            let placeholders: u64 = mask.chars().filter(|c| *c == '?').count() as u64;
-            if placeholders == 0 { return 1; }
-            // Assume average charset size ~ 26 for estimate
-            26u64.saturating_pow(placeholders as u32)
+            let bytes = mask.as_bytes();
+            let mut i = 0;
+            let mut total = 1u64;
+            while i < bytes.len() {
+                if bytes[i] == b'?' && i + 1 < bytes.len() {
+                    let size = match bytes[i + 1] {
+                        b'l' => 26,
+                        b'u' => 26,
+                        b'd' => 10,
+                        b's' => 32,
+                        b'a' => 94,
+                        b'h' => 16,
+                        b'H' => 16,
+                        b'b' => 256,
+                        b'0'..=b'9' => 26,
+                        _ => 1,
+                    };
+                    total = total.saturating_mul(size);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            total
         }
         AttackType::Dictionary { .. } => {
             // Wordlist-based — estimate by file size

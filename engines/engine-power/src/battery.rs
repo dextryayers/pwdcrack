@@ -1,8 +1,21 @@
 //! Battery monitoring — Android, laptops
 
 use std::fs;
+use std::path::Path;
 
-const BATTERY_BASE: &str = "/sys/class/power_supply/BAT0";
+fn battery_base() -> Option<String> {
+    let bat0 = "/sys/class/power_supply/BAT0";
+    if Path::new(bat0).exists() {
+        Some(bat0.to_string())
+    } else {
+        let bat1 = "/sys/class/power_supply/BAT1";
+        if Path::new(bat1).exists() {
+            Some(bat1.to_string())
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PowerSource {
@@ -36,14 +49,19 @@ impl BatteryLevel {
 
 /// Get current battery capacity percentage
 pub fn battery_capacity() -> Option<u8> {
-    let path = format!("{}/capacity", BATTERY_BASE);
+    let base = battery_base()?;
+    let path = format!("{base}/capacity");
     let s = fs::read_to_string(&path).ok()?;
     s.trim().parse().ok()
 }
 
 /// Get power source status
 pub fn power_source() -> PowerSource {
-    let path = format!("{}/status", BATTERY_BASE);
+    let base = match battery_base() {
+        Some(b) => b,
+        None => return PowerSource::Unknown,
+    };
+    let path = format!("{base}/status");
     match fs::read_to_string(&path) {
         Ok(s) => match s.trim() {
             "Discharging" => PowerSource::Battery,

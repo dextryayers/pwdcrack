@@ -7,7 +7,7 @@ pub mod cstate;
 pub mod stats;
 pub mod budget;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -41,7 +41,7 @@ pub struct PowerManager {
     has_amd: bool,
     has_gpu_power: bool,
     workload: std::sync::Mutex<WorkloadType>,
-    monitor_active: AtomicU64,
+    monitor_active: AtomicBool,
 }
 
 impl PowerManager {
@@ -71,7 +71,7 @@ impl PowerManager {
             has_amd,
             has_gpu_power: has_gpu,
             workload: std::sync::Mutex::new(WorkloadType::MemoryBound),
-            monitor_active: AtomicU64::new(0),
+            monitor_active: AtomicBool::new(false),
         }
     }
 
@@ -79,13 +79,13 @@ impl PowerManager {
         if self.has_rapl {
             if let Some(uj) = rapl::read_energy_uj() {
                 let prev = self.last_rapl_uj.swap(uj, Ordering::Relaxed);
-                let delta_uj = if uj >= prev { uj - prev } else { u64::MAX - prev + uj };
+                let delta_uj = uj.wrapping_sub(prev);
                 self.stats.record_energy(delta_uj);
             }
         } else if self.has_amd {
             if let Some(uj) = amd::read_energy_uj() {
                 let prev = self.last_amd_uj.swap(uj, Ordering::Relaxed);
-                let delta_uj = if uj >= prev { uj - prev } else { u64::MAX - prev + uj };
+                let delta_uj = uj.wrapping_sub(prev);
                 self.stats.record_energy(delta_uj);
             }
         }
@@ -133,15 +133,19 @@ impl PowerManager {
     }
 
     pub fn start_monitor_thread(self: &Arc<Self>, interval_ms: u64) {
-        if self.monitor_active.fetch_add(1, Ordering::Relaxed) > 0 {
+        if self.monitor_active.swap(true, Ordering::Relaxed) {
             return;
         }
         let this = Arc::clone(self);
         std::thread::spawn(move || {
-            loop {
+            while this.monitor_active.load(Ordering::Relaxed) {
                 std::thread::sleep(Duration::from_millis(interval_ms));
                 this.sample();
             }
         });
+    }
+
+    pub fn stop_monitor(&self) {
+        self.monitor_active.store(false, Ordering::Relaxed);
     }
 }

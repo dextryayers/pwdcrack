@@ -14,7 +14,7 @@ pub fn sha256_verify(password: &[u8], target_hex: &str) -> bool {
 
 pub fn sha1_verify(password: &[u8], target_hex: &str) -> bool {
     #[cfg(target_arch = "aarch64")]
-    if std::is_aarch64_feature_detected!("sha3") {
+    if std::is_aarch64_feature_detected!("sha1") {
         return unsafe { arm_sha1_verify(password, target_hex) };
     }
     scalar_sha1_verify(password, target_hex)
@@ -40,7 +40,7 @@ unsafe fn arm_sha256_verify(password: &[u8], target_hex: &str) -> bool {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "sha3")]
+#[target_feature(enable = "sha1")]
 unsafe fn arm_sha1_verify(password: &[u8], target_hex: &str) -> bool {
     scalar_sha1_verify(password, target_hex)
 }

@@ -1,29 +1,53 @@
 use std::collections::VecDeque;
 
+/// A single rule operation for mutating a word (hashcat-style).
 #[derive(Debug, Clone)]
 pub enum RuleOp {
+    /// Convert the word to lowercase.
     Lowercase,
+    /// Convert the word to uppercase.
     Uppercase,
+    /// Capitalise the first character.
     Capitalize,
+    /// Invert the capitalisation of the first character.
     InvertCapitalize,
+    /// Toggle the case of every character.
     ToggleAll,
+    /// Toggle the case of the character at position `n`.
     ToggleAt(usize),
+    /// Reverse the word.
     Reverse,
+    /// Duplicate the word.
     Duplicate,
+    /// Reflect the word (word + reversed without first char).
     Reflect,
+    /// Rotate the word left by one character.
     RotateLeft,
+    /// Rotate the word right by one character.
     RotateRight,
+    /// Append a character to the end.
     Append(char),
+    /// Prepend a character to the beginning.
     Prepend(char),
+    /// Truncate the word to `n` characters.
     Truncate(usize),
+    /// Delete the character at position `n`.
     DeleteAt(usize),
+    /// Extract `l` characters starting at position `n`.
     ExtractRange(usize, usize),
+    /// Overwrite the character at position `n` with `c`.
     OverwriteAt(usize, char),
+    /// Insert character `c` at position `n`.
     InsertAt(usize, char),
+    /// Swap the characters at positions `n` and `m`.
     SwapAt(usize, usize),
+    /// Substitute all occurrences of character `a` with `b`.
+    Substitute(char, char),
+    /// No operation (pass-through).
     Pure,
 }
 
+/// Parses a hashcat-style rule string into a sequence of [`RuleOp`] values.
 pub fn parse_rule(rule_str: &str) -> Result<Vec<RuleOp>, String> {
     let mut ops = VecDeque::new();
     let mut chars = rule_str.chars().peekable();
@@ -64,9 +88,8 @@ pub fn parse_rule(rule_str: &str) -> Result<Vec<RuleOp>, String> {
                 ops.push_back(RuleOp::DeleteAt(n));
             }
             'x' => {
-                let n1 = parse_num(&mut chars)?;
-                let _ = chars.next();
-                let n2 = parse_num(&mut chars)?;
+                let n1 = chars.next().and_then(|c| c.to_digit(10)).ok_or("Expected digit for x")? as usize;
+                let n2 = chars.next().and_then(|c| c.to_digit(10)).ok_or("Expected digit for x")? as usize;
                 ops.push_back(RuleOp::ExtractRange(n1, n2));
             }
             'O' => {
@@ -82,9 +105,7 @@ pub fn parse_rule(rule_str: &str) -> Result<Vec<RuleOp>, String> {
             's' => {
                 let a = chars.next().ok_or("Expected char for s")?;
                 let b = chars.next().ok_or("Expected second char for s")?;
-                let a_idx = a as usize;
-                let b_idx = b as usize;
-                ops.push_back(RuleOp::SwapAt(a_idx, b_idx));
+                ops.push_back(RuleOp::Substitute(a, b));
             }
             '@' => {
                 ops.push_back(RuleOp::Pure);
@@ -120,6 +141,7 @@ fn toggle_char(ch: char) -> char {
     }
 }
 
+/// Applies a sequence of [`RuleOp`] values to a word, returning all mutated forms.
 pub fn apply_rule(word: &str, rule: &[RuleOp]) -> Vec<String> {
     let mut results = vec![word.to_string()];
 
@@ -160,8 +182,12 @@ pub fn apply_rule(word: &str, rule: &[RuleOp]) -> Vec<String> {
                 }
                 RuleOp::Duplicate => new_results.push(format!("{}{}", w, w)),
                 RuleOp::Reflect => {
-                    let rev: String = w.chars().rev().collect();
-                    new_results.push(format!("{}{}", w, &rev[1..]));
+                    if w.is_empty() {
+                        new_results.push(w.clone());
+                    } else {
+                        let rev: String = w.chars().rev().collect();
+                        new_results.push(format!("{}{}", w, &rev[1..]));
+                    }
                 }
                 RuleOp::RotateLeft => {
                     let mut chars: Vec<char> = w.chars().collect();
@@ -225,6 +251,9 @@ pub fn apply_rule(word: &str, rule: &[RuleOp]) -> Vec<String> {
                         new_results.push(w.clone());
                     }
                 }
+                RuleOp::Substitute(a, b) => {
+                    new_results.push(w.chars().map(|c| if c == *a { *b } else { c }).collect());
+                }
             }
         }
         results = new_results;
@@ -287,5 +316,33 @@ mod tests {
         let ops = parse_rule("T0").unwrap();
         let result = apply_rule("Hello", &ops);
         assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_substitute() {
+        let ops = parse_rule("so0").unwrap();
+        let result = apply_rule("hello world", &ops);
+        assert_eq!(result, vec!["hell0 w0rld"]);
+    }
+
+    #[test]
+    fn test_extract_range() {
+        let ops = parse_rule("x23").unwrap();
+        let result = apply_rule("hello", &ops);
+        assert_eq!(result, vec!["llo"]);
+    }
+
+    #[test]
+    fn test_swap_at() {
+        let ops = vec![RuleOp::SwapAt(2, 3)];
+        let result = apply_rule("abcdef", &ops);
+        assert_eq!(result, vec!["abdcef"]);
+    }
+
+    #[test]
+    fn test_reflect_empty() {
+        let ops = vec![RuleOp::Reflect];
+        let result = apply_rule("", &ops);
+        assert_eq!(result, vec![""]);
     }
 }

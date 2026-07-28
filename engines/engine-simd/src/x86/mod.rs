@@ -13,9 +13,12 @@ pub mod shani;
 pub mod avx2;
 pub mod avx512;
 
+#[allow(dead_code)]
 use crate::SimdLevel;
+#[allow(dead_code)]
 use crate::dispatch::{scalar_md5_verify, scalar_sha256_verify};
 
+#[allow(dead_code)]
 pub fn dispatch_md5(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     match level {
         SimdLevel::Avx512 => avx512::md5_verify,
@@ -24,6 +27,7 @@ pub fn dispatch_md5(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn dispatch_sha256(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     match level {
         SimdLevel::ShaNi | SimdLevel::Avx2 | SimdLevel::Avx512 => shani::sha256_verify,

@@ -9,9 +9,12 @@ pub mod neon32;
 pub mod neon64;
 pub mod sve;
 
+#[allow(dead_code)]
 use crate::SimdLevel;
+#[allow(dead_code)]
 use crate::dispatch::{scalar_md5_verify, scalar_sha256_verify};
 
+#[allow(dead_code)]
 pub fn dispatch_md5(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     match level {
         SimdLevel::Sve | SimdLevel::Neon64 => neon64::md5_verify,
@@ -20,6 +23,7 @@ pub fn dispatch_md5(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn dispatch_sha256(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     match level {
         SimdLevel::Sve | SimdLevel::Neon64 => neon64::sha256_verify,

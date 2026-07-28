@@ -14,14 +14,6 @@ pub struct Cli {
     #[arg(short = 'p', long, global = true, default_value = "pwdcrack.pot")]
     pub potfile: String,
 
-    /// Show cracked passwords at the end
-    #[arg(short = 's', long, global = true)]
-    pub show: bool,
-
-    /// Left/Right separator for user:hash format
-    #[arg(long, global = true, default_value = ":")]
-    pub separator: String,
-
     /// Quiet mode (no progress bar)
     #[arg(short = 'q', long, global = true)]
     pub quiet: bool,
@@ -46,9 +38,6 @@ pub enum Commands {
         /// Rules file (John/Hashcat format)
         #[arg(short = 'r', long)]
         rules: Option<String>,
-        /// Skip words with same length as the hash (likely already plaintext)
-        #[arg(long)]
-        skip_self: bool,
     },
     /// Brute-force / Mask attack
     BruteForce {

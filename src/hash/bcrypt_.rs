@@ -1,7 +1,9 @@
 use bcrypt::verify;
 use super::{HashCracker, HashEntry, HashType, HashParser};
 
+/// Cracker and parser for `$2b$` / `$2y$` bcrypt hashes.
 pub struct BcryptHash;
+/// Cracker and parser for `$2a$` bcrypt hashes.
 pub struct BcryptAHash;
 
 impl HashCracker for BcryptHash {
@@ -11,6 +13,8 @@ impl HashCracker for BcryptHash {
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
         verify(password, &entry.raw).unwrap_or(false)
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for BcryptHash {
@@ -44,6 +48,8 @@ impl HashCracker for BcryptAHash {
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
         verify(password, &entry.raw).unwrap_or(false)
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for BcryptAHash {

@@ -31,6 +31,11 @@ impl PyEngine {
 }
 
 use std::sync::LazyLock;
+/// Global engine instance.
+///
+/// **Note:** `PY_ENGINE.lock()` is held for the **entire duration** of
+/// `attack_dictionary` and `attack_bruteforce`, which can run for hours.
+/// No other concurrent call that needs `PY_ENGINE` will be able to proceed.
 static PY_ENGINE: LazyLock<Mutex<PyEngine>> =
     LazyLock::new(|| Mutex::new(PyEngine::new()));
 
@@ -116,6 +121,11 @@ fn identify(path: &str) -> PyResult<Vec<(String, String)>> {
 }
 
 /// Run dictionary attack.
+///
+/// **Note:** The internal `PY_ENGINE` lock is held for the **entire duration** of this
+/// call, which may be hours long. No other concurrent call that needs `PY_ENGINE`
+/// will be able to proceed.
+///
 /// wordlist: path to wordlist file.
 /// rules: optional rule string (empty = no rules).
 /// quiet: suppress progress output (default true).
@@ -159,6 +169,11 @@ fn attack_dictionary(
 }
 
 /// Run brute-force attack.
+///
+/// **Note:** The internal `PY_ENGINE` lock is held for the **entire duration** of this
+/// call, which may be hours long. No other concurrent call that needs `PY_ENGINE`
+/// will be able to proceed.
+///
 /// mask: pattern (e.g., "?l?l?d?d").
 /// Returns list of (hash, password) tuples.
 #[pyfunction]

@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::hash::{HashCracker, HashEntry};
 use crate::attack::{CrackResult, setup_progress, ProgressStats};
-use crate::attack::rules::engine::{parse_rule, apply_rule};
+use crate::attack::rules::engine::{parse_rule, apply_rule, RuleOp};
 use crate::attack::rules::load_rules;
 
 #[cfg(feature = "mmap")]
@@ -20,6 +20,8 @@ fn print_speed(stats: &ProgressStats) {
     eprint!("\r[*] {} H/s | {} cracked | {}", rate, stats.cracked(), eta);
 }
 
+/// Runs a dictionary attack: hashes each word from a wordlist (optionally with rule-based
+/// mangling) against the given cracker.
 pub fn run_dictionary(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
@@ -28,13 +30,17 @@ pub fn run_dictionary(
     _threads: usize,
     quiet: bool,
 ) -> Vec<CrackResult> {
-    let rules = match rules_path {
+    let rules: Option<Vec<Vec<RuleOp>>> = match rules_path {
         Some(path) => match load_rules(path) {
-            Ok(r) => {
+            Ok(rules_strs) => {
+                let parsed: Vec<Vec<RuleOp>> = rules_strs
+                    .iter()
+                    .filter_map(|s| parse_rule(s).ok())
+                    .collect();
                 if !quiet {
-                    eprintln!("[*] Loaded {} rules from {}", r.len(), path);
+                    eprintln!("[*] Loaded {} rules from {}", parsed.len(), path);
                 }
-                Some(r)
+                Some(parsed)
             }
             Err(e) => {
                 eprintln!("[!] {}", e);
@@ -58,7 +64,12 @@ pub fn run_dictionary(
 
     #[cfg(feature = "mmap")]
     let (chunks, word_count_hint) = {
-        let mmap = unsafe { Mmap::map(&file) };
+        let mmap = unsafe {
+            // SAFETY: Mmap::map is safe because `file` is a valid open File handle
+            // with read permissions. The returned mmap is read-only and its lifetime
+            // is scoped to this function via the `chunks` local variable.
+            Mmap::map(&file)
+        };
         match mmap {
             Ok(m) => {
                 let hint = file_size / 16;
@@ -77,16 +88,12 @@ pub fn run_dictionary(
     #[cfg(not(feature = "mmap"))]
     let word_count_hint = file_size / 16;
 
-    let pb = setup_progress(if cfg!(feature = "mmap") { 1 } else { 0 }, quiet);
-
     let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
     let line_count = AtomicU64::new(0);
     let cracked_count = AtomicU64::new(0);
-    let progress = ProgressStats::new();
 
     #[cfg(feature = "mmap")]
     if let Some(ref mmap) = chunks {
-        // mmap fast path: split memory into lines in parallel
         let ptr = mmap.as_ptr();
         let _len = mmap.len();
 
@@ -97,6 +104,10 @@ pub fn run_dictionary(
         let plines: Vec<&[u8]> = lines.into_par_iter()
             .filter(|l| !l.is_empty())
             .collect();
+
+        let total_est = plines.len() as u64 * (1 + rule_count as u64);
+        let progress = ProgressStats::new(total_est);
+        let pb = setup_progress(total_est, quiet);
 
         let pbar = pb.as_ref();
         let cr = &results;
@@ -125,22 +136,17 @@ pub fn run_dictionary(
             }
 
             if let Some(rules) = &rules {
-                for rule_str in rules {
-                    match parse_rule(rule_str) {
-                        Ok(ops) => {
-                            for mutated in apply_rule(&word, &ops) {
-                                for entry in hashes.iter() {
-                                    if cracker.verify(&mutated, entry) {
-                                        local_results.push(CrackResult {
-                                            original: entry.raw.clone(),
-                                            hash_type: cracker.name().to_string(),
-                                            password: Some(mutated.clone()),
-                                        });
-                                    }
-                                }
+                for ops in rules {
+                    for mutated in apply_rule(&word, ops) {
+                        for entry in hashes.iter() {
+                            if cracker.verify(&mutated, entry) {
+                                local_results.push(CrackResult {
+                                    original: entry.raw.clone(),
+                                    hash_type: cracker.name().to_string(),
+                                    password: Some(mutated.clone()),
+                                });
                             }
                         }
-                        Err(_) => continue,
                     }
                 }
             }
@@ -171,14 +177,21 @@ pub fn run_dictionary(
             pbar.finish_with_message("Done!");
         }
     } else {
-        // Fallback: streaming via BufReader
+        let total_est = (file_size / 16).max(1) * (1 + rule_count as u64);
+        let progress = ProgressStats::new(total_est);
+        let pb = setup_progress(total_est, quiet);
         run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint);
     }
 
     #[cfg(not(feature = "mmap"))]
-    run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint);
+    {
+        let total_est = word_count_hint.max(1) * (1 + rule_count as u64);
+        let progress = ProgressStats::new(total_est);
+        let pb = setup_progress(total_est, quiet);
+        run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint);
+    }
 
-    let results = results.into_inner().unwrap();
+    let results = results.into_inner().unwrap_or_else(|_| Vec::new());
     if !quiet {
         eprintln!("[*] Cracked {}/{} hashes", results.len(), total_hashes);
     }
@@ -188,7 +201,7 @@ pub fn run_dictionary(
 
 fn run_streaming(
     file: fs::File,
-    rules: &Option<Vec<String>>,
+    rules: &Option<Vec<Vec<RuleOp>>>,
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
     rule_count: usize,
@@ -231,22 +244,17 @@ fn run_streaming(
             }
 
             if let Some(rules) = rules {
-                for rule_str in rules {
-                    match parse_rule(rule_str) {
-                        Ok(ops) => {
-                            for mutated in apply_rule(&word, &ops) {
-                                for entry in hashes.iter() {
-                                    if cracker.verify(&mutated, entry) {
-                                        local_results.push(CrackResult {
-                                            original: entry.raw.clone(),
-                                            hash_type: cracker.name().to_string(),
-                                            password: Some(mutated.clone()),
-                                        });
-                                    }
-                                }
+                for ops in rules {
+                    for mutated in apply_rule(&word, ops) {
+                        for entry in hashes.iter() {
+                            if cracker.verify(&mutated, entry) {
+                                local_results.push(CrackResult {
+                                    original: entry.raw.clone(),
+                                    hash_type: cracker.name().to_string(),
+                                    password: Some(mutated.clone()),
+                                });
                             }
                         }
-                        Err(_) => continue,
                     }
                 }
             }

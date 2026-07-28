@@ -115,6 +115,7 @@ pub fn scalar_sha256_verify(password: &[u8], target_hex: &str) -> bool {
 
 pub fn scalar_ntlm_verify(password: &[u8], target_hex: &str) -> bool {
     use md4::{Md4, Digest};
+    // NOTE: Only works for ASCII-range input; non-ASCII bytes will produce incorrect UTF-16LE
     let utf16: Vec<u16> = password.iter().map(|&b| b as u16).collect();
     let mut bytes = Vec::with_capacity(utf16.len() * 2);
     for c in utf16 { bytes.extend_from_slice(&c.to_le_bytes()); }

@@ -23,7 +23,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         let hr = *state.hash_rate.read().await;
         let tc = *state.total_cracked.read().await;
         let tt = *state.total_tested.read().await;
-        let status = format!("{:?}", *state.status.read().await);
+        let status = state.status.read().await.to_string();
         let workers: Vec<serde_json::Value> = state.workers.read().await.iter().map(|w| {
             serde_json::json!({
                 "name": w.name,

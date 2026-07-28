@@ -5,9 +5,13 @@ use scrypt::password_hash::PasswordHash as ScryptPH;
 
 use super::{HashCracker, HashEntry, HashType, HashParser};
 
+/// Cracker and parser for `$argon2i$` hashes (data-independent variant).
 pub struct Argon2iHash;
+/// Cracker and parser for `$argon2d$` hashes (data-dependent variant).
 pub struct Argon2dHash;
+/// Cracker and parser for `$argon2id$` hashes (hybrid variant).
 pub struct Argon2idHash;
+/// Cracker and parser for `$scrypt$` hashes.
 pub struct ScryptHash;
 
 fn parse_argon2_params(raw: &str) -> Option<Argon2Params> {
@@ -45,6 +49,8 @@ impl HashCracker for Argon2iHash {
         };
         argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Argon2iHash {
@@ -86,6 +92,8 @@ impl HashCracker for Argon2dHash {
         };
         argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Argon2dHash {
@@ -127,6 +135,8 @@ impl HashCracker for Argon2idHash {
         };
         argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for Argon2idHash {
@@ -165,6 +175,8 @@ impl HashCracker for ScryptHash {
             None => false,
         }
     }
+
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
 impl HashParser for ScryptHash {

@@ -32,6 +32,18 @@ pub enum AttackStatus {
     Error(String),
 }
 
+impl std::fmt::Display for AttackStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AttackStatus::Idle => write!(f, "Idle"),
+            AttackStatus::Running => write!(f, "Running"),
+            AttackStatus::Paused => write!(f, "Paused"),
+            AttackStatus::Completed => write!(f, "Completed"),
+            AttackStatus::Error(_) => write!(f, "Error"),
+        }
+    }
+}
+
 pub struct AppState {
     pub config: WebConfig,
     pub hash_rate: RwLock<f64>,

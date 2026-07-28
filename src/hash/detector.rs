@@ -4,12 +4,14 @@ use super::unix::*;
 use super::argon2_scrypt::*;
 use super::bcrypt_::*;
 
+/// Auto-detects hash formats and provides matching cracker and parser instances.
 pub struct Detector {
     parsers: Vec<Box<dyn HashParser>>,
     crackers: Vec<Box<dyn HashCracker>>,
 }
 
 impl Detector {
+    /// Creates a new `Detector` pre-loaded with all built-in parsers and crackers.
     pub fn new() -> Self {
         let parsers: Vec<Box<dyn HashParser>> = vec![
             Box::new(Md5Hash),
@@ -60,6 +62,7 @@ impl Detector {
         Detector { parsers, crackers }
     }
 
+    /// Identifies a hash string and returns a matching cracker along with its parsed entry.
     pub fn detect(&self, line: &str) -> Option<(Box<dyn HashCracker>, HashEntry)> {
         for parser in &self.parsers {
             if parser.can_parse(line) {
@@ -75,16 +78,19 @@ impl Detector {
         None
     }
 
+    /// Returns a cracker for a specific [`HashType`], if registered.
     pub fn cracker_for_type(&self, hash_type: HashType) -> Option<Box<dyn HashCracker>> {
         self.crackers.iter()
             .find(|c| c.hash_type() == hash_type)
             .map(|c| clone_cracker(c.as_ref()))
     }
 
+    /// Returns a reference to all registered crackers.
     pub fn crackers(&self) -> &[Box<dyn HashCracker>] {
         &self.crackers
     }
 
+    /// Reads a hash file and returns a list of (raw hash, detected type) pairs.
     pub fn identify(&self, path: &str) -> Vec<(String, HashType)> {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         content.lines()
@@ -105,29 +111,5 @@ impl Detector {
 }
 
 fn clone_cracker(c: &dyn HashCracker) -> Box<dyn HashCracker> {
-    let t = c.hash_type();
-    match t {
-        HashType::MD5 => Box::new(Md5Hash),
-        HashType::SHA1 => Box::new(Sha1Hash),
-        HashType::SHA224 => Box::new(Sha224Hash),
-        HashType::SHA256 => Box::new(Sha256Hash),
-        HashType::SHA384 => Box::new(Sha384Hash),
-        HashType::SHA512 => Box::new(Sha512Hash),
-        HashType::SHA3512 => Box::new(Sha3_512Hash),
-        HashType::BLAKE2B256 => Box::new(Blake2s256Hash),
-        HashType::BLAKE2B512 => Box::new(Blake2b512Hash),
-        HashType::RIPEMD160 => Box::new(Ripemd160Hash),
-        HashType::NTLM => Box::new(NtlmHash),
-        HashType::LM => Box::new(LmHash),
-        HashType::MD5Crypt => Box::new(Md5Crypt),
-        HashType::SHA256Crypt => Box::new(Sha256Crypt),
-        HashType::SHA512Crypt => Box::new(Sha512Crypt),
-        HashType::BCrypt => Box::new(BcryptHash),
-        HashType::BCryptA => Box::new(BcryptAHash),
-        HashType::Argon2i => Box::new(Argon2iHash),
-        HashType::Argon2d => Box::new(Argon2dHash),
-        HashType::Argon2id => Box::new(Argon2idHash),
-        HashType::Scrypt => Box::new(ScryptHash),
-        HashType::Unknown => Box::new(Md5Hash),
-    }
+    c.clone_box()
 }

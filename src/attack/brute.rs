@@ -18,20 +18,32 @@ static ALL_BYTES: LazyLock<Vec<u8>> = LazyLock::new(|| {
     (0..=255).collect()
 });
 
+/// Represents a single character class in a brute-force mask.
 #[derive(Debug, Clone)]
 pub enum MaskChar {
+    /// Lowercase letters `a-z`.
     Lower,
+    /// Uppercase letters `A-Z`.
     Upper,
+    /// Digits `0-9`.
     Digit,
+    /// Special characters `!@#$%^&*()-_+=~`[]{}|;:',.<>?/`.
     Special,
+    /// All of the above (lower, upper, digit, special).
     All,
+    /// Lowercase hex digits `0-9a-f`.
     HexLower,
+    /// Uppercase hex digits `0-9A-F`.
     HexUpper,
+    /// Any byte `0x00-0xFF`.
     Byte,
+    /// A custom character set (index 0-3).
     Custom(usize),
+    /// A literal character (not a mask placeholder).
     Literal(char),
 }
 
+/// Parses a hashcat-style mask string (e.g. `?l?l?d?d`) into a vector of [`MaskChar`].
 pub fn parse_mask(mask: &str) -> Vec<MaskChar> {
     let mut result = Vec::new();
     let mut chars = mask.chars().peekable();
@@ -126,6 +138,7 @@ fn print_speed(stats: &ProgressStats, total: u64) {
     );
 }
 
+/// Runs a brute-force attack: enumerates all passwords matching a mask and tests them.
 pub fn run_bruteforce(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
@@ -151,9 +164,9 @@ pub fn run_bruteforce(
 
     let pb = setup_progress(total, quiet);
     #[cfg(feature = "progress-rich")]
-    let progress = ProgressStats::new();
+    let progress = ProgressStats::new(total);
     #[cfg(not(feature = "progress-rich"))]
-    let _progress = ProgressStats::new();
+    let _progress = ProgressStats::new(total);
 
     let counter = AtomicU64::new(0);
     let chunk_size = (100_000u64).max(total / (threads.max(1) as u64 * 100).max(1));
@@ -162,7 +175,7 @@ pub fn run_bruteforce(
         .flat_map(|_| {
             let mut local_results = Vec::new();
             loop {
-                let start = counter.fetch_add(chunk_size, Ordering::SeqCst);
+                let start = counter.fetch_add(chunk_size, Ordering::Relaxed);
                 if start >= total { break; }
                 let end = (start + chunk_size).min(total);
 

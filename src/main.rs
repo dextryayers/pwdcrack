@@ -61,7 +61,7 @@ fn main() {
 
     match &args.command {
         Commands::Identify { hash_file } => cmd_identify(&detector, hash_file),
-        Commands::Dictionary { hash_file, wordlist, rules, skip_self: _ } => {
+        Commands::Dictionary { hash_file, wordlist, rules } => {
             #[cfg(feature = "engine-power")]
             if let Some(ref pm) = _power_mgr {
                 pm.set_workload(engine_power::WorkloadType::MemoryBound);
@@ -90,6 +90,7 @@ fn main() {
     _android_engine.shutdown();
 }
 
+// Reads a hash file, detects each line's format, and returns (cracker, entry) pairs.
 fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, HashEntry)> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         eprintln!("[!] Failed to read hash file: {}", e);
@@ -118,6 +119,7 @@ fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, Ha
     results
 }
 
+// Identifies and prints the hash types found in a file.
 fn cmd_identify(detector: &Detector, path: &str) {
     let results = detector.identify(path);
     if results.is_empty() {
@@ -137,6 +139,7 @@ fn cmd_identify(detector: &Detector, path: &str) {
     println!("  Total: {} hashes", results.len());
 }
 
+// Runs a dictionary attack on the given hash file with an optional rules file.
 fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: Option<&str>, threads: usize, args: &Cli) {
     let potfile = Potfile::new(&args.potfile);
     let loaded = load_hashes(detector, hash_file);
@@ -155,6 +158,7 @@ fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: O
     print_results(&results, &potfile);
 }
 
+// Runs a brute-force attack using a mask and optional custom character sets.
 fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[Option<String>], threads: usize, args: &Cli) {
     let potfile = Potfile::new(&args.potfile);
     let loaded = load_hashes(detector, hash_file);
@@ -173,6 +177,7 @@ fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[
     print_results(&results, &potfile);
 }
 
+// Runs a combinator attack concatenating two wordlists.
 fn cmd_combinator(detector: &Detector, hash_file: &str, wl1: &str, wl2: &str, threads: usize, args: &Cli) {
     let potfile = Potfile::new(&args.potfile);
     let loaded = load_hashes(detector, hash_file);
@@ -190,6 +195,7 @@ fn cmd_combinator(detector: &Detector, hash_file: &str, wl1: &str, wl2: &str, th
     print_results(&results, &potfile);
 }
 
+// Benchmarks one or all hash crackers and prints hashes-per-second.
 fn cmd_benchmark(detector: &Detector, hash_type: &str, threads: usize, _quiet: bool) {
     use std::time::Instant;
 
@@ -253,6 +259,7 @@ fn cmd_benchmark(detector: &Detector, hash_type: &str, threads: usize, _quiet: b
     }
 }
 
+// Generates a test hash for benchmarking purposes.
 fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
     use md5::Md5;
     use sha2::{Sha256, Sha512, Digest};
@@ -295,6 +302,7 @@ fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
     }
 }
 
+// Displays all entries from a potfile, optionally showing the hash type.
 fn cmd_show(potfile_path: &str, show_type: bool) {
     let potfile = Potfile::new(potfile_path);
     let entries = potfile.entries();
@@ -318,6 +326,7 @@ fn cmd_show(potfile_path: &str, show_type: bool) {
     }
 }
 
+// Prints cracked passwords and saves them to the potfile.
 fn print_results(results: &[CrackResult], potfile: &Potfile) {
     if results.is_empty() {
         eprintln!("[-] No passwords cracked.");
