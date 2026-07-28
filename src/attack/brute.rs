@@ -93,7 +93,7 @@ fn charset_for<'a>(mc: &'a MaskChar, custom: &'a [&'a [u8]]) -> &'a [u8] {
     }
 }
 
-fn total_combinations(mask: &[MaskChar], custom: &[&[u8]]) -> u64 {
+pub fn total_combinations(mask: &[MaskChar], custom: &[&[u8]]) -> u64 {
     let mut total: u64 = 1;
     for mc in mask {
         let cs = charset_for(mc, custom);
@@ -104,7 +104,7 @@ fn total_combinations(mask: &[MaskChar], custom: &[&[u8]]) -> u64 {
     total
 }
 
-fn index_to_password(mut idx: u64, mask: &[MaskChar], custom: &[&[u8]]) -> String {
+pub fn index_to_password(mut idx: u64, mask: &[MaskChar], custom: &[&[u8]]) -> String {
     let mut result = Vec::new();
     for mc in mask.iter().rev() {
         let cs = charset_for(mc, custom);
