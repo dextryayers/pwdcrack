@@ -1979,3 +1979,1206 @@ impl HashParser for SaltedSha384Hash {
         parts.len() == 2 && parts[0].len() == 96 && parts[0].chars().all(|c| c.is_ascii_hexdigit())
     }
 }
+
+// ── HMAC-SHA512/224 ──
+
+pub struct HmacSha512_224Hash;
+
+impl HashCracker for HmacSha512_224Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA512_224 }
+    fn name(&self) -> &'static str { "HMAC-SHA512/224" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha2::Sha512_224;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha512_224>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha512_224Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 56 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA512_224,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-SHA512/256 ──
+
+pub struct HmacSha512_256Hash;
+
+impl HashCracker for HmacSha512_256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA512_256 }
+    fn name(&self) -> &'static str { "HMAC-SHA512/256" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha2::Sha512_256;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha512_256>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha512_256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA512_256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-SHA3-224 ──
+
+pub struct HmacSha3_224Hash;
+
+impl HashCracker for HmacSha3_224Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA3224 }
+    fn name(&self) -> &'static str { "HMAC-SHA3-224" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha3::Sha3_224;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha3_224>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha3_224Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 56 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA3224,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-SHA3-256 ──
+
+pub struct HmacSha3_256Hash;
+
+impl HashCracker for HmacSha3_256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA3256 }
+    fn name(&self) -> &'static str { "HMAC-SHA3-256" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha3::Sha3_256;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha3_256>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha3_256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA3256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-SHA3-384 ──
+
+pub struct HmacSha3_384Hash;
+
+impl HashCracker for HmacSha3_384Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA3384 }
+    fn name(&self) -> &'static str { "HMAC-SHA3-384" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha3::Sha3_384;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha3_384>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha3_384Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 96 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA3384,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-SHA3-512 ──
+
+pub struct HmacSha3_512Hash;
+
+impl HashCracker for HmacSha3_512Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSHA3512 }
+    fn name(&self) -> &'static str { "HMAC-SHA3-512" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use sha3::Sha3_512;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Sha3_512>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacSha3_512Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 128 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSHA3512,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-BLAKE2b-256 ──
+
+// ── HMAC-BLAKE2b-256 (detection only) ──
+
+pub struct HmacBlake2b256Hash;
+
+impl HashCracker for HmacBlake2b256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B256 }
+    fn name(&self) -> &'static str { "HMAC-BLAKE2b-256" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacBlake2b256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACBLAKE2B256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-BLAKE2s-256 (detection only) ──
+
+pub struct HmacBlake2s256Hash;
+
+impl HashCracker for HmacBlake2s256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACBLAKE2S256 }
+    fn name(&self) -> &'static str { "HMAC-BLAKE2s-256" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacBlake2s256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACBLAKE2S256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-BLAKE2b-512 (detection only) ──
+
+pub struct HmacBlake2b512Hash;
+
+impl HashCracker for HmacBlake2b512Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B512 }
+    fn name(&self) -> &'static str { "HMAC-BLAKE2b-512" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacBlake2b512Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 128 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACBLAKE2B512,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-RIPEMD128 ──
+
+pub struct HmacRipemd128Hash;
+
+impl HashCracker for HmacRipemd128Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACRIPEMD128 }
+    fn name(&self) -> &'static str { "HMAC-RIPEMD128" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use ripemd::Ripemd128;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Ripemd128>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacRipemd128Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 32 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACRIPEMD128,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-RIPEMD256 ──
+
+pub struct HmacRipemd256Hash;
+
+impl HashCracker for HmacRipemd256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACRIPEMD256 }
+    fn name(&self) -> &'static str { "HMAC-RIPEMD256" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use ripemd::Ripemd256;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Ripemd256>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacRipemd256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACRIPEMD256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-RIPEMD320 ──
+
+pub struct HmacRipemd320Hash;
+
+impl HashCracker for HmacRipemd320Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACRIPEMD320 }
+    fn name(&self) -> &'static str { "HMAC-RIPEMD320" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use ripemd::Ripemd320;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Ripemd320>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacRipemd320Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 80 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACRIPEMD320,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-Whirlpool ──
+
+pub struct HmacWhirlpoolHash;
+
+impl HashCracker for HmacWhirlpoolHash {
+    fn hash_type(&self) -> HashType { HashType::HMACWHIRLPOOL }
+    fn name(&self) -> &'static str { "HMAC-Whirlpool" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use whirlpool::Whirlpool;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Whirlpool>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacWhirlpoolHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 128 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACWHIRLPOOL,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-Streebog-256 ──
+
+pub struct HmacStreebog256Hash;
+
+impl HashCracker for HmacStreebog256Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSTREEBOG256 }
+    fn name(&self) -> &'static str { "HMAC-Streebog-256" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use streebog::Streebog256;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Streebog256>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacStreebog256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSTREEBOG256,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── HMAC-Streebog-512 ──
+
+pub struct HmacStreebog512Hash;
+
+impl HashCracker for HmacStreebog512Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACSTREEBOG512 }
+    fn name(&self) -> &'static str { "HMAC-Streebog-512" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use streebog::Streebog512;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Streebog512>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for HmacStreebog512Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 128 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACSTREEBOG512,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── PBKDF2-SHA384 ──
+
+pub struct Pbkdf2Sha384Hash;
+
+impl HashCracker for Pbkdf2Sha384Hash {
+    fn hash_type(&self) -> HashType { HashType::PBKDF2SHA384 }
+    fn name(&self) -> &'static str { "PBKDF2-SHA384" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use pbkdf2::pbkdf2_hmac;
+        use sha2::Sha384;
+        let mut out = vec![0u8; 48];
+        pbkdf2_hmac::<Sha384>(password.as_bytes(), salt.as_bytes(), 10000, &mut out);
+        hex::encode(&out).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Pbkdf2Sha384Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        if parts.len() < 2 { return None; }
+        let hash = parts[0];
+        if hash.len() != 96 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::PBKDF2SHA384,
+            hash_bytes: hex::decode(hash).ok()?, salt: Some(parts[1..].join(":")),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── PBKDF2-SHA224 ──
+
+pub struct Pbkdf2Sha224Hash;
+
+impl HashCracker for Pbkdf2Sha224Hash {
+    fn hash_type(&self) -> HashType { HashType::PBKDF2SHA224 }
+    fn name(&self) -> &'static str { "PBKDF2-SHA224" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use pbkdf2::pbkdf2_hmac;
+        use sha2::Sha224;
+        let mut out = vec![0u8; 28];
+        pbkdf2_hmac::<Sha224>(password.as_bytes(), salt.as_bytes(), 10000, &mut out);
+        hex::encode(&out).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Pbkdf2Sha224Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        if parts.len() < 2 { return None; }
+        let hash = parts[0];
+        if hash.len() != 56 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::PBKDF2SHA224,
+            hash_bytes: hex::decode(hash).ok()?, salt: Some(parts[1..].join(":")),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+// ── Salted SHA-224 (SHA224(password + salt), hash:salt) ──
+
+pub struct SaltedSha224Hash;
+
+impl HashCracker for SaltedSha224Hash {
+    fn hash_type(&self) -> HashType { HashType::SALTEDSHA224 }
+    fn name(&self) -> &'static str { "Salted SHA-224" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use sha2::{Sha224, Digest};
+        let mut ctx = Sha224::new();
+        ctx.update(password.as_bytes());
+        ctx.update(salt.as_bytes());
+        hex::encode(ctx.finalize()).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for SaltedSha224Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        if parts.len() != 2 || parts[0].len() != 56 || !parts[0].chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: parts[0].to_lowercase(), hash_type: HashType::SALTEDSHA224,
+            hash_bytes: hex::decode(parts[0]).ok()?, salt: Some(parts[1].to_string()),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        parts.len() == 2 && parts[0].len() == 56 && parts[0].chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── Triple MD5 (MD5(MD5(MD5(password)))) ──
+
+pub struct TripleMd5Hash;
+
+impl HashCracker for TripleMd5Hash {
+    fn hash_type(&self) -> HashType { HashType::TRIPLEMD5 }
+    fn name(&self) -> &'static str { "Triple MD5" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use md5::{Md5, Digest};
+        let mut h = Md5::new();
+        h.update(password.as_bytes());
+        let r1 = hex::encode(h.finalize_reset());
+        h.update(r1.as_bytes());
+        let r2 = hex::encode(h.finalize_reset());
+        h.update(r2.as_bytes());
+        hex::encode(h.finalize()).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for TripleMd5Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 32 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::TRIPLEMD5,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 32 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── MD5 Half (first 16 hex chars of MD5) ──
+
+pub struct Md5HalfHash;
+
+impl HashCracker for Md5HalfHash {
+    fn hash_type(&self) -> HashType { HashType::MD5HALF }
+    fn name(&self) -> &'static str { "MD5 Half" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use md5::{Md5, Digest};
+        let mut h = Md5::new();
+        h.update(password.as_bytes());
+        let full = hex::encode(h.finalize());
+        full[..16].eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Md5HalfHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 16 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::MD5HALF,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 16 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-8/ITU (CRC8 with polynomial 0x07, init 0x00, no final xor) ──
+
+fn crc8_itu(data: &[u8]) -> u8 {
+    let mut crc: u8 = 0;
+    for &byte in data {
+        crc ^= byte;
+        for _ in 0..8 {
+            if crc & 0x80 != 0 { crc = (crc << 1) ^ 0x07; } else { crc <<= 1; }
+        }
+    }
+    crc
+}
+
+pub struct Crc8ItuHash;
+
+impl HashCracker for Crc8ItuHash {
+    fn hash_type(&self) -> HashType { HashType::CRC8ITU }
+    fn name(&self) -> &'static str { "CRC-8/ITU" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:02x}", crc8_itu(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc8ItuHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 2 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC8ITU,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 2 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-16/CCITT (polynomial 0x1021, init 0xFFFF) ──
+
+fn crc16_ccitt(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0xFFFF;
+    for &byte in data {
+        crc ^= (byte as u16) << 8;
+        for _ in 0..8 {
+            if crc & 0x8000 != 0 { crc = (crc << 1) ^ 0x1021; } else { crc <<= 1; }
+        }
+    }
+    crc
+}
+
+pub struct Crc16CcittHash;
+
+impl HashCracker for Crc16CcittHash {
+    fn hash_type(&self) -> HashType { HashType::CRC16CCITT }
+    fn name(&self) -> &'static str { "CRC-16/CCITT" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:04x}", crc16_ccitt(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc16CcittHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 4 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC16CCITT,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 4 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-16/MODBUS (polynomial 0x8005, init 0xFFFF, final xor 0x0000, reflected) ──
+
+fn crc16_modbus(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0xFFFF;
+    for &byte in data {
+        crc ^= byte as u16;
+        for _ in 0..8 {
+            if crc & 0x0001 != 0 { crc = (crc >> 1) ^ 0xA001; } else { crc >>= 1; }
+        }
+    }
+    crc
+}
+
+pub struct Crc16ModbusHash;
+
+impl HashCracker for Crc16ModbusHash {
+    fn hash_type(&self) -> HashType { HashType::CRC16MODBUS }
+    fn name(&self) -> &'static str { "CRC-16/MODBUS" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:04x}", crc16_modbus(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc16ModbusHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 4 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC16MODBUS,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 4 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-32/BZIP2 (polynomial 0x04C11DB7, init 0xFFFFFFFF, final xor 0xFFFFFFFF) ──
+
+fn crc32_bzip2(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFFFFFF;
+    for &byte in data {
+        crc ^= (byte as u32) << 24;
+        for _ in 0..8 {
+            if crc & 0x80000000 != 0 { crc = (crc << 1) ^ 0x04C11DB7; } else { crc <<= 1; }
+        }
+    }
+    crc ^ 0xFFFFFFFF
+}
+
+pub struct Crc32Bzip2Hash;
+
+impl HashCracker for Crc32Bzip2Hash {
+    fn hash_type(&self) -> HashType { HashType::CRC32BZIP2 }
+    fn name(&self) -> &'static str { "CRC-32/BZIP2" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:08x}", crc32_bzip2(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc32Bzip2Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 8 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC32BZIP2,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 8 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-32/MPEG2 (polynomial 0x04C11DB7, init 0xFFFFFFFF, no final xor) ──
+
+fn crc32_mpeg2(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFFFFFF;
+    for &byte in data {
+        crc ^= (byte as u32) << 24;
+        for _ in 0..8 {
+            if crc & 0x80000000 != 0 { crc = (crc << 1) ^ 0x04C11DB7; } else { crc <<= 1; }
+        }
+    }
+    crc
+}
+
+pub struct Crc32Mpeg2Hash;
+
+impl HashCracker for Crc32Mpeg2Hash {
+    fn hash_type(&self) -> HashType { HashType::CRC32MPEG2 }
+    fn name(&self) -> &'static str { "CRC-32/MPEG-2" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:08x}", crc32_mpeg2(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc32Mpeg2Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 8 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC32MPEG2,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 8 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── CRC-64/ECMA-182 ──
+
+fn crc64_ecma(data: &[u8]) -> u64 {
+    let mut crc: u64 = 0;
+    for &byte in data {
+        crc ^= (byte as u64) << 56;
+        for _ in 0..8 {
+            if crc & 0x8000000000000000 != 0 { crc = (crc << 1) ^ 0x42F0E1EBA9EA3693; } else { crc <<= 1; }
+        }
+    }
+    crc
+}
+
+pub struct Crc64EcmaHash;
+
+impl HashCracker for Crc64EcmaHash {
+    fn hash_type(&self) -> HashType { HashType::CRC64ECMA }
+    fn name(&self) -> &'static str { "CRC-64/ECMA-182" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:016x}", crc64_ecma(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc64EcmaHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 16 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC64ECMA,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 16 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── NTLMv1 (NetNTLMv1 challenge/response) ──
+
+pub struct Ntlmv1Hash;
+
+impl HashCracker for Ntlmv1Hash {
+    fn hash_type(&self) -> HashType { HashType::NTLMV1 }
+    fn name(&self) -> &'static str { "NTLMv1" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use md4::{Md4, Digest};
+        let mut h = Md4::new();
+        h.update(password.encode_utf16().flat_map(|c| c.to_le_bytes()).collect::<Vec<_>>());
+        hex::encode(h.finalize()).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Ntlmv1Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let s = line.trim();
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() == 3 && parts[0].len() == 32 && parts[0].chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(HashEntry { raw: parts[0].to_lowercase(), hash_type: HashType::NTLMV1,
+                hash_bytes: hex::decode(parts[0]).ok()?, salt: Some(parts[2].to_string()),
+                username: Some(parts[1].to_string()), cracked: false, password: None });
+        }
+        if parts.len() == 5 {
+            return Some(HashEntry { raw: parts[3].to_lowercase(), hash_type: HashType::NTLMV1,
+                hash_bytes: hex::decode(parts[3]).ok()?,
+                salt: Some(parts[4].to_string()),
+                username: Some(parts[0].to_string()), cracked: false, password: None });
+        }
+        None
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        (parts.len() == 3 && parts[0].len() == 32) || (parts.len() == 5)
+    }
+}
+
+// ── CRAM-MD5 (challenge-response HMAC-MD5) ──
+
+pub struct CramMd5Hash;
+
+impl HashCracker for CramMd5Hash {
+    fn hash_type(&self) -> HashType { HashType::CRAMMD5 }
+    fn name(&self) -> &'static str { "CRAM-MD5" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use hmac::{Hmac, Mac};
+        use md5::Md5;
+        let challenge = entry.salt.as_deref().unwrap_or("");
+        if challenge.is_empty() { return false; }
+        let challenge_bytes = match hex::decode(challenge) { Ok(b) => b, Err(_) => return false };
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Md5>::new_from_slice(key) {
+            mac.update(&challenge_bytes);
+            let computed = hex::encode(mac.finalize().into_bytes());
+            return computed.eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for CramMd5Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let s = line.trim();
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        if parts.len() != 2 || parts[1].len() != 32 || !parts[1].chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: parts[1].to_lowercase(), hash_type: HashType::CRAMMD5,
+            hash_bytes: hex::decode(parts[1]).ok()?, salt: Some(parts[0].to_string()),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        parts.len() == 2 && parts[1].len() == 32 && parts[1].chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── PLAINTEXT (identity / raw password) ──
+
+pub struct PlaintextHash;
+
+impl HashCracker for PlaintextHash {
+    fn hash_type(&self) -> HashType { HashType::PLAINTEXT }
+    fn name(&self) -> &'static str { "PLAINTEXT" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        password == entry.raw
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for PlaintextHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.is_empty() || t.len() > 256 { return None; }
+        Some(HashEntry { raw: t.to_string(), hash_type: HashType::PLAINTEXT,
+            hash_bytes: t.as_bytes().to_vec(), salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); !t.is_empty() && t.len() <= 256
+    }
+}
+
+// ── CRC-24 (OpenPGP / RFC 4880) ──
+
+fn crc24(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xB704CE;
+    for &byte in data {
+        crc ^= (byte as u32) << 16;
+        for _ in 0..8 {
+            crc <<= 1;
+            if crc & 0x1000000 != 0 { crc ^= 0x1864CFB; }
+        }
+    }
+    crc & 0xFFFFFF
+}
+
+pub struct Crc24Hash;
+
+impl HashCracker for Crc24Hash {
+    fn hash_type(&self) -> HashType { HashType::CRC24 }
+    fn name(&self) -> &'static str { "CRC-24" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        format!("{:06x}", crc24(password.as_bytes())).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Crc24Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 6 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::CRC24,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 6 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── MySQL 3.21 (old pre-4.1, OLD_PASSWORD) ──
+
+pub struct Mysql321Hash;
+
+impl HashCracker for Mysql321Hash {
+    fn hash_type(&self) -> HashType { HashType::MYSQL321 }
+    fn name(&self) -> &'static str { "MySQL 3.21" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        mysql_old_hash(password).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+fn mysql_old_hash(password: &str) -> String {
+    let mut nr: u32 = 1345345333;
+    let mut add: u32 = 7;
+    let mut nr2: u32 = 0x12345671;
+    for c in password.bytes() {
+        if c == b' ' || c == b'\t' { continue; }
+        nr ^= (((nr & 63) + add) as u32) * (c as u32) + (nr << 8) as u32;
+        nr2 += (nr2 << 8) ^ (nr as u32);
+        add += c as u32;
+    }
+    format!("{:08x}{:08x}", nr & 0x7FFFFFFF, nr2 & 0x7FFFFFFF)
+}
+
+impl HashParser for Mysql321Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 16 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::MYSQL321,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 16 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── Oracle 7 (DES-based old Oracle hash) ──
+
+pub struct Oracle7Hash;
+
+impl HashCracker for Oracle7Hash {
+    fn hash_type(&self) -> HashType { HashType::ORACLE7 }
+    fn name(&self) -> &'static str { "Oracle 7" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Oracle7Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.starts_with("O$") || t.len() == 16 && t.chars().all(|c| c.is_ascii_hexdigit() || c.is_ascii_uppercase()) {
+            return Some(HashEntry { raw: t.to_string(), hash_type: HashType::ORACLE7,
+                hash_bytes: t.as_bytes().to_vec(), salt: None, username: None,
+                cracked: false, password: None });
+        }
+        None
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim();
+        t.starts_with("O$") || (t.len() == 16 && t.chars().all(|c| c.is_ascii_hexdigit() || c.is_ascii_uppercase()))
+    }
+}
+
+// ── Snefru-128 ──
+
+pub struct Snefru128Hash;
+
+impl HashCracker for Snefru128Hash {
+    fn hash_type(&self) -> HashType { HashType::SNEFRU128 }
+    fn name(&self) -> &'static str { "Snefru-128" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Snefru128Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 32 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::SNEFRU128,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 32 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+// ── Snefru-256 ──
+
+pub struct Snefru256Hash;
+
+impl HashCracker for Snefru256Hash {
+    fn hash_type(&self) -> HashType { HashType::SNEFRU256 }
+    fn name(&self) -> &'static str { "Snefru-256" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Snefru256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 64 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::SNEFRU256,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+pub struct SaltedSha3_256Hash;
+impl HashCracker for SaltedSha3_256Hash {
+    fn hash_type(&self) -> HashType { HashType::SALTEDSHA3256 }
+    fn name(&self) -> &'static str { "Salted SHA3-256" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use sha3::{Sha3_256, Digest};
+        let mut ctx = Sha3_256::new();
+        ctx.update(password.as_bytes());
+        ctx.update(salt.as_bytes());
+        hex::encode(ctx.finalize()).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+impl HashParser for SaltedSha3_256Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        if parts.len() != 2 || parts[0].len() != 64 || !parts[0].chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: parts[0].to_lowercase(), hash_type: HashType::SALTEDSHA3256,
+            hash_bytes: hex::decode(parts[0]).ok()?, salt: Some(parts[1].to_string()),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        parts.len() == 2 && parts[0].len() == 64 && parts[0].chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+pub struct SaltedSha3_512Hash;
+impl HashCracker for SaltedSha3_512Hash {
+    fn hash_type(&self) -> HashType { HashType::SALTEDSHA3512 }
+    fn name(&self) -> &'static str { "Salted SHA3-512" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use sha3::{Sha3_512, Digest};
+        let mut ctx = Sha3_512::new();
+        ctx.update(password.as_bytes());
+        ctx.update(salt.as_bytes());
+        hex::encode(ctx.finalize()).eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+impl HashParser for SaltedSha3_512Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        if parts.len() != 2 || parts[0].len() != 128 || !parts[0].chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: parts[0].to_lowercase(), hash_type: HashType::SALTEDSHA3512,
+            hash_bytes: hex::decode(parts[0]).ok()?, salt: Some(parts[1].to_string()),
+            username: None, cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let parts: Vec<&str> = line.trim().split(':').collect();
+        parts.len() == 2 && parts[0].len() == 128 && parts[0].chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
+pub struct HmacGost94Hash;
+impl HashCracker for HmacGost94Hash {
+    fn hash_type(&self) -> HashType { HashType::HMACGOST94 }
+    fn name(&self) -> &'static str { "HMAC-GOST94" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        let salt = entry.salt.as_deref().unwrap_or("");
+        use hmac::{Hmac, Mac};
+        use gost94::Gost94CryptoPro;
+        let key = password.as_bytes();
+        if key.is_empty() { return false; }
+        if let Ok(mut mac) = Hmac::<Gost94CryptoPro>::new_from_slice(key) {
+            mac.update(salt.as_bytes());
+            return hex::encode(mac.finalize().into_bytes()).eq_ignore_ascii_case(&entry.raw);
+        }
+        false
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+impl HashParser for HmacGost94Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACGOST94,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
+
+pub struct HmacTigerHash;
+impl HashCracker for HmacTigerHash {
+    fn hash_type(&self) -> HashType { HashType::HMACTIGER }
+    fn name(&self) -> &'static str { "HMAC-Tiger" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+impl HashParser for HmacTigerHash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let (hash, salt) = split_salt(line)?;
+        if hash.len() != 48 || !hash.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: hash.to_lowercase(), hash_type: HashType::HMACTIGER,
+            hash_bytes: hex::decode(hash).ok()?, salt, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, _: &str) -> bool { true }
+}
