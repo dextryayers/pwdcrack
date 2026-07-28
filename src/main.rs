@@ -230,7 +230,7 @@ fn cmd_identify(detector: &Detector, path: &str, verbose: bool) {
     println!("  Total: {} hashes", results.len());
 }
 
-fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: Option<&str>, threads: usize, args: &Cli, limit: Option<u64>, _session: Option<&str>) {
+fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: Option<&str>, threads: usize, args: &Cli, _limit: Option<u64>, _session: Option<&str>) {
     let potfile = Potfile::new(&args.potfile);
     let loaded = load_hashes(detector, hash_file);
 

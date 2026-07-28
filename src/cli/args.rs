@@ -3,22 +3,28 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(
     name = "pwdcrack",
-    about = "🏴 Universal password cracker — CPU / GPU / FPGA / Distributed / Web dashboard",
+    about = "🏴 Universal password cracker — CPU / GPU / FPGA / Distributed / Web",
     long_about = "\
-pwdcrack is a high-performance password hash cracker written in Rust.
+pwdcrack — high-performance hash cracker written in Rust.
 
-It supports 21+ hash formats (MD5, SHA family, NTLM, bcrypt, Argon2,
-scrypt, Unix crypt variants, and more) with three attack modes:
-dictionary (+ rule-based mangling), combinator, and brute-force/mask.
+SUPPORTED HASHES
+  MD5, SHA-1/224/256/384/512, SHA3-512, BLAKE2B-256/512,
+  RIPEMD-160, NTLM, LM, bcrypt, Argon2i/d/id, scrypt,
+  MD5Crypt, SHA256Crypt, SHA512Crypt, Unix DES/BF/BSDi
 
-Hardware engines (optional):
-  SIMD  → auto-detected (SSE2, AVX2, AVX-512, NEON, SVE)
-  GPU   → Vulkan via wgpu
-  FPGA  → PCIe DMA
-  JIT   → Cranelift JIT for mask/rule acceleration
-  Power → RAPL / AMD hwmon power budgeting
-  Distributed → multi-node TCP cluster
-  Web   → real-time dashboard with WebSocket stats",
+ATTACK MODES
+  dictionary   wordlist + rule-based mangling (John/Hashcat rules)
+  brute-force  mask-based enumeration with custom charsets
+  combinator   concatenate words from two wordlists
+
+HARDWARE ENGINES (optional features)
+  SIMD   SSE2 / AVX2 / AVX-512 / NEON / SVE (auto-detected)
+  GPU    Vulkan compute via wgpu
+  FPGA   PCIe DMA acceleration
+  JIT    Cranelift JIT for mask/rule speedup
+  Power  RAPL / AMD hwmon power capping
+  Dist   multi-node TCP cluster cracking
+  Web    real-time dashboard + WebSocket stats",
     version = "0.1.0",
     author = "pwdcrack team",
 )]
@@ -66,11 +72,12 @@ pub enum OutputFormat {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Dictionary attack — tries each word from a wordlist, with optional rule-based mangling
+    /// Dictionary attack — wordlist + rule-based mangling
     ///
-    /// Reads a wordlist file line by line and hashes each word using the
-    /// detected hash type. If a rules file is given, each word is also
-    /// mangled with every rule before hashing.
+    /// Reads a wordlist file line by line, applies optional hashcat/John
+    /// rules to mangle each word, and compares against target hashes.
+    ///
+    /// Example: pwdcrack dictionary hashes.txt rockyou.txt -r rules.rule
     Dictionary {
         /// Hash file — one hash per line, or user:hash format (e.g. admin:5d41402abc...)
         hash_file: String,
@@ -87,24 +94,21 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Brute-force attack — enumerate all combinations of a mask pattern
+    /// Brute-force / Mask attack — enumerate mask patterns
     ///
-    /// Mask placeholders:
-    ///   ?l  → lowercase (a-z)
-    ///   ?u  → uppercase (A-Z)
-    ///   ?d  → digit (0-9)
-    ///   ?s  → special (!@#$...)
-    ///   ?a  → all printable ASCII
-    ///   ?h  → lowercase hex (0-9 a-f)
-    ///   ?H  → uppercase hex (0-9 A-F)
-    ///   ?b  → all bytes 0x00-0xff
-    ///   ?1-?4 → custom charsets (via -1/-2/-3/-4)
+    /// Mask characters:
+    ///   ?l lowercase     ?u uppercase     ?d digit
+    ///   ?s specials      ?a all printable ?h hex lower
+    ///   ?H hex upper     ?b all bytes     ?1-?4 custom
     ///
     /// Examples:
-    ///   ?l?l?l?l?l?l?l?l   →  8 lowercase letters
-    ///   ?u?l?l?l?d?d?d?d   →  Capital + 3 lower + 4 digits
-    ///   ?d?d?d?d?d?d        →  6-digit PIN
-    ///   ?1?1?1?2?2?d?d?d    →  custom C1 + C2 + 3 digits
+    ///   ?l?l?l?l?l?l?l?l   8 lowercase        (26⁸ combos)
+    ///   ?u?l?l?l?d?d?d?d   Capital+3l+4d      (26⁴·10⁴)
+    ///   ?d?d?d?d?d?d        6-digit PIN        (10⁶)
+    ///   ?1?1?1?2?2?d?d?d    custom + digits
+    ///
+    ///   pwdcrack brute-force hashes.txt ?l?l?l?l?l?l
+    ///   pwdcrack brute-force hashes.txt ?1?1?d?d?d -1 abcdef
     BruteForce {
         /// Hash file
         hash_file: String,
@@ -132,11 +136,12 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Combinator attack — concatenates words from two wordlists
+    /// Combinator attack — concatenate pairs from two wordlists
     ///
-    /// Every word from wordlist1 is concatenated with every word from
-    /// wordlist2 (wordlist1 + wordlist2). The result is hashed and
-    /// compared against the target hashes.
+    /// For every word A from wordlist1 and word B from wordlist2,
+    /// hashes A+B and compares against targets. Produces N·M candidates.
+    ///
+    /// Example: pwdcrack combinator hashes.txt left.txt right.txt
     Combinator {
         /// Hash file
         hash_file: String,
@@ -152,87 +157,114 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Identify hash types in a file — shows count per type
+    /// Identify hash types — scan a file and classify hashes
+    ///
+    /// Reads a hash file and detects each hash type based on format/length.
+    /// Shows count per type with optional per-hash details.
+    ///
+    /// Examples: pwdcrack identify hashes.txt, pwdcrack identify hashes.txt -v
     Identify {
-        /// Hash file to analyze
         hash_file: String,
-        /// Show full details for each hash (type, length, etc.)
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, help = "Show per-hash details (type, length, charset)")]
         verbose: bool,
     },
 
-    /// Compute hash of a password (useful for testing / verification)
+    /// Hash a password — compute a hash for testing
+    ///
+    /// Computes a hash for the given password using the specified algorithm.
+    /// Useful for preparing test hashes or verifying format compatibility.
+    ///
+    /// Examples: pwdcrack hash mypassword -t sha256, pwdcrack hash mypassword -t ntlm
     Hash {
-        /// Password to hash
         password: String,
-        /// Hash type (e.g. md5, sha256, ntlm, bcrypt). Default: auto-detect from hash format
-        #[arg(short = 't', long, default_value = "md5")]
+        #[arg(short = 't', long, default_value = "md5", help = "Hash algorithm: md5, sha1, sha256, sha512, sha3, ntlm, blake2b, ripemd160, ...")]
         hash_type: String,
     },
 
     /// Verify a password against a hash
+    ///
+    /// Checks whether the given password produces the given hash.
+    /// Auto-detects hash type from the hash format/length.
+    ///
+    /// Example: pwdcrack verify 5d41402abc4b2a76b9719d911017c592 hello
     Verify {
-        /// Hash string
+        /// Target hash to verify against
         hash: String,
         /// Password to test
         password: String,
     },
 
-    /// List all supported hash types with details
+    /// List supported hash types with details
+    ///
+    /// Shows all supported hash algorithms with bit length, category,
+    /// and an example hash. Use -v for full details. Optionally filter by name.
+    ///
+    /// Examples: pwdcrack list, pwdcrack list sha, pwdcrack list -v
     List {
-        /// Show all details (bit length, example hash, etc.)
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, help = "Show full details (bits, example hash, category)")]
         verbose: bool,
-        /// Filter by search term (e.g. "sha", "bcrypt", "unix")
+        #[arg(help = "Optional filter term (e.g. sha, bcrypt, unix, nt)")]
         filter: Option<String>,
     },
 
-    /// Dry-run: generate mask candidates without cracking
+    /// Dry-run mask — preview mask candidates
+    ///
+    /// Generates sample candidates for a mask pattern without actually
+    /// cracking. Useful for testing mask syntax and counting keyspace.
+    ///
+    /// Examples: pwdcrack mask ?l?l?l?l?l?l, pwdcrack mask ?d?d?d?d -1 abc --count 5
     Mask {
-        /// Mask pattern (same placeholders as brute-force)
         mask: String,
-        #[arg(short = '1', long)]
+        #[arg(short = '1', long, help = "Custom charset for ?1 placeholder")]
         charset1: Option<String>,
-        #[arg(short = '2', long)]
+        #[arg(short = '2', long, help = "Custom charset for ?2 placeholder")]
         charset2: Option<String>,
-        #[arg(short = '3', long)]
+        #[arg(short = '3', long, help = "Custom charset for ?3 placeholder")]
         charset3: Option<String>,
-        #[arg(short = '4', long)]
+        #[arg(short = '4', long, help = "Custom charset for ?4 placeholder")]
         charset4: Option<String>,
-        /// Number of candidates to show
-        #[arg(long, default_value_t = 20)]
+        #[arg(long, default_value_t = 20, help = "Number of candidates to show (max 100)")]
         count: usize,
-        /// Start offset
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 0, help = "Start index offset into keyspace")]
         offset: u64,
     },
 
-    /// Benchmark hash verification throughput
+    /// Benchmark — measure hash throughput
+    ///
+    /// Runs a benchmark for one or all hash types and reports
+    /// hashes-per-second. Useful for comparing hardware performance.
+    ///
+    /// Examples: pwdcrack benchmark md5 --iterations 500000, pwdcrack benchmark all
     Benchmark {
-        /// Hash type to benchmark (e.g. md5, sha256, ntlm, bcrypt, all)
-        #[arg(default_value = "all")]
+        #[arg(default_value = "all", help = "Hash type to benchmark (or 'all' for all types)")]
         hash_type: String,
-        /// Number of iterations per cracker
-        #[arg(long, default_value_t = 100_000)]
+        #[arg(long, default_value_t = 100_000, help = "Hash iterations per cracker")]
         iterations: u64,
     },
 
     /// Show cracked passwords from potfile
+    ///
+    /// Reads the potfile and displays recovered passwords.
+    /// Use -t to show hash types, -s for a summary count.
+    ///
+    /// Examples: pwdcrack show, pwdcrack show -t, pwdcrack show -s
     Show {
-        /// Potfile path (default: pwdcrack.pot)
-        #[arg(default_value = "pwdcrack.pot")]
+        #[arg(default_value = "pwdcrack.pot", help = "Potfile path to read")]
         potfile: String,
-        /// Show hash type alongside password
-        #[arg(short = 't', long)]
+        #[arg(short = 't', long, help = "Show hash type alongside password")]
         show_type: bool,
-        /// Show only statistics (count summary)
-        #[arg(short = 's', long)]
+        #[arg(short = 's', long, help = "Show only statistics (count, types)")]
         stats: bool,
     },
 
-    /// Suggest the best attack approach for a hash type
+    /// Suggest attack strategy for a hash type
+    ///
+    /// Analyzes the given hash and suggests the most effective
+    /// cracking approach (mask pattern, wordlist, rules, etc.).
+    ///
+    /// Examples: pwdcrack suggest '$2y$10$...', pwdcrack suggest '5d41402abc4b2a76b9719d911017c592'
     Suggest {
-        /// Hash string to analyze
+        #[arg(help = "Hash string to analyze for attack strategy")]
         hash: String,
     },
 }
