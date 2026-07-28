@@ -188,10 +188,40 @@ pub enum HashType {
     DCC2,
     /// NTLMv2.
     NTLMV2,
+    /// Salted MD5 (MD5(password + salt)).
+    SALTEDMD5,
+    /// Salted SHA-1 (SHA1(password + salt)).
+    SALTEDSHA1,
+    /// Salted SHA-256 (SHA256(password + salt)).
+    SALTEDSHA256,
+    /// Salted SHA-512 (SHA512(password + salt)).
+    SALTEDSHA512,
+    /// Salted SHA-384 (SHA384(password + salt)).
+    SALTEDSHA384,
+    /// Double MD5 (MD5(MD5(password))).
+    DOUBLEMD5,
+    /// Double SHA-1 (SHA1(SHA1(password))).
+    DOUBLESHA1,
+    /// Double SHA-256 (SHA256(SHA256(password))).
+    DOUBLESHA256,
+    /// {SHA} base64-encoded SHA-1.
+    SHA1DASH,
+    /// LDAP SSHA1 (Salted SHA1 in base64).
+    SSHA1,
+    /// LDAP SSHA256 (Salted SHA256 in base64).
+    SSHA256,
+    /// CRC8 checksum.
+    CRC8,
+    /// CRC16 checksum.
+    CRC16,
+    /// CRC32C (Castagnoli) checksum.
+    CRC32C,
     /// CRC32 checksum.
     CRC32,
     /// CRC64 checksum.
     CRC64,
+    /// Adler-32 checksum.
+    ADLER32,
     /// macOS 10.8+ PBKDF2.
     MACOSPBKDF2,
     /// Sun MD5 Crypt (`$md5$`).
@@ -300,6 +330,21 @@ impl HashType {
             HashType::DCC1 => "DCC1",
             HashType::DCC2 => "DCC2",
             HashType::NTLMV2 => "NTLMv2",
+            HashType::SALTEDMD5 => "Salted MD5",
+            HashType::SALTEDSHA1 => "Salted SHA-1",
+            HashType::SALTEDSHA256 => "Salted SHA-256",
+            HashType::SALTEDSHA512 => "Salted SHA-512",
+            HashType::SALTEDSHA384 => "Salted SHA-384",
+            HashType::DOUBLEMD5 => "Double MD5",
+            HashType::DOUBLESHA1 => "Double SHA-1",
+            HashType::DOUBLESHA256 => "Double SHA-256",
+            HashType::SHA1DASH => "{SHA}",
+            HashType::SSHA1 => "SSHA-1",
+            HashType::SSHA256 => "SSHA-256",
+            HashType::CRC8 => "CRC8",
+            HashType::CRC16 => "CRC16",
+            HashType::CRC32C => "CRC32C",
+            HashType::ADLER32 => "Adler-32",
             HashType::CRC32 => "CRC32",
             HashType::CRC64 => "CRC64",
             HashType::MACOSPBKDF2 => "macOS PBKDF2",
@@ -364,7 +409,11 @@ impl HashType {
             HashType::BLAKE2S128 => Some(128),
             HashType::BLAKE2S160 => Some(160),
             HashType::BLAKE3256 => Some(256),
+            HashType::CRC8 => Some(8),
+            HashType::CRC16 => Some(16),
             HashType::CRC32 => Some(32),
+            HashType::CRC32C => Some(32),
+            HashType::ADLER32 => Some(32),
             HashType::CRC64 => Some(64),
             HashType::NTLM => Some(128),
             HashType::LM => Some(64),
