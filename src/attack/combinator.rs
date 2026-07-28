@@ -45,7 +45,10 @@ pub fn run_combinator(
     let total_hashes = hashes.len();
     let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
     let line_count = AtomicU64::new(0);
+    #[cfg(feature = "progress-rich")]
     let progress = ProgressStats::new();
+    #[cfg(not(feature = "progress-rich"))]
+    let _progress = ProgressStats::new();
 
     if !quiet {
         eprintln!("[*] Wordlist1: streaming");
@@ -80,6 +83,8 @@ pub fn run_combinator(
             }
 
             let tested = words2.len() as u64;
+            #[cfg(not(feature = "progress-rich"))]
+            let _tested = tested;
             line_count.fetch_add(1, Ordering::Relaxed);
 
             #[cfg(feature = "progress-rich")]

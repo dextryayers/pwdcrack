@@ -52,20 +52,24 @@ module sha256_core (
         for (int i = 0; i < 16; i++) W_pipe[0][i] = msg_word[i];
     end
 
+    // σ0 (lowercase): ROTR_7(x) ^ ROTR_18(x) ^ SHR_3(x) — used in message schedule
     function automatic [31:0] sigma0(input [31:0] x);
-        return {x[ 1:0], x[31:2]} ^ {x[12:0], x[31:13]} ^ {x[21:0], 10'b0, x[31:22]};
+        return {x[ 6:0], x[31:7]} ^ {x[17:0], x[31:18]} ^ {2'b0, x[31:3]};
     endfunction
 
+    // σ1 (lowercase): ROTR_17(x) ^ ROTR_19(x) ^ SHR_10(x) — used in message schedule
     function automatic [31:0] sigma1(input [31:0] x);
-        return {x[ 5:0], x[31:6]} ^ {x[10:0], x[31:11]} ^ {x[24:0], 7'b0, x[31:25]};
+        return {x[16:0], x[31:17]} ^ {x[18:0], x[31:19]} ^ {9'b0, x[31:10]};
     endfunction
 
+    // Σ0 (uppercase): ROTR_2(x) ^ ROTR_13(x) ^ ROTR_22(x) — used in compression
     function automatic [31:0] Sigma0(input [31:0] x);
-        return {x[ 1:0], x[31:2]} ^ {x[12:0], x[31:13]} ^ {x[21:0], 10'b0, x[31:22]};
+        return {x[ 1:0], x[31:2]} ^ {x[12:0], x[31:13]} ^ {x[21:0], x[31:22]};
     endfunction
 
+    // Σ1 (uppercase): ROTR_6(x) ^ ROTR_11(x) ^ ROTR_25(x) — used in compression
     function automatic [31:0] Sigma1(input [31:0] x);
-        return {x[ 5:0], x[31:6]} ^ {x[10:0], x[31:11]} ^ {x[24:0], 7'b0, x[31:25]};
+        return {x[ 5:0], x[31:6]} ^ {x[10:0], x[31:11]} ^ {x[24:0], x[31:25]};
     endfunction
 
     function automatic [31:0] Maj(input [31:0] a, b, c);

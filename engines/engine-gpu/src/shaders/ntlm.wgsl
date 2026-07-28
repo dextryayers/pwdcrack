@@ -14,7 +14,7 @@ struct HashResult {
 
 @group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
 @group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<uniform> target: vec4<u32>;
+@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
 @group(0) @binding(3) var<uniform> count: u32;
 
 fn left_rotate(x: u32, c: u32) -> u32 {
@@ -25,7 +25,7 @@ fn md4_f(x: u32, y: u32, z: u32) -> u32 { return (x & y) | ((~x) & z); }
 fn md4_g(x: u32, y: u32, z: u32) -> u32 { return (x & y) | (x & z) | (y & z); }
 fn md4_h(x: u32, y: u32, z: u32) -> u32 { return x ^ y ^ z; }
 
-fn md4_verify(password_utf16: array<u32, 16>, len_utf16: u32, target_digest: vec4<u32>) -> u32 {
+fn md4_verify(password_utf16: array<u32, 16>, len_utf16: u32) -> u32 {
     var a: u32 = 0x67452301u;
     var b: u32 = 0xefcdab89u;
     var c: u32 = 0x98badcfeu;
@@ -97,8 +97,8 @@ fn md4_verify(password_utf16: array<u32, 16>, len_utf16: u32, target_digest: vec
     c = left_rotate(c + md4_h(d, a, b) + M[7]  + 0x6ed9eba1u, 11u);
     b = left_rotate(b + md4_h(c, d, a) + M[15] + 0x6ed9eba1u, 15u);
 
-    let digest = vec4(a + 0x67452301u, b + 0xefcdab89u, c + 0x98badcfeu, d + 0x10325476u);
-    if digest == target_digest { return 1u; }
+    if a + 0x67452301u == target[0] && b + 0xefcdab89u == target[1] &&
+       c + 0x98badcfeu == target[2] && d + 0x10325476u == target[3] { return 1u; }
     return 0u;
 }
 
@@ -125,6 +125,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if idx >= count { return; }
     let cand = candidates[idx];
     let (utf16_data, utf16_len) = utf16le_encode(cand.password, cand.len);
-    let found = md4_verify(utf16_data, utf16_len, target);
+    let found = md4_verify(utf16_data, utf16_len);
     results[idx] = HashResult(found, idx, vec4(0u));
 }

@@ -143,6 +143,16 @@ impl HashParser for Md5Crypt {
     }
 }
 
+fn parse_rounds(raw: &str, prefix: &str) -> Option<u32> {
+    let without_prefix = raw.strip_prefix(prefix)?;
+    if let Some(rest) = without_prefix.strip_prefix("rounds=") {
+        let end = rest.find('$')?;
+        rest[..end].parse::<u32>().ok()
+    } else {
+        None
+    }
+}
+
 pub struct Sha256Crypt;
 
 impl Sha256Crypt {
@@ -261,7 +271,7 @@ impl HashCracker for Sha256Crypt {
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
         let salt = entry.salt.as_deref().unwrap_or("");
-        let rounds = None;
+        let rounds = parse_rounds(&entry.raw, "$5$");
         let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes(), rounds);
         computed == entry.raw
     }
@@ -432,7 +442,8 @@ impl HashCracker for Sha512Crypt {
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
         let salt = entry.salt.as_deref().unwrap_or("");
-        let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes(), None);
+        let rounds = parse_rounds(&entry.raw, "$6$");
+        let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes(), rounds);
         computed == entry.raw
     }
 }

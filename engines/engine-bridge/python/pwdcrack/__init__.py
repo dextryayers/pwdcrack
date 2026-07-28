@@ -12,14 +12,40 @@ Usage:
 
     # Dictionary attack
     for result in pwdcrack.attack_dictionary("rockyou.txt"):
-        print(f"{result.hash}:{result.password}")
+        print(f"{result}")
 
     # GPU benchmark
-    print(pwdcrack.benchmark("md5", backend="gpu"))
+    print(pwdcrack.benchmark("md5"))
+
+    # Verify one password
+    if pwdcrack.verify_one("password123", hash_str):
+        print("Cracked!")
 """
 
-try:
-    from pwdcrack._native import *
-except ImportError:
-    # Placeholder when native module isn't built
-    pass
+from pwdcrack._native import (
+    detect,
+    load_file,
+    load_buffer,
+    identify,
+    attack_dictionary,
+    attack_bruteforce,
+    verify_one,
+    found_count,
+    get_result,
+    benchmark,
+    version,
+)
+
+__all__ = [
+    "detect",
+    "load_file",
+    "load_buffer",
+    "identify",
+    "attack_dictionary",
+    "attack_bruteforce",
+    "verify_one",
+    "found_count",
+    "get_result",
+    "benchmark",
+    "version",
+]

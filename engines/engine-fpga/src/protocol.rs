@@ -9,6 +9,7 @@
 pub const MAGIC_HOST: u32 = 0x5043524B; // "PCRK"
 pub const MAGIC_FPGA: u32 = 0x50435246; // "PCRF"
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum Command {
     Crack  = 0x01,  // Verify passwords against hash
@@ -17,6 +18,7 @@ pub enum Command {
     Reset  = 0x04,  // Reset cores
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum HashType {
     MD5    = 0x01,
@@ -67,7 +69,7 @@ pub struct Response {
     pub crc: u32,
 }
 
-fn crc32(data: &[u8]) -> u32 {
+pub fn crc32(data: &[u8]) -> u32 {
     data.iter().fold(0u32, |acc, &b| {
         (acc >> 8) ^ CRC32_TABLE[((acc ^ b as u32) & 0xFF) as usize]
     })

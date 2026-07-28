@@ -8,4 +8,18 @@ description = "FFI bridges: C, Python (PyO3), Perl (XS)"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+pwdcrack = { path = "../../" }
 log = "0.4"
+hex = "0.4"
+md-5 = "0.10"
+md4 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+
+# Python bindings (optional, for maturin build)
+pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
+
+[features]
+python = ["dep:pyo3"]
+perl = []
+default = []

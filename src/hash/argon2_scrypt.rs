@@ -10,19 +10,40 @@ pub struct Argon2dHash;
 pub struct Argon2idHash;
 pub struct ScryptHash;
 
+fn parse_argon2_params(raw: &str) -> Option<Argon2Params> {
+    let parts: Vec<&str> = raw.split('$').collect();
+    if parts.len() < 4 { return None; }
+    let params_str = parts[3];
+    let mut m_cost = 19456u32;
+    let mut t_cost = 2u32;
+    let mut p_cost = 1u32;
+    for kv in params_str.split(',') {
+        let mut kv_split = kv.splitn(2, '=');
+        match (kv_split.next(), kv_split.next()) {
+            (Some("m"), Some(v)) => m_cost = v.parse().unwrap_or(m_cost),
+            (Some("t"), Some(v)) => t_cost = v.parse().unwrap_or(t_cost),
+            (Some("p"), Some(v)) => p_cost = v.parse().unwrap_or(p_cost),
+            _ => {}
+        }
+    }
+    Argon2Params::new(m_cost, t_cost, p_cost, None).ok()
+}
+
 impl HashCracker for Argon2iHash {
     fn hash_type(&self) -> HashType { HashType::Argon2i }
     fn name(&self) -> &'static str { "Argon2i" }
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
-        let parsed = PasswordHash::new(&entry.raw).ok();
-        match parsed {
-            Some(ph) => {
-                let argon2 = Argon2::new(Algorithm::Argon2i, Version::V0x13, Argon2Params::default());
-                argon2.verify_password(password.as_bytes(), &ph).is_ok()
-            }
-            None => false,
-        }
+        let params = match parse_argon2_params(&entry.raw) {
+            Some(p) => p,
+            None => return false,
+        };
+        let argon2 = Argon2::new(Algorithm::Argon2i, Version::V0x13, params);
+        let ph = match PasswordHash::new(&entry.raw) {
+            Ok(ph) => ph,
+            Err(_) => return false,
+        };
+        argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
 }
 
@@ -54,14 +75,16 @@ impl HashCracker for Argon2dHash {
     fn name(&self) -> &'static str { "Argon2d" }
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
-        let parsed = PasswordHash::new(&entry.raw).ok();
-        match parsed {
-            Some(ph) => {
-                let argon2 = Argon2::new(Algorithm::Argon2d, Version::V0x13, Argon2Params::default());
-                argon2.verify_password(password.as_bytes(), &ph).is_ok()
-            }
-            None => false,
-        }
+        let params = match parse_argon2_params(&entry.raw) {
+            Some(p) => p,
+            None => return false,
+        };
+        let argon2 = Argon2::new(Algorithm::Argon2d, Version::V0x13, params);
+        let ph = match PasswordHash::new(&entry.raw) {
+            Ok(ph) => ph,
+            Err(_) => return false,
+        };
+        argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
 }
 
@@ -93,14 +116,16 @@ impl HashCracker for Argon2idHash {
     fn name(&self) -> &'static str { "Argon2id" }
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
-        let parsed = PasswordHash::new(&entry.raw).ok();
-        match parsed {
-            Some(ph) => {
-                let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, Argon2Params::default());
-                argon2.verify_password(password.as_bytes(), &ph).is_ok()
-            }
-            None => false,
-        }
+        let params = match parse_argon2_params(&entry.raw) {
+            Some(p) => p,
+            None => return false,
+        };
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let ph = match PasswordHash::new(&entry.raw) {
+            Ok(ph) => ph,
+            Err(_) => return false,
+        };
+        argon2.verify_password(password.as_bytes(), &ph).is_ok()
     }
 }
 

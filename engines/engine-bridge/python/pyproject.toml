@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pwdcrack"
+version = "0.1.0"
+description = "Universal password cracker — Python bindings to Rust core"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    { name = "pwdcrack team" },
+]
+
+[project.urls]
+repository = "https://github.com/pwdcrack/pwdcrack"
+
+[tool.maturin]
+# Path to the Rust crate relative to pyproject.toml
+manifest-path = "../Cargo.toml"
+module-name = "pwdcrack._native"
+features = ["python"]
+bindings = "pyo3"

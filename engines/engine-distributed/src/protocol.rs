@@ -1,10 +1,11 @@
-//! Network protocol for distributed cracking
-
 use serde::{Serialize, Deserialize};
 
-/// Message sent between master and worker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
+    // Bidirectional
+    Ping,
+    Pong,
+
     // Worker → Master
     Handshake {
         node_name: String,
@@ -14,6 +15,12 @@ pub enum Message {
     Heartbeat {
         node_name: String,
         stats: WorkerStats,
+    },
+    WorkProgress {
+        node_name: String,
+        batch_id: u64,
+        tested: u64,
+        hashes_sec: f64,
     },
     Result {
         node_name: String,
@@ -78,4 +85,10 @@ pub enum AttackType {
         left_words: Vec<String>,
         right_words: Vec<String>,
     },
+}
+
+impl WorkUnit {
+    pub fn total_size(&self) -> u64 {
+        self.keyspace_end.saturating_sub(self.keyspace_start)
+    }
 }

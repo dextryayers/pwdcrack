@@ -135,12 +135,13 @@ pub fn run_bruteforce(
     quiet: bool,
 ) -> Vec<CrackResult> {
     let mask = parse_mask(mask_str);
-    let custom: Vec<&[u8]> = custom_charsets.iter()
+    let owned_custom: Vec<Vec<u8>> = custom_charsets.iter()
         .map(|opt| match opt {
-            Some(s) => Box::leak(s.as_bytes().to_vec().into_boxed_slice()),
-            None => LOWERCASE,
+            Some(s) => s.as_bytes().to_vec(),
+            None => LOWERCASE.to_vec(),
         })
         .collect();
+    let custom: Vec<&[u8]> = owned_custom.iter().map(|v| v.as_slice()).collect();
 
     let total = total_combinations(&mask, &custom);
     if !quiet {
@@ -149,7 +150,10 @@ pub fn run_bruteforce(
     }
 
     let pb = setup_progress(total, quiet);
+    #[cfg(feature = "progress-rich")]
     let progress = ProgressStats::new();
+    #[cfg(not(feature = "progress-rich"))]
+    let _progress = ProgressStats::new();
 
     let counter = AtomicU64::new(0);
     let chunk_size = (100_000u64).max(total / (threads.max(1) as u64 * 100).max(1));

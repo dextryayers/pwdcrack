@@ -3,6 +3,7 @@ use axum::response::IntoResponse;
 use axum::extract::State;
 
 use std::sync::Arc;
+use tokio::time::{interval, Duration};
 
 use crate::server::AppState;
 
@@ -14,19 +15,31 @@ pub async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    use tokio::time::{interval, Duration};
-
     let mut tick = interval(Duration::from_secs(1));
 
     loop {
         tick.tick().await;
 
+        let hr = *state.hash_rate.read().await;
+        let tc = *state.total_cracked.read().await;
+        let tt = *state.total_tested.read().await;
+        let status = format!("{:?}", *state.status.read().await);
+        let workers: Vec<serde_json::Value> = state.workers.read().await.iter().map(|w| {
+            serde_json::json!({
+                "name": w.name,
+                "hashes_sec": w.hashes_sec,
+                "total_cracked": w.total_cracked,
+                "alive": w.alive,
+            })
+        }).collect();
+
         let payload = serde_json::json!({
-            "hash_rate": *state.hash_rate.read().await,
-            "total_cracked": *state.total_cracked.read().await,
-            "total_tested": *state.total_tested.read().await,
+            "hash_rate": hr,
+            "total_cracked": tc,
+            "total_tested": tt,
             "uptime_secs": state.start_time.elapsed().as_secs(),
-            "workers": [],
+            "status": status,
+            "workers": workers,
         });
 
         if socket

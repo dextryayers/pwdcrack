@@ -6,5 +6,7 @@ WriteMakefile(
     PREREQ_PM         => {},
     LIBS              => ['-L../../target/release -lcrack_core'],
     INC               => '-I.',
-    OBJECT            => 'libpwdcrack.o',
+    OBJECT            => 'pwdcrack.o',
+    # XS file
+    XS                => {'pwdcrack.xs' => 'pwdcrack.c'},
 );

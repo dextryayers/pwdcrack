@@ -15,7 +15,7 @@ struct HashResult {
 
 @group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
 @group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<uniform> target: vec4<u32>;
+@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
 @group(0) @binding(3) var<uniform> count: u32;
 
 const S: array<u32, 64> = array(
@@ -52,7 +52,7 @@ fn md5_round(a: u32, b: u32, c: u32, d: u32, k: u32, s: u32, t: u32, f: u32) -> 
     return b + left_rotate(a + f + k + t, s);
 }
 
-fn md5_verify(password: array<u32, 16>, len: u32, target_digest: vec4<u32>) -> u32 {
+fn md5_verify(password: array<u32, 16>, len: u32) -> u32 {
     var a: u32 = 0x67452301u;
     var b: u32 = 0xefcdab89u;
     var c: u32 = 0x98badcfeu;
@@ -289,8 +289,7 @@ fn md5_verify(password: array<u32, 16>, len: u32, target_digest: vec4<u32>) -> u
     F = DD ^ (CC | (~AA));
     BB = CC + left_rotate(BB + F + K[63] + M[9], S[63]);
 
-    let digest = vec4(a + AA, b + BB, c + CC, d + DD);
-    if digest == target_digest {
+    if a + AA == target[0] && b + BB == target[1] && c + CC == target[2] && d + DD == target[3] {
         return 1u;
     }
     return 0u;
@@ -302,6 +301,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if idx >= count { return; }
 
     let cand = candidates[idx];
-    let found = md5_verify(cand.password, cand.len, target);
+    let found = md5_verify(cand.password, cand.len);
     results[idx] = HashResult(found, idx, vec4(0u));
 }

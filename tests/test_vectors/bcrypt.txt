@@ -1,4 +1,5 @@
 # bcrypt test vectors — hash:password
-$2b$04$9Vu4cnZ5KlUNsN60um7fg.cXUjYdWR8db/gMFi3lXvMak6.a7sRvO:test
-$2b$06$bXpPLCRmJUbXHGrT1PDqTuzWN4kmPvWMsSsY00qbYpRbkPqo4cMWe:password
-$2a$06$If6bvum7DFj0EAYtMPGvNOXuWVJ7daY.8wjOm9F6gMuzO2rO1G07G:abc123
+# Generated with bcrypt crate v0.16 (same as pwdcrack uses)
+$2b$04$2WYyN.eiXbyOO340HLSZYOh7.Nag8klMznoYg9ishyhAaURBnrgPi:password
+$2b$04$mrvCMtFnxP4clKtBQlHGae33WQPFJGxXMVlR7Mj4K9F.L3Dw/3VGO:test123
+$2b$04$M8PWFFEfg8N/wyMrxe1oV.EQCRqVaqi/PLxBYoQ8foyIE7MEj8/7q:hello

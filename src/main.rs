@@ -1,15 +1,11 @@
 mod cli;
-mod hash;
-mod attack;
-mod potfile;
 
 use clap::Parser;
-use cli::{Cli};
-use cli::args::Commands;
-use hash::{HashCracker, HashEntry, HashType};
-use hash::detector::Detector;
-use attack::CrackResult;
-use potfile::Potfile;
+use cli::{Cli, args::Commands};
+use pwdcrack::hash::{HashCracker, HashEntry, HashType};
+use pwdcrack::hash::detector::Detector;
+use pwdcrack::attack::CrackResult;
+use pwdcrack::potfile::Potfile;
 
 #[cfg(feature = "engine-power")]
 use std::sync::Arc;
@@ -152,7 +148,7 @@ fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: O
     eprintln!("[*] Hash type: {}", cracker.name());
     eprintln!("[*] Threads: {}", threads);
 
-    let results = attack::dictionary::run_dictionary(
+    let results = pwdcrack::attack::dictionary::run_dictionary(
         &mut hashes, cracker.as_ref(), wordlist, rules, threads, args.quiet,
     );
 
@@ -170,7 +166,7 @@ fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[
     eprintln!("[*] Hash type: {}", cracker.name());
     eprintln!("[*] Mask: {}", mask);
 
-    let results = attack::brute::run_bruteforce(
+    let results = pwdcrack::attack::brute::run_bruteforce(
         &mut hashes, cracker.as_ref(), mask, charsets, threads, args.quiet,
     );
 
@@ -187,7 +183,7 @@ fn cmd_combinator(detector: &Detector, hash_file: &str, wl1: &str, wl2: &str, th
     eprintln!("[*] Starting combinator attack");
     eprintln!("[*] Hash type: {}", cracker.name());
 
-    let results = attack::combinator::run_combinator(
+    let results = pwdcrack::attack::combinator::run_combinator(
         &mut hashes, cracker.as_ref(), wl1, wl2, threads, args.quiet,
     );
 

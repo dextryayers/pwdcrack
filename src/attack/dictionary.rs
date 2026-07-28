@@ -25,7 +25,7 @@ pub fn run_dictionary(
     cracker: &dyn HashCracker,
     wordlist_path: &str,
     rules_path: Option<&str>,
-    threads: usize,
+    _threads: usize,
     quiet: bool,
 ) -> Vec<CrackResult> {
     let rules = match rules_path {
@@ -192,11 +192,12 @@ fn run_streaming(
     hashes: &[HashEntry],
     cracker: &dyn HashCracker,
     rule_count: usize,
-    total_hashes: usize,
+    _total_hashes: usize,
     results: &std::sync::Mutex<Vec<CrackResult>>,
     line_count: &AtomicU64,
     cracked_count: &AtomicU64,
-    progress: &ProgressStats,
+    #[cfg(not(feature = "progress-rich"))] _progress: &ProgressStats,
+    #[cfg(feature = "progress-rich")] progress: &ProgressStats,
     pb: Option<indicatif::ProgressBar>,
     quiet: bool,
     _word_count_hint: u64,

@@ -9,7 +9,7 @@ pub struct PcieDma {
     /// DMA device file
     file: File,
     /// Maximum transfer size per DMA operation
-    max_transfer_size: usize,
+    _max_transfer_size: usize,
 }
 
 impl PcieDma {
@@ -22,7 +22,7 @@ impl PcieDma {
 
         Ok(PcieDma {
             file,
-            max_transfer_size: 1024 * 1024, // 1MB per DMA
+            _max_transfer_size: 1024 * 1024, // 1MB per DMA
         })
     }
 

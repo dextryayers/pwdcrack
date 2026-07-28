@@ -13,14 +13,14 @@ struct HashResult {
 
 @group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
 @group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<uniform> target: vec4<u32>;
+@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
 @group(0) @binding(3) var<uniform> count: u32;
 
 fn left_rotate(x: u32, c: u32) -> u32 {
     return (x << c) | (x >> (32u - c));
 }
 
-fn sha1_verify(password: array<u32, 16>, len: u32, target_digest: vec4<u32>) -> u32 {
+fn sha1_verify(password: array<u32, 16>, len: u32) -> u32 {
     var w: array<u32, 80>;
     for (var i: u32 = 0u; i < 16u; i++) {
         w[i] = password[i];
@@ -84,8 +84,7 @@ fn sha1_verify(password: array<u32, 16>, len: u32, target_digest: vec4<u32>) -> 
     h3 += d;
     h4 += e;
 
-    let digest = vec4(h0, h1, h2, h3);
-    if digest == target_digest {
+    if h0 == target[0] && h1 == target[1] && h2 == target[2] && h3 == target[3] && h4 == target[4] {
         return 1u;
     }
     return 0u;
@@ -97,6 +96,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if idx >= count { return; }
 
     let cand = candidates[idx];
-    let found = sha1_verify(cand.password, cand.len, target);
+    let found = sha1_verify(cand.password, cand.len);
     results[idx] = HashResult(found, idx, vec4(0u));
 }

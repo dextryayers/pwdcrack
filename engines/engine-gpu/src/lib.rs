@@ -1,3 +1,4 @@
+pub mod cracker;
 pub mod device;
 pub mod pipeline;
 pub mod buffer;

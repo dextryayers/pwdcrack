@@ -65,8 +65,8 @@ module pwdcrack_top (
         .rst_n(rst_n),
         .valid(valid_ntlm),
         .ready(ready_ntlm),
-        .msg_bytes('0),
-        .msg_len(8'd0),
+        .msg_word(msg_word_sha),   // Reuse SHA message (host sends NTLM block separately)
+        .h_in(h_in_md5),           // MD4 IV
         .h_out(h_out_ntlm),
         .done(done_ntlm)
     );

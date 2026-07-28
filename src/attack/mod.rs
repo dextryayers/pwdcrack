@@ -17,8 +17,8 @@ pub struct CrackResult {
 pub struct ProgressStats {
     start: Instant,
     tested: AtomicU64,
-    prev_tested: AtomicU64,
-    prev_time: std::sync::Mutex<Instant>,
+    _prev_tested: AtomicU64,
+    _prev_time: std::sync::Mutex<Instant>,
 }
 
 impl ProgressStats {
@@ -26,8 +26,8 @@ impl ProgressStats {
         ProgressStats {
             start: Instant::now(),
             tested: AtomicU64::new(0),
-            prev_tested: AtomicU64::new(0),
-            prev_time: std::sync::Mutex::new(Instant::now()),
+            _prev_tested: AtomicU64::new(0),
+            _prev_time: std::sync::Mutex::new(Instant::now()),
         }
     }
 

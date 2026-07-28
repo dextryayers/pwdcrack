@@ -68,11 +68,18 @@ engine-power = ["dep:engine-power"]
 engine-distributed = ["dep:engine-distributed"]
 engine-web  = ["dep:engine-web"]
 engine-android = ["dep:engine-android"]
-engine-bridge = ["dep:engine-bridge"]
 
 # === Platform-specific ===
 android = ["engine-android"]
 distributed = ["engine-distributed"]
+
+[dev-dependencies]
+serde_json = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "hash_bench"
+harness = false
 
 # ============================================================
 # DEPENDENCIES
@@ -122,7 +129,10 @@ engine-power = { path = "engines/engine-power", optional = true }
 engine-distributed = { path = "engines/engine-distributed", optional = true }
 engine-web  = { path = "engines/engine-web", optional = true }
 engine-android = { path = "engines/engine-android", optional = true }
-engine-bridge = { path = "engines/engine-bridge", optional = true }
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "pwdcrack"
 
 # mmap-based wordlist streaming
 [target.'cfg(any(unix, windows))'.dependencies.memmap2]
@@ -164,4 +174,11 @@ codegen-units = 16
 [profile.dev]
 opt-level = 0
 debug = true
+
+# Benchmarks need unwind for criterion
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
 

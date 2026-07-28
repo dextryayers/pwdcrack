@@ -6,7 +6,9 @@ pub mod detector;
 
 use std::fmt::Display;
 
-#[derive(Debug, Clone)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashEntry {
     pub raw: String,
     pub hash_type: HashType,
@@ -17,7 +19,7 @@ pub struct HashEntry {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HashType {
     MD5,
     MD5Crypt,

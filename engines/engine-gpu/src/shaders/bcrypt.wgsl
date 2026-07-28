@@ -19,7 +19,7 @@ struct BcryptConfig {
 
 @group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
 @group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<uniform> target: vec4<u32>;
+@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
 @group(0) @binding(3) var<uniform> count: u32;
 @group(0) @binding(4) var<uniform> config: BcryptConfig;
 
@@ -301,7 +301,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     r = 0x6f756274u; // "oubt"
     let enc3 = blowfish_encrypt(&P, &S, l, r);
 
-    let digest = vec4(enc1.x, enc1.y, enc2.x, enc2.y);
-    if digest == target { results[idx] = HashResult(1u, idx, vec4(0u)); }
+    let ok = enc1.x == target[0] && enc1.y == target[1] &&
+             enc2.x == target[2] && enc2.y == target[3] &&
+             enc3.x == target[4] && enc3.y == target[5];
+    if ok { results[idx] = HashResult(1u, idx, vec4(0u)); }
     else { results[idx] = HashResult(0u, idx, vec4(0u)); }
 }
