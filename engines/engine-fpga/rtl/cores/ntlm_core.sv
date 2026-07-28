@@ -1,119 +1,114 @@
 // ============================================================
-// NTLM Pipelined Core — MD4 hash only
-// Input: UTF16-LE pre-encoded bytes (password encoded by host)
-// NTLM = MD4(UTF16-LE(password)), host sends already-encoded bytes
-// Fully pipelined: 1 hash/cycle, 49-cycle latency
+// NTLM Core — ASCII to UTF16-LE converter + MD4 hash
+// NTLMv1 = MD4(UTF16-LE(password))
+// Fully pipelined: 49-cycle latency
 // ============================================================
-//
-// Usage:
-//   Host must UTF16-LE encode the password before sending.
-//   Example: password "abc" → {0x61,0x00,0x62,0x00,0x63,0x00}
-//   msg_len = password_length × 2
-//   msg_bytes contains the MD4 message block ready for hashing
-//   (including MD4 padding applied by host)
-//
-// For passwords ≤ 55 ASCII chars (110 UTF16-LE bytes):
-//   msg_len = 110, msg_bytes has UTF16-LE data + MD4 padding + length
-//   h_in values are MD4 IV (if single-block) or chaining (if multi-block)
 
 module ntlm_core (
     input  logic        clk,
     input  logic        rst_n,
     input  logic        valid,
     output logic        ready,
-    input  logic [31:0] msg_word [15:0],  // 16 × 32-bit MD4 message block
-    input  logic [31:0] h_in     [3:0],   // MD4 IV (0x67452301, ...)
-    output logic [31:0] h_out    [3:0],   // MD4 digest
+    input  logic [7:0]  ascii_in  [55:0],
+    input  logic [5:0]  pass_len,
+    output logic [31:0] digest [3:0],
     output logic        done
 );
 
-    // MD4 round constants
-    // Round 1: K = 0x00000000 (no constant added)
-    // Round 2: K = 0x5a827999 (floor(2^32 × sqrt(2)))
-    // Round 3: K = 0x6ed9eba1 (floor(2^32 × sqrt(3)))
-    logic [31:0] K [0:2];
+    // UTF16-LE conversion + padding
+    logic [31:0] msg_word [15:0];
+    logic [31:0] h_in [3:0];
+    logic        md4_valid, md4_done, md4_ready;
+    logic [31:0] md4_h_out [3:0];
+
+    // MD4 IV
+    logic [31:0] iv [3:0];
+    assign iv[0] = 32'h67452301; assign iv[1] = 32'hefcdab89;
+    assign iv[2] = 32'h98badcfe; assign iv[3] = 32'h10325476;
+
+    // Build UTF16-LE block from ASCII input
     always_comb begin
-        K[0] = 32'h00000000;
-        K[1] = 32'h5a827999;
-        K[2] = 32'h6ed9eba1;
+        for (int i = 0; i < 16; i++) begin
+            logic [7:0] lo, hi;
+            int byte_idx = i * 2;
+            if (byte_idx < pass_len) lo = ascii_in[byte_idx]; else lo = 8'h80;
+            if (byte_idx + 1 < pass_len) hi = ascii_in[byte_idx + 1]; else hi = 8'h00;
+            msg_word[i] = {hi, lo};
+        end
+        // MD4 length encoding (bit count in bits)
+        msg_word[14] = pass_len * 16;  // pass_len * 2 bytes * 8 bits
+        msg_word[15] = 32'h00000000;
     end
 
-    // Shift amounts per round (RFC 1320)
-    function automatic [4:0] s(input [5:0] r);
+    assign h_in = iv;
+
+    // Instantiate MD4 core (reuse existing md5_core-inspired pattern with MD4 constants)
+    // We use inline MD4 logic here
+    logic [31:0] K [0:2];
+    always_comb begin
+        K[0] = 32'h00000000; K[1] = 32'h5a827999; K[2] = 32'h6ed9eba1;
+    end
+
+    function automatic logic [4:0] s_md4(input [5:0] r);
         case ({r[5:4], r[1:0]})
-            6'b00_00: return 5'd3;
-            6'b00_01: return 5'd7;
-            6'b00_10: return 5'd11;
-            6'b00_11: return 5'd19;
-            6'b01_00: return 5'd3;
-            6'b01_01: return 5'd5;
-            6'b01_10: return 5'd9;
-            6'b01_11: return 5'd13;
-            6'b10_00: return 5'd3;
-            6'b10_01: return 5'd9;
-            6'b10_10: return 5'd11;
-            6'b10_11: return 5'd15;
+            6'b00_00: return 5'd3;  6'b00_01: return 5'd7;
+            6'b00_10: return 5'd11; 6'b00_11: return 5'd19;
+            6'b01_00: return 5'd3;  6'b01_01: return 5'd5;
+            6'b01_10: return 5'd9;  6'b01_11: return 5'd13;
+            6'b10_00: return 5'd3;  6'b10_01: return 5'd9;
+            6'b10_10: return 5'd11; 6'b10_11: return 5'd15;
             default:  return 5'd3;
         endcase
     endfunction
 
-    // g index per round — selects which message word to use
-    // Per RFC 1320 MD4 specification:
-    // Round 1 (r=0..15):  k = i
-    // Round 2 (r=16..31): k = [0,4,8,12,1,5,9,13,2,6,10,14,3,7,11,15]
-    // Round 3 (r=32..47): k = [0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15]
-    function automatic [3:0] g(input [5:0] r);
+    function automatic logic [3:0] g_md4(input [5:0] r);
         case (r[5:4])
             0: return r[3:0];
-            1: return (r[1:0] * 4 + r[3:2]);  // k = (i%4)*4 + i/4
+            1: return (r[1:0] * 4 + r[3:2]);
             2: begin
                 unique case (r[3:0])
-                    4'd0:  return 4'd0;
-                    4'd1:  return 4'd8;
-                    4'd2:  return 4'd4;
-                    4'd3:  return 4'd12;
-                    4'd4:  return 4'd2;
-                    4'd5:  return 4'd10;
-                    4'd6:  return 4'd6;
-                    4'd7:  return 4'd14;
-                    4'd8:  return 4'd1;
-                    4'd9:  return 4'd9;
-                    4'd10: return 4'd5;
-                    4'd11: return 4'd13;
-                    4'd12: return 4'd3;
-                    4'd13: return 4'd11;
-                    4'd14: return 4'd7;
-                    4'd15: return 4'd15;
+                    4'd0:  return 4'd0;  4'd1:  return 4'd8;
+                    4'd2:  return 4'd4;  4'd3:  return 4'd12;
+                    4'd4:  return 4'd2;  4'd5:  return 4'd10;
+                    4'd6:  return 4'd6;  4'd7:  return 4'd14;
+                    4'd8:  return 4'd1;  4'd9:  return 4'd9;
+                    4'd10: return 4'd5;  4'd11: return 4'd13;
+                    4'd12: return 4'd3;  4'd13: return 4'd11;
+                    4'd14: return 4'd7;  4'd15: return 4'd15;
                 endcase
             end
         endcase
     endfunction
 
-    // Pipeline registers (49 stages: 48 rounds + 1 final addition)
     logic [31:0] a_pipe [49:0];
     logic [31:0] b_pipe [49:0];
     logic [31:0] c_pipe [49:0];
     logic [31:0] d_pipe [49:0];
     logic        valid_pipe [49:0];
+    logic        start_md4;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < 50; i++) begin
-                a_pipe[i] <= '0; b_pipe[i] <= '0; c_pipe[i] <= '0; d_pipe[i] <= '0;
+                a_pipe[i] <= '0; b_pipe[i] <= '0;
+                c_pipe[i] <= '0; d_pipe[i] <= '0;
                 valid_pipe[i] <= '0;
             end
+            start_md4 <= 0;
         end else begin
-            a_pipe[0] <= h_in[0];
-            b_pipe[0] <= h_in[1];
-            c_pipe[0] <= h_in[2];
-            d_pipe[0] <= h_in[3];
-            valid_pipe[0] <= valid;
+            start_md4 <= valid;
 
-            // Rounds 0-47 (3 rounds of 16)
+            if (start_md4) begin
+                a_pipe[0] <= h_in[0]; b_pipe[0] <= h_in[1];
+                c_pipe[0] <= h_in[2]; d_pipe[0] <= h_in[3];
+                valid_pipe[0] <= 1;
+            end else
+                valid_pipe[0] <= 0;
+
             for (int r = 0; r < 48; r++) begin
                 logic [31:0] f, temp;
-                logic [3:0] g_idx;
-                g_idx = g(r[5:0]);
+                logic [3:0] g;
+                g = g_md4(r[5:0]);
 
                 case (r[5:4])
                     0: f = (b_pipe[r] & c_pipe[r]) | (~b_pipe[r] & d_pipe[r]);
@@ -121,8 +116,8 @@ module ntlm_core (
                     2: f = b_pipe[r] ^ c_pipe[r] ^ d_pipe[r];
                 endcase
 
-                temp = a_pipe[r] + f + msg_word[g_idx] + K[r[5:4]];
-                case (s(r[5:0]))
+                temp = a_pipe[r] + f + msg_word[g] + K[r[5:4]];
+                case (s_md4(r[5:0]))
                     5'd3:  temp = {temp[28:0], temp[31:29]};
                     5'd5:  temp = {temp[26:0], temp[31:27]};
                     5'd7:  temp = {temp[24:0], temp[31:25]};
@@ -141,7 +136,6 @@ module ntlm_core (
                 valid_pipe[r+1] <= valid_pipe[r];
             end
 
-            // Stage 48: final addition with original IV
             a_pipe[48] <= a_pipe[47] + h_in[0];
             b_pipe[48] <= b_pipe[47] + h_in[1];
             c_pipe[48] <= c_pipe[47] + h_in[2];
@@ -150,10 +144,8 @@ module ntlm_core (
         end
     end
 
-    assign h_out[0] = a_pipe[48];
-    assign h_out[1] = b_pipe[48];
-    assign h_out[2] = c_pipe[48];
-    assign h_out[3] = d_pipe[48];
+    assign digest[0] = a_pipe[48]; assign digest[1] = b_pipe[48];
+    assign digest[2] = c_pipe[48]; assign digest[3] = d_pipe[48];
     assign done = valid_pipe[48];
     assign ready = 1'b1;
 

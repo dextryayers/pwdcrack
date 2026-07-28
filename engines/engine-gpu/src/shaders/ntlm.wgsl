@@ -1,130 +1,78 @@
-// NTLM compute shader — MD4 + UTF16-LE encoding
-// NTLM(pw) = MD4(UTF16-LE(pw))
+// NTLM hash — MD4 of UTF-16-LE encoded password
 
-struct Candidate {
-    password: array<u32, 16>,
-    len: u32,
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+
+struct Config {
+    pcount: u32,
 }
+@group(0) @binding(2) var<uniform> config: Config;
 
-struct HashResult {
-    found: u32,
-    idx: u32,
-    digest: vec4<u32>,
-}
+fn rol(x: u32, n: u32) -> u32 { return (x << n) | (x >> (32u - n)); }
 
-@group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
-@group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
-@group(0) @binding(3) var<uniform> count: u32;
-
-fn left_rotate(x: u32, c: u32) -> u32 {
-    return (x << c) | (x >> (32u - c));
-}
-
-fn md4_f(x: u32, y: u32, z: u32) -> u32 { return (x & y) | ((~x) & z); }
-fn md4_g(x: u32, y: u32, z: u32) -> u32 { return (x & y) | (x & z) | (y & z); }
-fn md4_h(x: u32, y: u32, z: u32) -> u32 { return x ^ y ^ z; }
-
-fn md4_verify(password_utf16: array<u32, 16>, len_utf16: u32) -> u32 {
-    var a: u32 = 0x67452301u;
-    var b: u32 = 0xefcdab89u;
-    var c: u32 = 0x98badcfeu;
-    var d: u32 = 0x10325476u;
-
-    var M: array<u32, 16> = password_utf16;
-
-    let bit_len: u32 = len_utf16 * 8u;
-    let byte_idx: u32 = len_utf16 / 4u;
-    let byte_off: u32 = len_utf16 % 4u;
-    let mask: u32 = 0xffffffffu << (byte_off * 8u);
-    M[byte_idx] = (M[byte_idx] & mask) | (0x80u << (byte_off * 8u));
-
-    if len_utf16 < 56u {
-        M[14u] = bit_len;
-    }
-
-    // Round 1
-    a = left_rotate(a + md4_f(b, c, d) + M[0],  3u);
-    d = left_rotate(d + md4_f(a, b, c) + M[1],  7u);
-    c = left_rotate(c + md4_f(d, a, b) + M[2],  11u);
-    b = left_rotate(b + md4_f(c, d, a) + M[3],  19u);
-    a = left_rotate(a + md4_f(b, c, d) + M[4],  3u);
-    d = left_rotate(d + md4_f(a, b, c) + M[5],  7u);
-    c = left_rotate(c + md4_f(d, a, b) + M[6],  11u);
-    b = left_rotate(b + md4_f(c, d, a) + M[7],  19u);
-    a = left_rotate(a + md4_f(b, c, d) + M[8],  3u);
-    d = left_rotate(d + md4_f(a, b, c) + M[9],  7u);
-    c = left_rotate(c + md4_f(d, a, b) + M[10], 11u);
-    b = left_rotate(b + md4_f(c, d, a) + M[11], 19u);
-    a = left_rotate(a + md4_f(b, c, d) + M[12], 3u);
-    d = left_rotate(d + md4_f(a, b, c) + M[13], 7u);
-    c = left_rotate(c + md4_f(d, a, b) + M[14], 11u);
-    b = left_rotate(b + md4_f(c, d, a) + M[15], 19u);
-
-    // Round 2
-    a = left_rotate(a + md4_g(b, c, d) + M[0]  + 0x5a827999u, 3u);
-    d = left_rotate(d + md4_g(a, b, c) + M[4]  + 0x5a827999u, 5u);
-    c = left_rotate(c + md4_g(d, a, b) + M[8]  + 0x5a827999u, 9u);
-    b = left_rotate(b + md4_g(c, d, a) + M[12] + 0x5a827999u, 13u);
-    a = left_rotate(a + md4_g(b, c, d) + M[1]  + 0x5a827999u, 3u);
-    d = left_rotate(d + md4_g(a, b, c) + M[5]  + 0x5a827999u, 5u);
-    c = left_rotate(c + md4_g(d, a, b) + M[9]  + 0x5a827999u, 9u);
-    b = left_rotate(b + md4_g(c, d, a) + M[13] + 0x5a827999u, 13u);
-    a = left_rotate(a + md4_g(b, c, d) + M[2]  + 0x5a827999u, 3u);
-    d = left_rotate(d + md4_g(a, b, c) + M[6]  + 0x5a827999u, 5u);
-    c = left_rotate(c + md4_g(d, a, b) + M[10] + 0x5a827999u, 9u);
-    b = left_rotate(b + md4_g(c, d, a) + M[14] + 0x5a827999u, 13u);
-    a = left_rotate(a + md4_g(b, c, d) + M[3]  + 0x5a827999u, 3u);
-    d = left_rotate(d + md4_g(a, b, c) + M[7]  + 0x5a827999u, 5u);
-    c = left_rotate(c + md4_g(d, a, b) + M[11] + 0x5a827999u, 9u);
-    b = left_rotate(b + md4_g(c, d, a) + M[15] + 0x5a827999u, 13u);
-
-    // Round 3
-    a = left_rotate(a + md4_h(b, c, d) + M[0]  + 0x6ed9eba1u, 3u);
-    d = left_rotate(d + md4_h(a, b, c) + M[8]  + 0x6ed9eba1u, 9u);
-    c = left_rotate(c + md4_h(d, a, b) + M[4]  + 0x6ed9eba1u, 11u);
-    b = left_rotate(b + md4_h(c, d, a) + M[12] + 0x6ed9eba1u, 15u);
-    a = left_rotate(a + md4_h(b, c, d) + M[2]  + 0x6ed9eba1u, 3u);
-    d = left_rotate(d + md4_h(a, b, c) + M[10] + 0x6ed9eba1u, 9u);
-    c = left_rotate(c + md4_h(d, a, b) + M[6]  + 0x6ed9eba1u, 11u);
-    b = left_rotate(b + md4_h(c, d, a) + M[14] + 0x6ed9eba1u, 15u);
-    a = left_rotate(a + md4_h(b, c, d) + M[1]  + 0x6ed9eba1u, 3u);
-    d = left_rotate(d + md4_h(a, b, c) + M[9]  + 0x6ed9eba1u, 9u);
-    c = left_rotate(c + md4_h(d, a, b) + M[5]  + 0x6ed9eba1u, 11u);
-    b = left_rotate(b + md4_h(c, d, a) + M[13] + 0x6ed9eba1u, 15u);
-    a = left_rotate(a + md4_h(b, c, d) + M[3]  + 0x6ed9eba1u, 3u);
-    d = left_rotate(d + md4_h(a, b, c) + M[11] + 0x6ed9eba1u, 9u);
-    c = left_rotate(c + md4_h(d, a, b) + M[7]  + 0x6ed9eba1u, 11u);
-    b = left_rotate(b + md4_h(c, d, a) + M[15] + 0x6ed9eba1u, 15u);
-
-    if a + 0x67452301u == target[0] && b + 0xefcdab89u == target[1] &&
-       c + 0x98badcfeu == target[2] && d + 0x10325476u == target[3] { return 1u; }
-    return 0u;
-}
-
-fn utf16le_encode(password: array<u32, 16>, len: u32) -> (array<u32, 32>, u32) {
-    var utf16: array<u32, 32>;
-    var utf16_len: u32 = 0u;
-    for (var i: u32 = 0u; i < len && i < 16u; i++) {
-        let byte: u32 = (password[i / 4u] >> ((i % 4u) * 8u)) & 0xffu;
-        if byte == 0u { break; }
-        let low: u32 = byte;
-        let high: u32 = 0u;
-        let word_idx: u32 = utf16_len / 2u;
-        if utf16_len % 2u == 0u {
-            utf16[word_idx] = low | (high << 16u);
-        }
-        utf16_len++;
-    }
-    return (utf16, utf16_len * 2u);
-}
+fn f(x: u32, y: u32, z: u32) -> u32 { return (x & y) | ((~x) & z); }
+fn g(x: u32, y: u32, z: u32) -> u32 { return (x & y) | (x & z) | (y & z); }
+fn h(x: u32, y: u32, z: u32) -> u32 { return x ^ y ^ z; }
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let idx = id.x;
-    if idx >= count { return; }
-    let cand = candidates[idx];
-    let (utf16_data, utf16_len) = utf16le_encode(cand.password, cand.len);
-    let found = md4_verify(utf16_data, utf16_len);
-    results[idx] = HashResult(found, idx, vec4(0u));
+    if (idx >= config.pcount) { return; }
+
+    var pw: array<u8, 64>;
+    let base = idx * 16u;
+    for (var i: u32 = 0u; i < 64u; i++) {
+        pw[i] = u8((input[base + i / 4u] >> ((i % 4u) * 8u)) & 0xffu);
+    }
+    var pwlen: u32 = 0u;
+    for (var i: u32 = 0u; i < 64u; i++) { if (pw[i] == 0u) { pwlen = i; break; } }
+    if (pwlen == 0u && pw[0] != 0u) { pwlen = 64u; }
+
+    var utf16: array<u8, 128>;
+    var ulen: u32 = 0u;
+    for (var i: u32 = 0u; i < pwlen; i++) {
+        utf16[ulen] = pw[i]; ulen++;
+        utf16[ulen] = 0u; ulen++;
+    }
+
+    var w: array<u32, 16>;
+    for (var i: u32 = 0u; i < 16u; i++) { w[i] = 0u; }
+    for (var i: u32 = 0u; i < ulen; i++) {
+        let word_idx = i / 4u;
+        let byte_idx = i % 4u;
+        w[word_idx] |= u32(utf16[i]) << (byte_idx * 8u);
+    }
+
+    let bit_len = ulen * 8u;
+    w[ulen / 4u] |= 0x80u << ((ulen % 4u) * 8u);
+    w[14] = bit_len;
+
+    var hh: array<u32, 4> = array(0x67452301u, 0xefcdab89u, 0x98badcfeu, 0x10325476u);
+    var a = hh[0]; var b = hh[1]; var c = hh[2]; var d = hh[3];
+    var temp: u32;
+
+    for (var i: u32 = 0u; i < 16u; i++) {
+        let k = i;
+        temp = rol(a + f(b, c, d) + w[k], 3u);
+        a = d; d = c; c = b; b = temp;
+    }
+    for (var i: u32 = 0u; i < 16u; i++) {
+        let k = (i % 4u) * 4u + i / 4u;
+        let s = (i % 4u) * 4u + 3u;
+        temp = rol(a + g(b, c, d) + w[k] + 0x5a827999u, s);
+        a = d; d = c; c = b; b = temp;
+    }
+    for (var i: u32 = 0u; i < 16u; i++) {
+        let perm: array<u32, 16> = array(0u,8u,4u,12u,2u,10u,6u,14u,1u,9u,5u,13u,3u,11u,7u,15u);
+        let k = perm[i];
+        let s = array(3u,5u,9u,13u)[i % 4u];
+        temp = rol(a + h(b, c, d) + w[k] + 0x6ed9eba1u, s);
+        a = d; d = c; c = b; b = temp;
+    }
+
+    hh[0] += a; hh[1] += b; hh[2] += c; hh[3] += d;
+
+    let out_base = idx * 4u;
+    output[out_base] = hh[0]; output[out_base + 1u] = hh[1];
+    output[out_base + 2u] = hh[2]; output[out_base + 3u] = hh[3];
 }
