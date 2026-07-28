@@ -132,6 +132,28 @@ impl_raw_hash!(Shabal256Hash, HashType::SHABAL256, Shabal256, 256);
 impl_raw_hash!(Shabal384Hash, HashType::SHABAL384, Shabal384, 384);
 impl_raw_hash!(Shabal512Hash, HashType::SHABAL512, Shabal512, 512);
 impl_raw_hash!(Gost94CryptoProHash, HashType::GOST94256, Gost94CryptoPro, 256);
+
+// GOST94-512 (GOST R 34.11-94 512-bit variant — detection only, no Rust digest)
+pub struct Gost94_512Hash;
+impl HashCracker for Gost94_512Hash {
+    fn hash_type(&self) -> HashType { HashType::GOST94512 }
+    fn name(&self) -> &'static str { "GOST94-512" }
+    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+impl HashParser for Gost94_512Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let t = line.trim();
+        if t.len() != 128 || !t.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        Some(HashEntry { raw: t.to_lowercase(), hash_type: HashType::GOST94512,
+            hash_bytes: hex::decode(t).ok()?, salt: None, username: None,
+            cracked: false, password: None })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let t = line.trim(); t.len() == 128 && t.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+
 impl_raw_hash!(Blake2b384Hash, HashType::BLAKE2B384, Blake2b<digest::consts::U48>, 384);
 impl_raw_hash!(Blake2b224Hash, HashType::BLAKE2B224, Blake2b<digest::consts::U28>, 224);
 impl_raw_hash!(Blake2b160Hash, HashType::BLAKE2B160, Blake2b<digest::consts::U20>, 160);

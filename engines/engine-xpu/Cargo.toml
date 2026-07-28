@@ -5,10 +5,7 @@ edition = "2024"
 description = "Intel XPU/oneAPI unified acceleration for hash cracking"
 
 [dependencies]
-log = "0.4"
-hex = "0.4"
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+md5 = "0.7"
 
 [features]
 default = []

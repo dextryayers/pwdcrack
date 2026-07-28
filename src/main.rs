@@ -702,6 +702,7 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         ("BLAKE3-256", HashType::BLAKE3256, "<64 hex chars>", 256, "Raw hex"),
         ("CRC32", HashType::CRC32, "<8 hex chars>", 32, "Checksum"),
         ("CRC64", HashType::CRC64, "<16 hex chars>", 64, "Checksum"),
+        ("MD2", HashType::MD2, "<32 hex chars>", 128, "Raw hex"),
         ("RIPEMD-128", HashType::RIPEMD128, "<32 hex chars>", 128, "Raw hex"),
         ("RIPEMD-160", HashType::RIPEMD160, "<40 hex chars>", 160, "Raw hex"),
         ("RIPEMD-256", HashType::RIPEMD256, "<64 hex chars>", 256, "Raw hex"),
@@ -884,64 +885,120 @@ fn cmd_suggest(detector: &Detector, hash: &str) {
     match detector.detect(hash) {
         Some((cracker, entry)) => {
             let ht = cracker.hash_type();
+            let bits = ht.bit_length().unwrap_or(0);
             println!("Hash  : {}", hash);
-            println!("Type  : {}", cracker.name());
-            println!("Bits  : {}", ht.bit_length().map(|b| b.to_string()).unwrap_or("N/A".into()));
+            println!("Type  : {} ({} bit)", cracker.name(), if bits > 0 { bits.to_string() } else { "var".into() });
 
-            println!("\nSuggested attacks:");
+            println!("\n⚡ Suggested attacks:");
             println!("{:=<60}", "");
 
-            let bits = ht.bit_length().unwrap_or(0);
             let is_slow = matches!(ht, HashType::BCrypt | HashType::BCryptA
                 | HashType::Argon2i | HashType::Argon2d | HashType::Argon2id | HashType::Scrypt
                 | HashType::PBKDF2SHA256 | HashType::PBKDF2SHA512 | HashType::PBKDF2SHA1
-                | HashType::PHPASS | HashType::DRUPAL7);
+                | HashType::PBKDF2SHA384 | HashType::PBKDF2SHA224
+                | HashType::PHPASS | HashType::DRUPAL7 | HashType::MACOSPBKDF2
+                | HashType::SUNMD5 | HashType::BSDICRYPT
+                | HashType::HMACSHA256 | HashType::HMACSHA512 | HashType::HMACSHA1 | HashType::HMACMD5
+                | HashType::HMACSHA224 | HashType::HMACSHA384 | HashType::HMACRIPEMD160
+                | HashType::HMACSHA512_224 | HashType::HMACSHA512_256
+                | HashType::HMACSHA3224 | HashType::HMACSHA3256 | HashType::HMACSHA3384 | HashType::HMACSHA3512
+                | HashType::HMACBLAKE2B256 | HashType::HMACBLAKE2S256 | HashType::HMACBLAKE2B512
+                | HashType::HMACRIPEMD128 | HashType::HMACRIPEMD256 | HashType::HMACRIPEMD320
+                | HashType::HMACWHIRLPOOL | HashType::HMACSTREEBOG256 | HashType::HMACSTREEBOG512
+                | HashType::HMACGOST94 | HashType::HMACTIGER | HashType::GOST94HMAC
+                | HashType::HMACBLAKE2B224 | HashType::HMACBLAKE2B384);
             let is_medium = matches!(ht, HashType::SHA512 | HashType::SHA384
-                | HashType::SHA256 | HashType::SHA3512 | HashType::WHIRLPOOL
-                | HashType::STREEBOG512 | HashType::JH512 | HashType::SKEIN512
-                | HashType::SHABAL512 | HashType::BLAKE2B512 | HashType::SALTEDSHA512
-                | HashType::HMACSHA256 | HashType::HMACSHA512 | HashType::SSHA256);
+                | HashType::SHA256 | HashType::SHA512Crypt
+                | HashType::SHA3512 | HashType::WHIRLPOOL
+                | HashType::STREEBOG512 | HashType::STREEBOG256
+                | HashType::JH512 | HashType::JH384 | HashType::SKEIN512
+                | HashType::SHABAL512 | HashType::BLAKE2B512 | HashType::BLAKE2B384
+                | HashType::SALTEDSHA512 | HashType::SALTEDSHA384 | HashType::SALTEDSHA256
+                | HashType::SSHA256 | HashType::SSHA1 | HashType::SHA256CRYPTROUNDS
+                | HashType::SALTEDSHA3512 | HashType::SALTEDSHA3256
+                | HashType::PBKDF2SHA384 | HashType::PBKDF2SHA224);
             let is_fast = !is_slow && !is_medium;
             let has_gpu_accel = matches!(ht, HashType::MD5 | HashType::NTLM
-                | HashType::SHA1 | HashType::SHA256 | HashType::MD4
+                | HashType::SHA1 | HashType::SHA256 | HashType::SHA224
+                | HashType::MD4 | HashType::MD2
                 | HashType::CRC32 | HashType::CRC64 | HashType::CRC16 | HashType::CRC32C
-                | HashType::ADLER32);
+                | HashType::CRC8 | HashType::CRC8ITU | HashType::CRC16CCITT | HashType::CRC16MODBUS
+                | HashType::CRC32BZIP2 | HashType::CRC32MPEG2 | HashType::CRC64ECMA | HashType::CRC24
+                | HashType::ADLER32 | HashType::XXHASH32
+                | HashType::LM | HashType::NTLMV1
+                | HashType::DOUBLEMD5 | HashType::DOUBLESHA1 | HashType::DOUBLESHA256
+                | HashType::TRIPLEMD5 | HashType::MD5HALF
+                | HashType::MYSQL41 | HashType::MYSQL321
+                | HashType::POSTGRESQL | HashType::OSCOMMERCE | HashType::VBULLETIN3 | HashType::VBULLETIN5
+                | HashType::SMF | HashType::IPB2 | HashType::IPB3);
+
             let speed_str = if is_slow {
                 if matches!(ht, HashType::BCrypt | HashType::BCryptA) { "~1 K/s" }
                 else if matches!(ht, HashType::Argon2i | HashType::Argon2d | HashType::Argon2id | HashType::Scrypt) { "~100 H/s" }
                 else { "~10 K/s" }
             } else if is_medium { "~500 K/s" } else { "> 10 M/s" };
+
             println!("  🏆  Dictionary + rules    ({})", speed_str);
             if is_fast && bits <= 128 {
                 println!("  🥈  Brute-force mask       (up to 8 chars recommended)");
                 println!("  🥉  Combinator             (if two wordlists available)");
+            } else if is_fast && bits > 128 && bits <= 256 {
+                println!("  🥈  Brute-force mask       (up to 6 chars recommended)");
             }
             if has_gpu_accel {
-                println!("  ⚡  This hash is fast — GPU/FPGA acceleration available");
+                println!("  ⚡  GPU/FPGA/Warp acceleration supported");
             }
             if is_slow {
-                println!("  🔒  Slow hash — GPU resistance is high, focus on dictionary");
+                println!("  🔒  Slow/iterated hash — GPU resistance is high, focus on targeted dictionary");
             }
             if bits >= 256 && !is_fast {
-                println!("  🔒  256+ bit hash — dictionary + rules is most efficient");
-            }
-            if matches!(ht, HashType::NTLM | HashType::LM | HashType::NTLMV2 | HashType::DCC1 | HashType::DCC2) {
-                println!("  💻  Windows hash — try common Windows password patterns (P@ssw0rd, etc.)");
-            }
-            if matches!(ht, HashType::MD5Crypt | HashType::SHA256Crypt | HashType::SHA512Crypt) {
-                println!("  🐧  Unix shadow hash — try common Linux password patterns");
-            }
-            if matches!(ht, HashType::PHPASS | HashType::DRUPAL7) {
-                println!("  🌐  CMS hash — try username/service-related passwords");
+                println!("  🔒  256+ bit — dictionary + rules is most efficient per watt");
             }
 
-            // Print hash details
+            // Domain-specific advice
+            if matches!(ht, HashType::NTLM | HashType::LM | HashType::NTLMV1 | HashType::NTLMV2
+                | HashType::DCC1 | HashType::DCC2 | HashType::DCC3) {
+                println!("  💻  Windows credential — try patterns: P@ssw0rd, Welcome1, Admin123");
+            }
+            if matches!(ht, HashType::MD5Crypt | HashType::SHA256Crypt | HashType::SHA512Crypt
+                | HashType::SHA256CRYPTROUNDS) {
+                println!("  🐧  Unix shadow — try Linux patterns: seasonal + year + special");
+            }
+            if matches!(ht, HashType::PHPASS | HashType::DRUPAL7 | HashType::EPI
+                | HashType::PUNBB | HashType::IPB2 | HashType::IPB3 | HashType::VBULLETIN3
+                | HashType::VBULLETIN5 | HashType::SMF | HashType::MEDIAWIKI) {
+                println!("  🌐  CMS/Forum — try site-related keywords + common passwords");
+            }
+            if matches!(ht, HashType::MYSQL41 | HashType::MYSQL321 | HashType::POSTGRESQL
+                | HashType::ORACLE10G | HashType::ORACLE11G | HashType::ORACLE7
+                | HashType::MSSQL2005 | HashType::MSSQL2012) {
+                println!("  🗄️   Database — try admin/service account patterns");
+            }
+            if matches!(ht, HashType::SAPCODVNB | HashType::SAPCODVNFG) {
+                println!("  🏢  SAP — try default SAP* passwords, company-related terms");
+            }
+            if matches!(ht, HashType::LOTUSNOTES | HashType::NSLDAP) {
+                println!("  📧  Enterprise — try organizational patterns,季节+year");
+            }
+            if matches!(ht, HashType::SKIP32 | HashType::XXHASH32 | HashType::CRC24) {
+                println!("  🔧  Checksum/Light — NOT a cryptographic hash, trivial to invert");
+            }
+            if matches!(ht, HashType::PLAINTEXT | HashType::CHALLENGE | HashType::CRAMMD5) {
+                println!("  🪪  Identity/Challenge — password == raw or derived from challenge");
+            }
+            if matches!(ht, HashType::SNEFRU128 | HashType::SNEFRU256 | HashType::GOST94256 | HashType::GOST94512) {
+                println!("  📜  Legacy hash — limited cracking resources available");
+            }
+
             if let Some(ref salt) = entry.salt {
-                println!("\nSalt: {}", salt);
+                println!("\n  Salt: {}", salt);
             }
             if let Some(ref username) = entry.username {
-                println!("Username: {}", username);
+                println!("  User: {}", username);
             }
+            println!("{:=<60}", "");
+            println!("  For GPU acceleration: pwdcrack --gpu <command>");
+            println!("  For FPGA:           pwdcrack --fpga <command>");
         }
         None => {
             eprintln!("[!] Unknown hash format: {}", hash);

@@ -86,8 +86,29 @@ pub struct Cli {
     #[arg(long, global = true, help = "Enable GPU engine (requires engine-gpu feature)")]
     pub gpu: bool,
 
+    #[arg(long, global = true, help = "Enable FPGA acceleration (requires engine-fpga feature)")]
+    pub fpga: bool,
+
     #[arg(long, global = true, help = "Enable distributed mode (requires engine-distributed feature)")]
     pub distributed: bool,
+
+    #[arg(long, global = true, help = "Enable Apple Metal acceleration (requires engine-metal feature)")]
+    pub metal: bool,
+
+    #[arg(long, global = true, help = "Enable Google TPU acceleration (requires engine-tpu feature)")]
+    pub tpu: bool,
+
+    #[arg(long, global = true, help = "Enable hybrid CPU+GPU+FPGA scheduler (requires engine-hybrid feature)")]
+    pub hybrid: bool,
+
+    #[arg(long, global = true, help = "Enable tensor/ONNX acceleration (requires engine-tensor feature)")]
+    pub tensor: bool,
+
+    #[arg(long, global = true, help = "Enable Intel XPU/oneAPI (requires engine-xpu feature)")]
+    pub xpu: bool,
+
+    #[arg(long = "disable-simd", global = true, help = "Disable SIMD auto-detection")]
+    pub disable_simd: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

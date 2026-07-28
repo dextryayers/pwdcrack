@@ -10,7 +10,6 @@ members = [
     "engines/engine-distributed",
     "engines/engine-web",
     "engines/engine-android",
-    "engines/engine-bridge",
     "engines/engine-cuda",
     "engines/engine-opencl",
     "engines/engine-sycl",

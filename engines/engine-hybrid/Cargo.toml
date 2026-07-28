@@ -5,13 +5,7 @@ edition = "2024"
 description = "Hybrid CPU+GPU scheduler and load balancer for hash cracking"
 
 [dependencies]
-log = "0.4"
-hex = "0.4"
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
-crossbeam = "0.8"
-tokio = { version = "1", features = ["full"], optional = true }
 
 [features]
 default = []
-hybrid = ["dep:tokio"]
+hybrid = []

@@ -5,11 +5,9 @@ edition = "2024"
 description = "AMD Zen CPU optimization for AVX2/AVX-512 tuned hash cracking"
 
 [dependencies]
-log = "0.4"
-hex = "0.4"
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
-raw-cpuid = "11"
+md5 = "0.7"
+sha2 = "0.10"
+num_cpus = "1.16"
 
 [features]
 default = []

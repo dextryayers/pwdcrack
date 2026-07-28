@@ -45,7 +45,7 @@ pub fn init_cuda() -> Option<CudaEngine> {
         }
     }
     #[cfg(not(feature = "cuda"))] {
-        let _ = log::info;
+        let _ = log::info!("");
         None
     }
 }

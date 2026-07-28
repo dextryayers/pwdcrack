@@ -5,10 +5,9 @@ edition = "2024"
 description = "Embedded system optimization for ARM NEON/MVE hash cracking"
 
 [dependencies]
-log = "0.4"
-hex = "0.4"
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+md5 = "0.7"
+md4 = "0.10"
+sha2 = "0.10"
 
 [features]
 default = []
