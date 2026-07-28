@@ -1,3 +1,4 @@
+pub mod app;
 pub mod raw;
 pub mod unix;
 pub mod argon2_scrypt;
@@ -75,6 +76,128 @@ pub enum HashType {
     RIPEMD256,
     /// RIPEMD-320 (320-bit hex digest).
     RIPEMD320,
+    /// MD2 (128-bit hex digest).
+    MD2,
+    /// MD4 (128-bit hex digest).
+    MD4,
+    /// Whirlpool (512-bit hex digest).
+    WHIRLPOOL,
+    /// Streebog (GOST R 34.11-2012) 256-bit hex digest.
+    STREEBOG256,
+    /// Streebog (GOST R 34.11-2012) 512-bit hex digest.
+    STREEBOG512,
+    /// Tiger-192 (192-bit hex digest).
+    TIGER192,
+    /// JH-224 (224-bit hex digest).
+    JH224,
+    /// JH-256 (256-bit hex digest).
+    JH256,
+    /// JH-384 (384-bit hex digest).
+    JH384,
+    /// JH-512 (512-bit hex digest).
+    JH512,
+    /// Skein-256 (256-bit hex digest).
+    SKEIN256,
+    /// Skein-512 (512-bit hex digest).
+    SKEIN512,
+    /// Shabal-192 (192-bit hex digest).
+    SHABAL192,
+    /// Shabal-224 (224-bit hex digest).
+    SHABAL224,
+    /// Shabal-256 (256-bit hex digest).
+    SHABAL256,
+    /// Shabal-384 (384-bit hex digest).
+    SHABAL384,
+    /// Shabal-512 (512-bit hex digest).
+    SHABAL512,
+    /// GOST R 34.11-94 256-bit hex digest.
+    GOST94256,
+    /// GOST R 34.11-94 512-bit hex digest.
+    GOST94512,
+    /// BLAKE2b-384 (384-bit hex digest).
+    BLAKE2B384,
+    /// BLAKE2b-224 (224-bit hex digest).
+    BLAKE2B224,
+    /// BLAKE2b-160 (160-bit hex digest).
+    BLAKE2B160,
+    /// BLAKE2s-128 (128-bit hex digest).
+    BLAKE2S128,
+    /// BLAKE2s-160 (160-bit hex digest).
+    BLAKE2S160,
+    /// BLAKE3-256 (256-bit hex digest).
+    BLAKE3256,
+    /// Apache MD5 (`$apr1$`).
+    APR1MD5,
+    /// PHPass / WordPress (`$P$` / `$H$`).
+    PHPASS,
+    /// Drupal 7 (`$S$`).
+    DRUPAL7,
+    /// osCommerce / xt:Commerce / AEF.
+    OSCOMMERCE,
+    /// PostgreSQL MD5.
+    POSTGRESQL,
+    /// MySQL 4.1/5.x.
+    MYSQL41,
+    /// Oracle 10g.
+    ORACLE10G,
+    /// Oracle 11g/12c.
+    ORACLE11G,
+    /// MSSQL 2005.
+    MSSQL2005,
+    /// MSSQL 2012.
+    MSSQL2012,
+    /// vBulletin 3.x/4.x.
+    VBULLETIN3,
+    /// vBulletin 5.x.
+    VBULLETIN5,
+    /// SMF 1.x/2.x.
+    SMF,
+    /// IPB 2.x / MyBB 1.x.
+    IPB2,
+    /// IPB 3.x+.
+    IPB3,
+    /// MediaWiki.
+    MEDIAWIKI,
+    /// Cisco PIX hash.
+    CISCOPIX,
+    /// Cisco Type 5 (enable secret).
+    CISCO5,
+    /// HMAC-SHA1.
+    HMACSHA1,
+    /// HMAC-SHA256.
+    HMACSHA256,
+    /// HMAC-MD5.
+    HMACMD5,
+    /// HMAC-SHA512.
+    HMACSHA512,
+    /// HMAC-SHA224.
+    HMACSHA224,
+    /// HMAC-SHA384.
+    HMACSHA384,
+    /// HMAC-RIPEMD160.
+    HMACRIPEMD160,
+    /// PBKDF2-HMAC-SHA256.
+    PBKDF2SHA256,
+    /// PBKDF2-HMAC-SHA512.
+    PBKDF2SHA512,
+    /// PBKDF2-HMAC-SHA1.
+    PBKDF2SHA1,
+    /// DCC1 (Domain Cached Credentials).
+    DCC1,
+    /// DCC2 (Domain Cached Credentials 2).
+    DCC2,
+    /// NTLMv2.
+    NTLMV2,
+    /// CRC32 checksum.
+    CRC32,
+    /// CRC64 checksum.
+    CRC64,
+    /// macOS 10.8+ PBKDF2.
+    MACOSPBKDF2,
+    /// Sun MD5 Crypt (`$md5$`).
+    SUNMD5,
+    /// BSDi Crypt (`_`).
+    BSDICRYPT,
     /// NTLM (MD4-based Windows NT hash, 128-bit hex).
     NTLM,
     /// LM (DES-based LAN Manager hash).
@@ -121,6 +244,67 @@ impl HashType {
             HashType::RIPEMD160 => "RIPEMD-160",
             HashType::RIPEMD256 => "RIPEMD-256",
             HashType::RIPEMD320 => "RIPEMD-320",
+            HashType::MD2 => "MD2",
+            HashType::MD4 => "MD4",
+            HashType::WHIRLPOOL => "Whirlpool",
+            HashType::STREEBOG256 => "Streebog-256",
+            HashType::STREEBOG512 => "Streebog-512",
+            HashType::TIGER192 => "Tiger-192",
+            HashType::JH224 => "JH-224",
+            HashType::JH256 => "JH-256",
+            HashType::JH384 => "JH-384",
+            HashType::JH512 => "JH-512",
+            HashType::SKEIN256 => "Skein-256",
+            HashType::SKEIN512 => "Skein-512",
+            HashType::SHABAL192 => "Shabal-192",
+            HashType::SHABAL224 => "Shabal-224",
+            HashType::SHABAL256 => "Shabal-256",
+            HashType::SHABAL384 => "Shabal-384",
+            HashType::SHABAL512 => "Shabal-512",
+            HashType::GOST94256 => "GOST94-256",
+            HashType::GOST94512 => "GOST94-512",
+            HashType::BLAKE2B384 => "BLAKE2b-384",
+            HashType::BLAKE2B224 => "BLAKE2b-224",
+            HashType::BLAKE2B160 => "BLAKE2b-160",
+            HashType::BLAKE2S128 => "BLAKE2s-128",
+            HashType::BLAKE2S160 => "BLAKE2s-160",
+            HashType::BLAKE3256 => "BLAKE3-256",
+            HashType::APR1MD5 => "Apache MD5",
+            HashType::PHPASS => "PHPass",
+            HashType::DRUPAL7 => "Drupal 7",
+            HashType::OSCOMMERCE => "osCommerce",
+            HashType::POSTGRESQL => "PostgreSQL MD5",
+            HashType::MYSQL41 => "MySQL 4.1/5.x",
+            HashType::ORACLE10G => "Oracle 10g",
+            HashType::ORACLE11G => "Oracle 11g/12c",
+            HashType::MSSQL2005 => "MSSQL 2005",
+            HashType::MSSQL2012 => "MSSQL 2012",
+            HashType::VBULLETIN3 => "vBulletin 3/4",
+            HashType::VBULLETIN5 => "vBulletin 5",
+            HashType::SMF => "SMF 1/2",
+            HashType::IPB2 => "IPB 2 / MyBB",
+            HashType::IPB3 => "IPB 3+",
+            HashType::MEDIAWIKI => "MediaWiki",
+            HashType::CISCOPIX => "Cisco PIX",
+            HashType::CISCO5 => "Cisco Type 5",
+            HashType::HMACSHA1 => "HMAC-SHA1",
+            HashType::HMACSHA256 => "HMAC-SHA256",
+            HashType::HMACMD5 => "HMAC-MD5",
+            HashType::HMACSHA512 => "HMAC-SHA512",
+            HashType::HMACSHA224 => "HMAC-SHA224",
+            HashType::HMACSHA384 => "HMAC-SHA384",
+            HashType::HMACRIPEMD160 => "HMAC-RIPEMD160",
+            HashType::PBKDF2SHA256 => "PBKDF2-SHA256",
+            HashType::PBKDF2SHA512 => "PBKDF2-SHA512",
+            HashType::PBKDF2SHA1 => "PBKDF2-SHA1",
+            HashType::DCC1 => "DCC1",
+            HashType::DCC2 => "DCC2",
+            HashType::NTLMV2 => "NTLMv2",
+            HashType::CRC32 => "CRC32",
+            HashType::CRC64 => "CRC64",
+            HashType::MACOSPBKDF2 => "macOS PBKDF2",
+            HashType::SUNMD5 => "Sun MD5",
+            HashType::BSDICRYPT => "BSDi Crypt",
             HashType::NTLM => "NTLM",
             HashType::LM => "LM",
             HashType::BCrypt => "bcrypt",
@@ -155,6 +339,33 @@ impl HashType {
             HashType::RIPEMD160 => Some(160),
             HashType::RIPEMD256 => Some(256),
             HashType::RIPEMD320 => Some(320),
+            HashType::MD2 => Some(128),
+            HashType::MD4 => Some(128),
+            HashType::WHIRLPOOL => Some(512),
+            HashType::STREEBOG256 => Some(256),
+            HashType::STREEBOG512 => Some(512),
+            HashType::TIGER192 => Some(192),
+            HashType::JH224 => Some(224),
+            HashType::JH256 => Some(256),
+            HashType::JH384 => Some(384),
+            HashType::JH512 => Some(512),
+            HashType::SKEIN256 => Some(256),
+            HashType::SKEIN512 => Some(512),
+            HashType::SHABAL192 => Some(192),
+            HashType::SHABAL224 => Some(224),
+            HashType::SHABAL256 => Some(256),
+            HashType::SHABAL384 => Some(384),
+            HashType::SHABAL512 => Some(512),
+            HashType::GOST94256 => Some(256),
+            HashType::GOST94512 => Some(512),
+            HashType::BLAKE2B384 => Some(384),
+            HashType::BLAKE2B224 => Some(224),
+            HashType::BLAKE2B160 => Some(160),
+            HashType::BLAKE2S128 => Some(128),
+            HashType::BLAKE2S160 => Some(160),
+            HashType::BLAKE3256 => Some(256),
+            HashType::CRC32 => Some(32),
+            HashType::CRC64 => Some(64),
             HashType::NTLM => Some(128),
             HashType::LM => Some(64),
             _ => None,

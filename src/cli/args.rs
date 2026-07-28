@@ -7,11 +7,15 @@ use clap::{Parser, Subcommand, ValueEnum};
     long_about = "\
 pwdcrack — high-performance hash cracker written in Rust.
 
-SUPPORTED HASHES (30+)
+SUPPORTED HASHES (50+)
   MD5, SHA-1/224/256/384/512/512-224/512-256,
-  SHA3-224/256/384/512, BLAKE2b-256, BLAKE2s-256, BLAKE2b-512,
+  SHA3-224/256/384/512, BLAKE2b-256/224/160/384/512,
+  BLAKE2s-256/128/160, BLAKE3-256, MD4,
+  Whirlpool, Streebog-256/512, Tiger-192, JH-224/256/384/512,
+  Skein-256/512, Shabal-192/224/256/384/512, GOST94-256/512,
   RIPEMD-128/160/256/320, NTLM, LM, bcrypt ($2a$/$2b$/$2y$),
-  Argon2i/d/id, scrypt, MD5Crypt, SHA256Crypt, SHA512Crypt
+  Argon2i/d/id, scrypt, MD5Crypt, SHA256Crypt, SHA512Crypt,
+  Apache MD5, MySQL 4.1, PostgreSQL MD5, CRC32, CRC64
 
 ATTACK MODES
   dictionary   wordlist + rule-based mangling (John/Hashcat rules)

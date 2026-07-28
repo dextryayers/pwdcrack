@@ -2,8 +2,14 @@ use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256, Digest as Sha
 use sha1::Sha1;
 use md5::Md5;
 use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
-use blake2::{Blake2b, Blake2b512, Blake2s256};
+use blake2::{Blake2b, Blake2b512, Blake2s256, Blake2s};
 use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
+use whirlpool::Whirlpool;
+use streebog::{Streebog256, Streebog512};
+use jh::{Jh224, Jh256, Jh384, Jh512};
+use skein::{Skein256, Skein512};
+use shabal::{Shabal192, Shabal224, Shabal256, Shabal384, Shabal512};
+use gost94::Gost94CryptoPro;
 use des::Des;
 use cipher::{KeyInit, BlockCipherEncrypt, Array};
 
@@ -74,6 +80,63 @@ impl_raw_hash!(Sha3_256Hash, HashType::SHA3256, Sha3_256, 256);
 impl_raw_hash!(Sha3_384Hash, HashType::SHA3384, Sha3_384, 384);
 impl_raw_hash!(Sha512_224Hash, HashType::SHA512_224, Sha512_224, 224);
 impl_raw_hash!(Sha512_256Hash, HashType::SHA512_256, Sha512_256, 256);
+impl_raw_hash!(WhirlpoolHash, HashType::WHIRLPOOL, Whirlpool, 512);
+impl_raw_hash!(Streebog256Hash, HashType::STREEBOG256, Streebog256, 256);
+impl_raw_hash!(Streebog512Hash, HashType::STREEBOG512, Streebog512, 512);
+pub struct Tiger192Hash;
+
+impl HashCracker for Tiger192Hash {
+    fn hash_type(&self) -> HashType { HashType::TIGER192 }
+    fn name(&self) -> &'static str { "Tiger-192" }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use tiger::digest::Digest;
+        let mut hasher = tiger::Tiger::new();
+        hasher.update(password.as_bytes());
+        let result = hasher.finalize();
+        let computed = hex::encode(result);
+        computed.eq_ignore_ascii_case(&entry.raw)
+    }
+    fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
+}
+
+impl HashParser for Tiger192Hash {
+    fn parse(&self, line: &str) -> Option<HashEntry> {
+        let trimmed = line.trim();
+        if trimmed.len() != 48 { return None; }
+        if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) { return None; }
+        let bytes = hex::decode(trimmed).ok()?;
+        Some(HashEntry {
+            raw: trimmed.to_lowercase(),
+            hash_type: HashType::TIGER192,
+            hash_bytes: bytes,
+            salt: None,
+            username: None,
+            cracked: false,
+            password: None,
+        })
+    }
+    fn can_parse(&self, line: &str) -> bool {
+        let trimmed = line.trim();
+        trimmed.len() == 48 && trimmed.chars().all(|c| c.is_ascii_hexdigit())
+    }
+}
+impl_raw_hash!(Jh224Hash, HashType::JH224, Jh224, 224);
+impl_raw_hash!(Jh256Hash, HashType::JH256, Jh256, 256);
+impl_raw_hash!(Jh384Hash, HashType::JH384, Jh384, 384);
+impl_raw_hash!(Jh512Hash, HashType::JH512, Jh512, 512);
+impl_raw_hash!(Skein256Hash, HashType::SKEIN256, Skein256, 256);
+impl_raw_hash!(Skein512Hash, HashType::SKEIN512, Skein512, 512);
+impl_raw_hash!(Shabal192Hash, HashType::SHABAL192, Shabal192, 192);
+impl_raw_hash!(Shabal224Hash, HashType::SHABAL224, Shabal224, 224);
+impl_raw_hash!(Shabal256Hash, HashType::SHABAL256, Shabal256, 256);
+impl_raw_hash!(Shabal384Hash, HashType::SHABAL384, Shabal384, 384);
+impl_raw_hash!(Shabal512Hash, HashType::SHABAL512, Shabal512, 512);
+impl_raw_hash!(Gost94CryptoProHash, HashType::GOST94256, Gost94CryptoPro, 256);
+impl_raw_hash!(Blake2b384Hash, HashType::BLAKE2B384, Blake2b<digest::consts::U48>, 384);
+impl_raw_hash!(Blake2b224Hash, HashType::BLAKE2B224, Blake2b<digest::consts::U28>, 224);
+impl_raw_hash!(Blake2b160Hash, HashType::BLAKE2B160, Blake2b<digest::consts::U20>, 160);
+impl_raw_hash!(Blake2s128Hash, HashType::BLAKE2S128, Blake2s<digest::consts::U16>, 128);
+impl_raw_hash!(Blake2s160Hash, HashType::BLAKE2S160, Blake2s<digest::consts::U20>, 160);
 
 /// Cracker and parser for NTLM hashes (MD4, 32 hex chars).
 pub struct NtlmHash;
