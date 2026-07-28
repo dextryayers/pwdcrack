@@ -7,10 +7,11 @@ use clap::{Parser, Subcommand, ValueEnum};
     long_about = "\
 pwdcrack — high-performance hash cracker written in Rust.
 
-SUPPORTED HASHES
-  MD5, SHA-1/224/256/384/512, SHA3-512, BLAKE2B-256/512,
-  RIPEMD-160, NTLM, LM, bcrypt, Argon2i/d/id, scrypt,
-  MD5Crypt, SHA256Crypt, SHA512Crypt, Unix DES/BF/BSDi
+SUPPORTED HASHES (30+)
+  MD5, SHA-1/224/256/384/512/512-224/512-256,
+  SHA3-224/256/384/512, BLAKE2b-256, BLAKE2s-256, BLAKE2b-512,
+  RIPEMD-128/160/256/320, NTLM, LM, bcrypt ($2a$/$2b$/$2y$),
+  Argon2i/d/id, scrypt, MD5Crypt, SHA256Crypt, SHA512Crypt
 
 ATTACK MODES
   dictionary   wordlist + rule-based mangling (John/Hashcat rules)
@@ -25,8 +26,8 @@ HARDWARE ENGINES (optional features)
   Power  RAPL / AMD hwmon power capping
   Dist   multi-node TCP cluster cracking
   Web    real-time dashboard + WebSocket stats",
-    version = "0.1.0",
-    author = "pwdcrack team",
+    version = "1.1.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nHigh-performance password hash cracker written in Rust",
+    author = "Hanif Abdur - AniipID",
 )]
 pub struct Cli {
     #[command(subcommand)]

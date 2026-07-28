@@ -47,16 +47,34 @@ pub enum HashType {
     SHA384,
     /// SHA-512 (512-bit hex digest).
     SHA512,
+    /// SHA-512/224 (224-bit truncated SHA-512).
+    SHA512_224,
+    /// SHA-512/256 (256-bit truncated SHA-512).
+    SHA512_256,
     /// Unix `$6$` SHA-512 crypt.
     SHA512Crypt,
+    /// SHA3-224 (224-bit hex digest).
+    SHA3224,
+    /// SHA3-256 (256-bit hex digest).
+    SHA3256,
+    /// SHA3-384 (384-bit hex digest).
+    SHA3384,
     /// SHA3-512 (512-bit hex digest).
     SHA3512,
     /// BLAKE2b-256 (256-bit hex digest).
     BLAKE2B256,
+    /// BLAKE2s-256 (256-bit hex digest, 32-bit variant).
+    BLAKE2S256,
     /// BLAKE2b-512 (512-bit hex digest).
     BLAKE2B512,
+    /// RIPEMD-128 (128-bit hex digest).
+    RIPEMD128,
     /// RIPEMD-160 (160-bit hex digest).
     RIPEMD160,
+    /// RIPEMD-256 (256-bit hex digest).
+    RIPEMD256,
+    /// RIPEMD-320 (320-bit hex digest).
+    RIPEMD320,
     /// NTLM (MD4-based Windows NT hash, 128-bit hex).
     NTLM,
     /// LM (DES-based LAN Manager hash).
@@ -89,11 +107,20 @@ impl HashType {
             HashType::SHA256Crypt => "SHA-256 Crypt",
             HashType::SHA384 => "SHA-384",
             HashType::SHA512 => "SHA-512",
+            HashType::SHA512_224 => "SHA-512/224",
+            HashType::SHA512_256 => "SHA-512/256",
             HashType::SHA512Crypt => "SHA-512 Crypt",
+            HashType::SHA3224 => "SHA3-224",
+            HashType::SHA3256 => "SHA3-256",
+            HashType::SHA3384 => "SHA3-384",
             HashType::SHA3512 => "SHA3-512",
             HashType::BLAKE2B256 => "BLAKE2b-256",
+            HashType::BLAKE2S256 => "BLAKE2s-256",
             HashType::BLAKE2B512 => "BLAKE2b-512",
+            HashType::RIPEMD128 => "RIPEMD-128",
             HashType::RIPEMD160 => "RIPEMD-160",
+            HashType::RIPEMD256 => "RIPEMD-256",
+            HashType::RIPEMD320 => "RIPEMD-320",
             HashType::NTLM => "NTLM",
             HashType::LM => "LM",
             HashType::BCrypt => "bcrypt",
@@ -115,10 +142,19 @@ impl HashType {
             HashType::SHA256 => Some(256),
             HashType::SHA384 => Some(384),
             HashType::SHA512 => Some(512),
+            HashType::SHA512_224 => Some(224),
+            HashType::SHA512_256 => Some(256),
+            HashType::SHA3224 => Some(224),
+            HashType::SHA3256 => Some(256),
+            HashType::SHA3384 => Some(384),
             HashType::SHA3512 => Some(512),
             HashType::BLAKE2B256 => Some(256),
+            HashType::BLAKE2S256 => Some(256),
             HashType::BLAKE2B512 => Some(512),
+            HashType::RIPEMD128 => Some(128),
             HashType::RIPEMD160 => Some(160),
+            HashType::RIPEMD256 => Some(256),
+            HashType::RIPEMD320 => Some(320),
             HashType::NTLM => Some(128),
             HashType::LM => Some(64),
             _ => None,

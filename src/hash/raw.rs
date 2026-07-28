@@ -1,9 +1,9 @@
-use sha2::{Sha224, Sha256, Sha384, Sha512, Digest as Sha2Digest};
+use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256, Digest as Sha2Digest};
 use sha1::Sha1;
 use md5::Md5;
-use sha3::Sha3_512;
-use blake2::{Blake2b512, Blake2s256};
-use ripemd::Ripemd160;
+use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+use blake2::{Blake2b, Blake2b512, Blake2s256};
+use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
 use des::Des;
 use cipher::{KeyInit, BlockCipherEncrypt, Array};
 
@@ -62,9 +62,18 @@ impl_raw_hash!(Sha256Hash, HashType::SHA256, Sha256, 256);
 impl_raw_hash!(Sha384Hash, HashType::SHA384, Sha384, 384);
 impl_raw_hash!(Sha512Hash, HashType::SHA512, Sha512, 512);
 impl_raw_hash!(Sha3_512Hash, HashType::SHA3512, Sha3_512, 512);
+impl_raw_hash!(Blake2b256Hash, HashType::BLAKE2B256, Blake2b<digest::consts::U32>, 256);
+impl_raw_hash!(Blake2s256Hash, HashType::BLAKE2S256, Blake2s256, 256);
 impl_raw_hash!(Blake2b512Hash, HashType::BLAKE2B512, Blake2b512, 512);
-impl_raw_hash!(Blake2s256Hash, HashType::BLAKE2B256, Blake2s256, 256);
+impl_raw_hash!(Ripemd128Hash, HashType::RIPEMD128, Ripemd128, 128);
 impl_raw_hash!(Ripemd160Hash, HashType::RIPEMD160, Ripemd160, 160);
+impl_raw_hash!(Ripemd256Hash, HashType::RIPEMD256, Ripemd256, 256);
+impl_raw_hash!(Ripemd320Hash, HashType::RIPEMD320, Ripemd320, 320);
+impl_raw_hash!(Sha3_224Hash, HashType::SHA3224, Sha3_224, 224);
+impl_raw_hash!(Sha3_256Hash, HashType::SHA3256, Sha3_256, 256);
+impl_raw_hash!(Sha3_384Hash, HashType::SHA3384, Sha3_384, 384);
+impl_raw_hash!(Sha512_224Hash, HashType::SHA512_224, Sha512_224, 224);
+impl_raw_hash!(Sha512_256Hash, HashType::SHA512_256, Sha512_256, 256);
 
 /// Cracker and parser for NTLM hashes (MD4, 32 hex chars).
 pub struct NtlmHash;
