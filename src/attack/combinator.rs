@@ -25,15 +25,20 @@ pub fn run_combinator(
     wordlist2: &str,
     _threads: usize,
     quiet: bool,
+    low_mem: bool,
 ) -> Vec<CrackResult> {
-    let words2 = load_wordlist(wordlist2);
-    if words2.is_empty() {
+    let words2 = if low_mem {
+        Vec::new()
+    } else {
+        let w = load_wordlist(wordlist2);
+        if !quiet && !w.is_empty() {
+            eprintln!("[*] Wordlist2: {} words", w.len());
+        }
+        w
+    };
+    if !low_mem && words2.is_empty() {
         eprintln!("[!] Empty wordlist2");
         return Vec::new();
-    }
-
-    if !quiet {
-        eprintln!("[*] Wordlist2: {} words", words2.len());
     }
 
     let w1_count = fs::File::open(Path::new(wordlist1)).ok().map(|f| {
@@ -52,7 +57,7 @@ pub fn run_combinator(
     };
     let reader = BufReader::new(file1);
     let total_hashes = hashes.len();
-    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
+    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::with_capacity(hashes.len()));
     let line_count = AtomicU64::new(0);
     let total_est = w1_count * words2.len() as u64;
     #[cfg(feature = "progress-rich")]
@@ -61,50 +66,112 @@ pub fn run_combinator(
     let _progress = ProgressStats::new(total_est);
 
     if !quiet {
-        eprintln!("[*] Wordlist1: streaming");
+        eprintln!("[*] Wordlist1: streaming{}", if low_mem { " (low-mem mode)" } else { "" });
     }
 
-    reader.lines()
-        .par_bridge()
-        .for_each(|line_result| {
-            let w1 = match line_result {
-                Ok(w) => w.trim().to_string(),
-                Err(_) => return,
-            };
-            if w1.is_empty() { return; }
+    if low_mem {
+        let w2_file = match fs::File::open(Path::new(wordlist2)) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("[!] Failed to open wordlist2: {}", e);
+                return Vec::new();
+            }
+        };
+        let w2_lines: Vec<String> = BufReader::new(w2_file).lines()
+            .filter_map(|l| l.ok())
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        if w2_lines.is_empty() {
+            eprintln!("[!] Empty wordlist2");
+            return Vec::new();
+        }
+        if !quiet {
+            eprintln!("[*] Wordlist2: {} words", w2_lines.len());
+        }
 
-            let mut local = Vec::new();
-            for w2 in &words2 {
-                let combined = format!("{}{}", w1, w2);
-                for entry in hashes.iter() {
-                    if cracker.verify(&combined, entry) {
-                        local.push(CrackResult {
-                            original: entry.raw.clone(),
-                            hash_type: cracker.name().to_string(),
-                            password: Some(combined.clone()),
-                        });
+        reader.lines()
+            .par_bridge()
+            .for_each(|line_result| {
+                let w1 = match line_result {
+                    Ok(w) => w.trim().to_string(),
+                    Err(_) => return,
+                };
+                if w1.is_empty() { return; }
+
+                let mut local: Vec<CrackResult> = Vec::with_capacity(1);
+                for w2 in &w2_lines {
+                    let combined = format!("{}{}", w1, w2);
+                    for entry in hashes.iter() {
+                        if cracker.verify(&combined, entry) {
+                            local.push(CrackResult {
+                                original: entry.raw.clone(),
+                                hash_type: cracker.name().to_string(),
+                                password: Some(combined.clone()),
+                            });
+                        }
                     }
                 }
-            }
 
-            if !local.is_empty() {
-                let mut all = results.lock().unwrap();
-                all.extend(local);
-            }
-
-            let tested = words2.len() as u64;
-            #[cfg(not(feature = "progress-rich"))]
-            let _tested = tested;
-            line_count.fetch_add(1, Ordering::Relaxed);
-
-            #[cfg(feature = "progress-rich")]
-            {
-                progress.record_tested(tested);
-                if line_count.load(Ordering::Relaxed) % 1000 == 0 {
-                    print_speed(&progress);
+                if !local.is_empty() {
+                    let mut all = results.lock().unwrap();
+                    all.extend(local);
                 }
-            }
-        });
+
+                let _tested = w2_lines.len() as u64;
+                line_count.fetch_add(1, Ordering::Relaxed);
+
+                #[cfg(feature = "progress-rich")]
+                {
+                    progress.record_tested(tested);
+                    if line_count.load(Ordering::Relaxed) % 1000 == 0 {
+                        print_speed(&progress);
+                    }
+                }
+            });
+    } else {
+        reader.lines()
+            .par_bridge()
+            .for_each(|line_result| {
+                let w1 = match line_result {
+                    Ok(w) => w.trim().to_string(),
+                    Err(_) => return,
+                };
+                if w1.is_empty() { return; }
+
+                let mut local: Vec<CrackResult> = Vec::with_capacity(1);
+                for w2 in &words2 {
+                    let combined = format!("{}{}", w1, w2);
+                    for entry in hashes.iter() {
+                        if cracker.verify(&combined, entry) {
+                            local.push(CrackResult {
+                                original: entry.raw.clone(),
+                                hash_type: cracker.name().to_string(),
+                                password: Some(combined.clone()),
+                            });
+                        }
+                    }
+                }
+
+                if !local.is_empty() {
+                    let mut all = results.lock().unwrap();
+                    all.extend(local);
+                }
+
+                let tested = words2.len() as u64;
+                #[cfg(not(feature = "progress-rich"))]
+                let _tested = tested;
+                line_count.fetch_add(1, Ordering::Relaxed);
+
+                #[cfg(feature = "progress-rich")]
+                {
+                    progress.record_tested(tested);
+                    if line_count.load(Ordering::Relaxed) % 1000 == 0 {
+                        print_speed(&progress);
+                    }
+                }
+            });
+    }
 
     #[cfg(feature = "progress-rich")]
     eprintln!();

@@ -554,7 +554,7 @@ pub enum HashType {
     WPAPBKDF2,
     WPA2PMKID,
     WPA3SAE,
-    iSCSI_CHAP,
+    IScsiChap,
     PythonMD5,
     RabbitMQMD5,
     RedisMD5,
@@ -916,7 +916,7 @@ impl HashType {
             HashType::WPAPBKDF2 => "WPA PBKDF2",
             HashType::WPA2PMKID => "WPA2 PMKID",
             HashType::WPA3SAE => "WPA3 SAE",
-            HashType::iSCSI_CHAP => "iSCSI CHAP",
+            HashType::IScsiChap => "iSCSI CHAP",
             HashType::PythonMD5 => "Python MD5",
             HashType::RabbitMQMD5 => "RabbitMQ MD5",
             HashType::RedisMD5 => "Redis MD5",
@@ -1222,7 +1222,7 @@ impl HashType {
             HashType::WPAPBKDF2 => Some(256),
             HashType::WPA2PMKID => Some(256),
             HashType::WPA3SAE => Some(256),
-            HashType::iSCSI_CHAP => Some(128),
+            HashType::IScsiChap => Some(128),
             HashType::PythonMD5 => Some(128),
             HashType::RabbitMQMD5 => Some(128),
             HashType::RedisMD5 => Some(128),
@@ -1247,6 +1247,11 @@ pub trait HashCracker: Send + Sync {
     fn name(&self) -> &'static str;
     /// Returns a boxed clone of this cracker.
     fn clone_box(&self) -> Box<dyn HashCracker>;
+    /// Verify a batch of passwords against the same hash entry, returning matches.
+    /// Default implementation calls verify() in a loop.
+    fn verify_batch<'a>(&self, passwords: &[&'a str], hash: &HashEntry) -> Vec<&'a str> {
+        passwords.iter().filter(|pw| self.verify(pw, hash)).copied().collect()
+    }
 }
 
 /// Parses raw hash strings into [`HashEntry`] values.
@@ -1255,4 +1260,14 @@ pub trait HashParser: Send + Sync {
     fn parse(&self, line: &str) -> Option<HashEntry>;
     /// Returns `true` if the line looks like a hash this parser understands.
     fn can_parse(&self, line: &str) -> bool;
+}
+
+/// Constant-time comparison that also ignores ASCII case.
+pub(crate) fn constant_time_eq_ignore_case(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }

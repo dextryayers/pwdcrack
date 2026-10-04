@@ -2178,9 +2178,7 @@ impl HashParser for HmacSha3_512Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-256 ──
-
-// ── HMAC-BLAKE2b-256 (detection only) ──
+// ── HMAC-BLAKE2b-256 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b256Hash;
 
@@ -2202,7 +2200,7 @@ impl HashParser for HmacBlake2b256Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2s-256 (detection only) ──
+// ── HMAC-BLAKE2s-256 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2s256Hash;
 
@@ -2224,7 +2222,7 @@ impl HashParser for HmacBlake2s256Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-512 (detection only) ──
+// ── HMAC-BLAKE2b-512 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b512Hash;
 
@@ -3165,6 +3163,8 @@ impl HashParser for HmacGost94Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
+// ── HMAC-Tiger (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+
 pub struct HmacTigerHash;
 impl HashCracker for HmacTigerHash {
     fn hash_type(&self) -> HashType { HashType::HMACTIGER }
@@ -3507,7 +3507,7 @@ impl HashParser for Gost94HmacHash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-224 ──
+// ── HMAC-BLAKE2b-224 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b224Hash;
 
@@ -3529,7 +3529,7 @@ impl HashParser for HmacBlake2b224Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-384 ──
+// ── HMAC-BLAKE2b-384 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b384Hash;
 

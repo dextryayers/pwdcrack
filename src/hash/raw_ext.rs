@@ -25,12 +25,7 @@ macro_rules! impl_detection_only_hex {
 }
 
 // ── Standard Algorithms ──
-impl_detection_only_hex!(Sm3Hash, HashType::SM3, 64, 256);
 impl_detection_only_hex!(Has160Hash, HashType::HAS160, 40, 160);
-impl_detection_only_hex!(Groestl224Hash, HashType::Groestl224, 56, 224);
-impl_detection_only_hex!(Groestl256Hash, HashType::Groestl256, 64, 256);
-impl_detection_only_hex!(Groestl384Hash, HashType::Groestl384, 96, 384);
-impl_detection_only_hex!(Groestl512Hash, HashType::Groestl512, 128, 512);
 impl_detection_only_hex!(Bmw224Hash, HashType::BMW224, 56, 224);
 impl_detection_only_hex!(Bmw256Hash, HashType::BMW256, 64, 256);
 impl_detection_only_hex!(Bmw384Hash, HashType::BMW384, 96, 384);
@@ -1785,7 +1780,7 @@ impl_detection_only_hex!(FreeRadiusMd5Hash, HashType::FreeRADIUSMD5, 32, 128);
 impl_detection_only_hex!(OpenVpnMd5Hash, HashType::OpenVPNMD5, 32, 128);
 impl_detection_only_hex!(DigestMd5Hash, HashType::DigestMD5, 32, 128);
 impl_detection_only_hex!(Aws4HmacSha256Hash, HashType::AWS4HMACSHA256, 64, 256);
-impl_detection_only_hex!(IScsiChapHash, HashType::iSCSI_CHAP, 32, 128);
+impl_detection_only_hex!(IScsiChapHash, HashType::IScsiChap, 32, 128);
 impl_detection_only_hex!(PythonMd5Hash, HashType::PythonMD5, 32, 128);
 impl_detection_only_hex!(RabbitMqMd5Hash, HashType::RabbitMQMD5, 32, 128);
 impl_detection_only_hex!(RedisMd5Hash, HashType::RedisMD5, 32, 128);

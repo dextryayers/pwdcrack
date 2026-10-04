@@ -5,11 +5,14 @@ use super::raw_ext::*;
 use super::unix::*;
 use super::argon2_scrypt::*;
 use super::bcrypt_::*;
+use std::collections::HashMap;
 
 /// Auto-detects hash formats and provides matching cracker and parser instances.
 pub struct Detector {
     parsers: Vec<Box<dyn HashParser>>,
     crackers: Vec<Box<dyn HashCracker>>,
+    prefix_map: HashMap<&'static str, usize>,
+    length_map: HashMap<usize, Vec<usize>>,
 }
 
 impl Detector {
@@ -723,18 +726,68 @@ impl Detector {
             Box::new(PolkadotHash),
             Box::new(SolanaHash),
         ];
-        Detector { parsers, crackers }
+        let mut prefix_map: HashMap<&'static str, usize> = HashMap::new();
+        let mut length_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (i, p) in parsers.iter().enumerate() {
+            let len = line_len_hint(p.as_ref());
+            length_map.entry(len).or_default().push(i);
+            if len == 0 {
+                let prefix = prefix_hint(p.as_ref());
+                if !prefix.is_empty() {
+                    prefix_map.insert(prefix, i);
+                }
+            }
+        }
+        Detector { parsers, crackers, prefix_map, length_map }
+    }
+
+    fn find_parser(&self, line: &str) -> Option<&Box<dyn HashParser>> {
+        let trimmed = line.trim();
+        let raw_len = trimmed.len();
+
+        // 1) Try prefix-based lookup for $prefixed$ hashes
+        if raw_len > 2 {
+            let end = trimmed[1..].find('$').map(|i| i + 2).unwrap_or(0);
+            if end > 2 && end <= 12 {
+                let prefix = &trimmed[..end];
+                if let Some(&idx) = self.prefix_map.get(prefix) {
+                    if self.parsers[idx].can_parse(trimmed) {
+                        return Some(&self.parsers[idx]);
+                    }
+                }
+            }
+        }
+
+        // 2) Try length-based lookup for hex hashes
+        if let Some(indices) = self.length_map.get(&raw_len) {
+            for &idx in indices {
+                if self.parsers[idx].can_parse(trimmed) {
+                    return Some(&self.parsers[idx]);
+                }
+            }
+        }
+
+        // 3) Fallback: linear scan remaining parsers (prefix-based, app-specific, etc.)
+        for (i, parser) in self.parsers.iter().enumerate() {
+            let in_length = self.length_map.get(&raw_len)
+                .map(|v| v.contains(&i))
+                .unwrap_or(false);
+            let in_prefix = self.prefix_map.values().any(|&v| v == i);
+            if !in_length && !in_prefix && parser.can_parse(trimmed) {
+                return Some(parser);
+            }
+        }
+        None
     }
 
     /// Identifies a hash string and returns a matching cracker along with its parsed entry.
     pub fn detect(&self, line: &str) -> Option<(Box<dyn HashCracker>, HashEntry)> {
-        for parser in &self.parsers {
-            if parser.can_parse(line) {
-                if let Some(entry) = parser.parse(line) {
-                    for cracker in &self.crackers {
-                        if cracker.hash_type() == entry.hash_type {
-                            return Some((clone_cracker(cracker.as_ref()), entry));
-                        }
+        if let Some(parser) = self.find_parser(line) {
+            let trimmed = line.trim();
+            if let Some(entry) = parser.parse(trimmed) {
+                for cracker in &self.crackers {
+                    if cracker.hash_type() == entry.hash_type {
+                        return Some((clone_cracker(cracker.as_ref()), entry));
                     }
                 }
             }
@@ -761,11 +814,9 @@ impl Detector {
             .filter_map(|line| {
                 let trimmed = line.trim();
                 if trimmed.is_empty() { return None; }
-                for parser in &self.parsers {
-                    if parser.can_parse(trimmed) {
-                        if let Some(entry) = parser.parse(trimmed) {
-                            return Some((trimmed.to_string(), entry.hash_type));
-                        }
+                if let Some(parser) = self.find_parser(trimmed) {
+                    if let Some(entry) = parser.parse(trimmed) {
+                        return Some((trimmed.to_string(), entry.hash_type));
                     }
                 }
                 Some((trimmed.to_string(), HashType::Unknown))
@@ -776,4 +827,55 @@ impl Detector {
 
 fn clone_cracker(c: &dyn HashCracker) -> Box<dyn HashCracker> {
     c.clone_box()
+}
+
+fn line_len_hint(parser: &dyn HashParser) -> usize {
+    // Try parsing a known hex hash to determine expected length
+    // Default: return 0 meaning "unknown/variable length"
+    // Concrete hex parsers return the exact hex length they expect
+    if parser.can_parse("a" ) { return 1; }
+    if parser.can_parse("ab") { return 2; }
+    if parser.can_parse("abc") { return 3; }
+    if parser.can_parse("abcd") { return 4; }
+    if parser.can_parse("abcde") { return 5; }
+    if parser.can_parse("abcdef") { return 6; }
+    if parser.can_parse("abcdefa") { return 7; }
+    if parser.can_parse("abcdefab") { return 8; }
+    if parser.can_parse("abcdefabc") { return 9; }
+    if parser.can_parse("abcdefabcd") { return 10; }
+    if parser.can_parse("abcdefabcde") { return 11; }
+    if parser.can_parse("abcdefabcdef") { return 12; }
+    if parser.can_parse("abcdefabcdefa") { return 13; }
+    if parser.can_parse("abcdefabcdefab") { return 14; }
+    if parser.can_parse("abcdefabcdefabc") { return 15; }
+    if parser.can_parse("abcdefabcdefabcd") { return 16; }
+    if parser.can_parse("abcdefabcdefabcde") { return 17; }
+    if parser.can_parse("abcdefabcdefabcdef") { return 18; }
+    if parser.can_parse("0123456789abcdef01234567") { return 24; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef") { return 32; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef01234567") { return 40; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef0123456789abcdef") { return 48; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef0123456789abcdef01234567") { return 56; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") { return 64; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567") { return 96; }
+    if parser.can_parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") { return 128; }
+    0
+}
+
+fn prefix_hint(parser: &dyn HashParser) -> &'static str {
+    let tests = &[
+        "$1$", "$5$", "$6$", "$2a$", "$2b$", "$2x$", "$2y$",
+        "$apr1$", "$P$", "$H$", "$S$", "$md5$", "$ml$",
+        "$argon2i$", "$argon2d$", "$argon2id$", "$scrypt$",
+        "$NT$", "$krb5$", "{SHA}", "{SSHA}", "{SSHA256}",
+        "SCRAM-SHA-256$", "SCRAM-SHA-1$", "SCRAM-SHA-224$",
+        "SCRAM-SHA-384$", "SCRAM-SHA-512$",
+        "0x", "r_", "G_",
+    ];
+    for &prefix in tests {
+        if parser.can_parse(&format!("{}test", prefix)) {
+            return prefix;
+        }
+    }
+    ""
 }

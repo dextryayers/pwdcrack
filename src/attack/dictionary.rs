@@ -29,6 +29,7 @@ pub fn run_dictionary(
     rules_path: Option<&str>,
     _threads: usize,
     quiet: bool,
+    low_mem: bool,
 ) -> Vec<CrackResult> {
     let rules: Option<Vec<Vec<RuleOp>>> = match rules_path {
         Some(path) => match load_rules(path) {
@@ -88,7 +89,7 @@ pub fn run_dictionary(
     #[cfg(not(feature = "mmap"))]
     let word_count_hint = file_size / 16;
 
-    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::new());
+    let results: std::sync::Mutex<Vec<CrackResult>> = std::sync::Mutex::new(Vec::with_capacity(hashes.len()));
     let line_count = AtomicU64::new(0);
     let cracked_count = AtomicU64::new(0);
 
@@ -180,7 +181,7 @@ pub fn run_dictionary(
         let total_est = (file_size / 16).max(1) * (1 + rule_count as u64);
         let progress = ProgressStats::new(total_est);
         let pb = setup_progress(total_est, quiet);
-        run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint);
+        run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint, low_mem);
     }
 
     #[cfg(not(feature = "mmap"))]
@@ -188,7 +189,7 @@ pub fn run_dictionary(
         let total_est = word_count_hint.max(1) * (1 + rule_count as u64);
         let progress = ProgressStats::new(total_est);
         let pb = setup_progress(total_est, quiet);
-        run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint);
+        run_streaming(file, &rules, hashes, cracker, rule_count, total_hashes, &results, &line_count, &cracked_count, &progress, pb, quiet, word_count_hint, low_mem);
     }
 
     let results = results.into_inner().unwrap_or_else(|_| Vec::new());
@@ -214,11 +215,13 @@ fn run_streaming(
     pb: Option<indicatif::ProgressBar>,
     quiet: bool,
     _word_count_hint: u64,
+    low_mem: bool,
 ) {
-    let reader = BufReader::new(file);
+    let buf_cap = if low_mem { 4096 } else { 8192 };
+    let reader = BufReader::with_capacity(buf_cap, file);
 
     if !quiet {
-        eprintln!("[*] Streaming wordlist");
+        eprintln!("[*] Streaming wordlist{}", if low_mem { " (low-mem mode)" } else { "" });
     }
 
     reader.lines()
@@ -230,7 +233,7 @@ fn run_streaming(
             };
             if word.is_empty() { return; }
 
-            let mut local_results = Vec::new();
+            let mut local_results: Vec<CrackResult> = Vec::with_capacity(1);
 
             for entry in hashes.iter() {
                 if cracker.verify(&word, entry) {

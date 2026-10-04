@@ -1,7 +1,7 @@
 mod cli;
 
 use clap::Parser;
-use cli::{Cli, args::{Commands, OutputFormat}};
+use cli::{Cli, Tier, args::{Commands, OutputFormat}};
 use pwdcrack::hash::{HashCracker, HashEntry, HashType};
 use pwdcrack::hash::detector::Detector;
 use pwdcrack::attack::CrackResult;
@@ -9,6 +9,65 @@ use pwdcrack::potfile::Potfile;
 
 #[cfg(feature = "engine-power")]
 use std::sync::Arc;
+
+fn init_verbose_engines(_args: &Cli) {
+    #[cfg(feature = "engine-simd")]
+    {
+        engine_simd::init();
+        log::info!("SIMD: {:?}", engine_simd::current_level());
+    }
+
+    #[cfg(feature = "engine-gpu")]
+    if args.gpu {
+        match pollster::block_on(engine_gpu::GpuEngine::init()) {
+            Some(gpu) => log::info!("GPU: {}", gpu.info()),
+            None => log::warn!("GPU: no compatible device found"),
+        }
+    }
+
+    #[cfg(feature = "engine-power")]
+    if args.power_budget > 0.0 || args.battery_safe {
+        if args.battery_safe {
+            log::info!("Battery-safe mode active");
+        }
+        if args.power_budget > 0.0 {
+            log::info!("Power budget: {}W", args.power_budget);
+        }
+    }
+
+    #[cfg(feature = "engine-distributed")]
+    if args.distributed {
+        log::info!("Distributed: engine initialized");
+    }
+
+    #[cfg(feature = "engine-tpu")]
+    {
+        log::info!("TPU: engine available");
+        engine_tpu::device::probe();
+    }
+
+    #[cfg(feature = "engine-riscv")]
+    {
+        log::info!("RISC-V: vector extension detected");
+        engine_riscv::vector::probe();
+    }
+
+    #[cfg(feature = "engine-metal")]
+    {
+        log::info!("Metal: GPU acceleration available");
+        engine_metal::device::probe();
+    }
+
+    #[cfg(feature = "engine-hybrid")]
+    {
+        log::info!("Hybrid: scheduler initialized");
+    }
+
+    #[cfg(feature = "engine-android")]
+    {
+        log::info!("Android: engine available");
+    }
+}
 
 fn main() {
     env_logger::init();
@@ -25,24 +84,36 @@ fn main() {
         .build_global()
         .unwrap();
 
-    // ── Engine init ──
-    #[cfg(feature = "engine-simd")]
-    {
-        engine_simd::init();
-        log::info!("SIMD: {:?}", engine_simd::current_level());
+    if let Some(ref tier) = args.tier {
+        match tier {
+            Tier::Low => {
+                if !args.quiet { eprintln!("[*] Tier: low (embedded/low-end device mode)"); }
+            }
+            Tier::Mid => {
+                if !args.quiet { eprintln!("[*] Tier: mid (balanced mode)"); }
+            }
+            Tier::High => {
+                if !args.quiet { eprintln!("[*] Tier: high (HPC/workstation mode)"); }
+            }
+            Tier::Auto => {
+                if !args.quiet { eprintln!("[*] Tier: auto-detected"); }
+            }
+        }
+    }
+    if args.low_mem {
+        if !args.quiet { eprintln!("[*] Low-memory mode active"); }
     }
 
+    if args.verbose {
+        init_verbose_engines(&args);
+    }
+
+    // ── Always-init engines ──
     #[cfg(feature = "engine-gpu")]
     let _gpu_engine = if args.gpu {
         match pollster::block_on(engine_gpu::GpuEngine::init()) {
-            Some(gpu) => {
-                log::info!("GPU: {}", gpu.info());
-                Some(std::sync::Arc::new(gpu))
-            }
-            None => {
-                log::warn!("GPU: no compatible device found");
-                None
-            }
+            Some(gpu) => Some(std::sync::Arc::new(gpu)),
+            None => None,
         }
     } else { None };
 
@@ -59,10 +130,6 @@ fn main() {
                     engine_power::governor::apply_workload_policy(workload);
                 }
             });
-            log::info!("Battery-safe mode active");
-        }
-        if args.power_budget > 0.0 {
-            log::info!("Power budget: {}W", args.power_budget);
         }
         Some(pm)
     } else {
@@ -74,50 +141,10 @@ fn main() {
         Some(engine_distributed::DistributedNode::new("0.0.0.0:0"))
     } else { None };
 
-    #[cfg(feature = "engine-tpu")]
-    let _tpu_engine = {
-        log::info!("TPU: engine available");
-        engine_tpu::device::probe();
-        Some(())
-    };
-    #[cfg(not(feature = "engine-tpu"))]
-    let _tpu_engine = None::<()>;
-
-    #[cfg(feature = "engine-riscv")]
-    let _riscv_engine = {
-        log::info!("RISC-V: vector extension detected");
-        engine_riscv::vector::probe();
-        Some(())
-    };
-    #[cfg(not(feature = "engine-riscv"))]
-    let _riscv_engine = None::<()>;
-
-    #[cfg(feature = "engine-metal")]
-    let _metal_engine = {
-        log::info!("Metal: GPU acceleration available");
-        engine_metal::device::probe();
-        Some(())
-    };
-    #[cfg(not(feature = "engine-metal"))]
-    let _metal_engine = None::<()>;
-
-    #[cfg(feature = "engine-hybrid")]
-    let _hybrid_scheduler = {
-        let hs = engine_hybrid::scheduler::HybridScheduler::new();
-        log::info!("Hybrid: scheduler initialized");
-        Some(hs)
-    };
-    #[cfg(not(feature = "engine-hybrid"))]
-    let _hybrid_scheduler = None::<()>;
-
     #[cfg(feature = "engine-android")]
     let mut _android_engine = {
         let mut ae = engine_android::AndroidEngine::new();
         ae.init();
-        log::info!("Android: {}", ae.info());
-        if ae.should_throttle() {
-            log::warn!("Android throttling: {:?}", ae.throttle_reason());
-        }
         ae
     };
 
@@ -336,7 +363,7 @@ fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: O
     eprintln!("[*] Threads   : {}", threads);
 
     let results = pwdcrack::attack::dictionary::run_dictionary(
-        &mut hashes, cracker.as_ref(), wordlist, rules, threads, args.quiet,
+        &mut hashes, cracker.as_ref(), wordlist, rules, threads, args.quiet, args.low_mem,
     );
 
     emit_results(&results, args, &potfile);
@@ -362,7 +389,7 @@ fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[
     eprintln!("[*] Threads   : {}", threads);
 
     let results = pwdcrack::attack::brute::run_bruteforce(
-        &mut hashes, cracker.as_ref(), mask, charsets, threads, args.quiet,
+        &mut hashes, cracker.as_ref(), mask, charsets, threads, args.quiet, args.low_mem,
     );
 
     emit_results(&results, args, &potfile);
@@ -389,7 +416,7 @@ fn cmd_combinator(detector: &Detector, hash_file: &str, wl1: &str, wl2: &str, th
     eprintln!("[*] Threads   : {}", threads);
 
     let results = pwdcrack::attack::combinator::run_combinator(
-        &mut hashes, cracker.as_ref(), wl1, wl2, threads, args.quiet,
+        &mut hashes, cracker.as_ref(), wl1, wl2, threads, args.quiet, args.low_mem,
     );
 
     emit_results(&results, args, &potfile);
@@ -466,9 +493,29 @@ fn cmd_benchmark(detector: &Detector, hash_type: &str, threads: usize, _quiet: b
     println!("{:=<60}", "");
 }
 
+fn str_to_key(key: &[u8]) -> [u8; 8] {
+    let mut result = [0u8; 8];
+    result[0] = key[0] >> 1;
+    result[1] = ((key[0] & 0x01) << 6) | (key[1] >> 2);
+    result[2] = ((key[1] & 0x03) << 5) | (key[2] >> 3);
+    result[3] = ((key[2] & 0x07) << 4) | (key[3] >> 4);
+    result[4] = ((key[3] & 0x0F) << 3) | (key[4] >> 5);
+    result[5] = ((key[4] & 0x1F) << 2) | (key[5] >> 6);
+    result[6] = ((key[5] & 0x3F) << 1) | (key[6] >> 7);
+    result[7] = key[6] & 0x7F;
+    for i in 0..8 {
+        let bit_count = result[i].count_ones();
+        result[i] = (result[i] << 1) | if bit_count % 2 == 0 { 1 } else { 0 };
+    }
+    result
+}
+
 fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
+    use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256, Digest as Sha2Digest};
+    use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+    use blake2::{Blake2b, Blake2b512, Blake2s256, Blake2s};
+    use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
     use md5::Md5;
-    use sha2::{Sha256, Sha512, Digest};
 
     match cracker.hash_type() {
         HashType::MD5 => {
@@ -476,13 +523,13 @@ fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
-        HashType::SHA224 => {
-            let mut h = sha2::Sha224::new();
+        HashType::SHA1 => {
+            let mut h = sha1::Sha1::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
-        HashType::SHA1 => {
-            let mut h = sha1::Sha1::new();
+        HashType::SHA224 => {
+            let mut h = Sha224::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
@@ -492,7 +539,7 @@ fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
             hex::encode(h.finalize())
         }
         HashType::SHA384 => {
-            let mut h = sha2::Sha384::new();
+            let mut h = Sha384::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
@@ -501,35 +548,245 @@ fn generate_test_hash(cracker: &dyn HashCracker, password: &str) -> String {
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
-        HashType::SHA3512 => {
-            let mut h = sha3::Sha3_512::new();
+        HashType::SHA512_224 => {
+            let mut h = Sha512_224::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
-        HashType::BLAKE2B256 => {
-            let mut h = blake2::Blake2s256::new();
+        HashType::SHA512_256 => {
+            let mut h = Sha512_256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHA3224 => {
+            let mut h = Sha3_224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHA3256 => {
+            let mut h = Sha3_256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHA3384 => {
+            let mut h = Sha3_384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHA3512 => {
+            let mut h = Sha3_512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2B256 | HashType::BLAKE2S256 => {
+            let mut h = Blake2s256::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
         HashType::BLAKE2B512 => {
-            let mut h = blake2::Blake2b512::new();
+            let mut h = Blake2b512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2B384 => {
+            let mut h = Blake2b::<digest::consts::U48>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2B224 => {
+            let mut h = Blake2b::<digest::consts::U28>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2B160 => {
+            let mut h = Blake2b::<digest::consts::U20>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2S128 => {
+            let mut h = Blake2s::<digest::consts::U16>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE2S160 => {
+            let mut h = Blake2s::<digest::consts::U20>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::BLAKE3256 => {
+            let h = blake3::hash(password.as_bytes());
+            hex::encode(h.as_bytes())
+        }
+        HashType::RIPEMD128 => {
+            let mut h = Ripemd128::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
         HashType::RIPEMD160 => {
-            let mut h = ripemd::Ripemd160::new();
+            let mut h = Ripemd160::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
+        HashType::RIPEMD256 => {
+            let mut h = Ripemd256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::RIPEMD320 => {
+            let mut h = Ripemd320::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::MD4 => {
+            use md4::Md4 as Md4Core;
+            let mut h = Md4Core::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::WHIRLPOOL => {
+            let mut h = whirlpool::Whirlpool::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::STREEBOG256 => {
+            let mut h = streebog::Streebog256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::STREEBOG512 => {
+            let mut h = streebog::Streebog512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::TIGER192 => {
+            use tiger::digest::Digest;
+            let mut h = tiger::Tiger::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::JH224 => {
+            let mut h = jh::Jh224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::JH256 => {
+            let mut h = jh::Jh256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::JH384 => {
+            let mut h = jh::Jh384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::JH512 => {
+            let mut h = jh::Jh512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SKEIN256 => {
+            let mut h = skein::Skein256::<digest::consts::U32>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SKEIN512 => {
+            let mut h = skein::Skein512::<digest::consts::U64>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHABAL192 => {
+            let mut h = shabal::Shabal192::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHABAL224 => {
+            let mut h = shabal::Shabal224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHABAL256 => {
+            let mut h = shabal::Shabal256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHABAL384 => {
+            let mut h = shabal::Shabal384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SHABAL512 => {
+            let mut h = shabal::Shabal512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::GOST94256 => {
+            let mut h = gost94::Gost94CryptoPro::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::SM3 => {
+            use sm3::Sm3;
+            let mut h = Sm3::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::Groestl224 => {
+            use groestl::Groestl224;
+            let mut h = Groestl224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::Groestl256 => {
+            use groestl::Groestl256;
+            let mut h = Groestl256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::Groestl384 => {
+            use groestl::Groestl384;
+            let mut h = Groestl384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::Groestl512 => {
+            use groestl::Groestl512;
+            let mut h = Groestl512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        HashType::CRC32 => format!("{:08x}", crc32fast::hash(password.as_bytes())),
+        HashType::CRC64 => format!("{:016x}", crc64::crc64(0, password.as_bytes())),
+        HashType::ADLER32 => {
+            use adler::Adler32;
+            let mut adler = Adler32::new();
+            adler.write_slice(password.as_bytes());
+            format!("{:08x}", adler.checksum())
+        }
         HashType::NTLM => {
-            use md4::Md4;
-            use md4::Digest;
+            use md4::Md4 as Md4Core;
             let utf16: Vec<u8> = password.encode_utf16()
                 .flat_map(|c| c.to_le_bytes())
                 .collect();
-            let mut h = Md4::new();
+            let mut h = Md4Core::new();
             h.update(&utf16);
             hex::encode(h.finalize())
+        }
+        HashType::LM => {
+            use des::Des;
+            use cipher::{KeyInit, BlockCipherEncrypt, Array};
+            let upper = password.to_uppercase();
+            let mut key = upper.as_bytes().to_vec();
+            key.resize(14, 0);
+            let k1 = str_to_key(&key[..7]);
+            let k2 = str_to_key(&key[7..14]);
+            let d1 = Des::new(&Array::from(k1));
+            let d2 = Des::new(&Array::from(k2));
+            let magic = *b"KGS!@#$%";
+            let mut b1 = Array::from(magic);
+            d1.encrypt_block(&mut b1);
+            let mut b2 = Array::from(magic);
+            d2.encrypt_block(&mut b2);
+            hex::encode([b1.to_vec(), b2.to_vec()].concat())
         }
         HashType::BCrypt | HashType::BCryptA => {
             bcrypt::hash(password, 4).unwrap()
@@ -588,8 +845,11 @@ fn cmd_show(potfile_path: &str, show_type: bool, stats_only: bool) {
 }
 
 fn cmd_hash(password: &str, hash_type: &str) {
+    use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256, Digest as Sha2Digest};
+    use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+    use blake2::{Blake2b, Blake2b512, Blake2s256, Blake2s};
+    use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
     use md5::Md5 as Md5Core;
-    use sha2::{Sha224, Sha256, Sha384, Sha512, Digest};
 
     let result = match hash_type.to_lowercase().as_str() {
         "md5" | "md-5" => {
@@ -622,23 +882,214 @@ fn cmd_hash(password: &str, hash_type: &str) {
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
+        "sha512-224" => {
+            let mut h = Sha512_224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "sha512-256" => {
+            let mut h = Sha512_256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "sha3-224" => {
+            let mut h = Sha3_224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "sha3-256" => {
+            let mut h = Sha3_256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "sha3-384" => {
+            let mut h = Sha3_384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
         "sha3" | "sha3-512" => {
-            let mut h = sha3::Sha3_512::new();
+            let mut h = Sha3_512::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
         "blake2b" | "blake2b-256" => {
-            let mut h = blake2::Blake2s256::new();
+            let mut h = Blake2s256::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
         "blake2b-512" => {
-            let mut h = blake2::Blake2b512::new();
+            let mut h = Blake2b512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2b-384" => {
+            let mut h = Blake2b::<digest::consts::U48>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2b-224" => {
+            let mut h = Blake2b::<digest::consts::U28>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2b-160" => {
+            let mut h = Blake2b::<digest::consts::U20>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2s" | "blake2s-256" => {
+            let mut h = Blake2s256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2s-128" => {
+            let mut h = Blake2s::<digest::consts::U16>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake2s-160" => {
+            let mut h = Blake2s::<digest::consts::U20>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "blake3" | "blake3-256" => {
+            let h = blake3::hash(password.as_bytes());
+            hex::encode(h.as_bytes())
+        }
+        "ripemd128" | "ripemd-128" => {
+            let mut h = Ripemd128::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
         "ripemd160" | "ripemd-160" => {
-            let mut h = ripemd::Ripemd160::new();
+            let mut h = Ripemd160::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "ripemd256" | "ripemd-256" => {
+            let mut h = Ripemd256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "ripemd320" | "ripemd-320" => {
+            let mut h = Ripemd320::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "whirlpool" => {
+            let mut h = whirlpool::Whirlpool::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "streebog256" | "streebog-256" => {
+            let mut h = streebog::Streebog256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "streebog512" | "streebog-512" => {
+            let mut h = streebog::Streebog512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "tiger" | "tiger192" | "tiger-192" => {
+            use tiger::digest::Digest;
+            let mut h = tiger::Tiger::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "jh224" | "jh-224" => {
+            let mut h = jh::Jh224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "jh256" | "jh-256" => {
+            let mut h = jh::Jh256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "jh384" | "jh-384" => {
+            let mut h = jh::Jh384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "jh512" | "jh-512" => {
+            let mut h = jh::Jh512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "skein256" | "skein-256" => {
+            let mut h = skein::Skein256::<digest::consts::U32>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "skein512" | "skein-512" => {
+            let mut h = skein::Skein512::<digest::consts::U64>::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "shabal192" | "shabal-192" => {
+            let mut h = shabal::Shabal192::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "shabal224" | "shabal-224" => {
+            let mut h = shabal::Shabal224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "shabal256" | "shabal-256" => {
+            let mut h = shabal::Shabal256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "shabal384" | "shabal-384" => {
+            let mut h = shabal::Shabal384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "shabal512" | "shabal-512" => {
+            let mut h = shabal::Shabal512::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "gost94" | "gost94-256" => {
+            let mut h = gost94::Gost94CryptoPro::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "md4" | "md-4" => {
+            use md4::Md4;
+            let mut h = Md4::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "sm3" => {
+            use sm3::Sm3;
+            let mut h = Sm3::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "groestl224" | "groestl-224" => {
+            use groestl::Groestl224;
+            let mut h = Groestl224::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "groestl256" | "groestl-256" => {
+            use groestl::Groestl256;
+            let mut h = Groestl256::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "groestl384" | "groestl-384" => {
+            use groestl::Groestl384;
+            let mut h = Groestl384::new();
+            h.update(password.as_bytes());
+            hex::encode(h.finalize())
+        }
+        "groestl512" | "groestl-512" => {
+            use groestl::Groestl512;
+            let mut h = Groestl512::new();
             h.update(password.as_bytes());
             hex::encode(h.finalize())
         }
@@ -650,6 +1101,31 @@ fn cmd_hash(password: &str, hash_type: &str) {
             let mut h = Md4::new();
             h.update(&utf16);
             hex::encode(h.finalize())
+        }
+        "lm" => {
+            use des::Des;
+            use cipher::{KeyInit, BlockCipherEncrypt, Array};
+            let upper = password.to_uppercase();
+            let mut key = upper.as_bytes().to_vec();
+            key.resize(14, 0);
+            let k1 = str_to_key(&key[..7]);
+            let k2 = str_to_key(&key[7..14]);
+            let d1 = Des::new(&Array::from(k1));
+            let d2 = Des::new(&Array::from(k2));
+            let magic = *b"KGS!@#$%";
+            let mut b1 = Array::from(magic);
+            d1.encrypt_block(&mut b1);
+            let mut b2 = Array::from(magic);
+            d2.encrypt_block(&mut b2);
+            hex::encode([b1.to_vec(), b2.to_vec()].concat())
+        }
+        "crc32" => format!("{:08x}", crc32fast::hash(password.as_bytes())),
+        "crc64" => format!("{:016x}", crc64::crc64(0, password.as_bytes())),
+        "adler32" => {
+            use adler::Adler32;
+            let mut adler = Adler32::new();
+            adler.write_slice(password.as_bytes());
+            format!("{:08x}", adler.checksum())
         }
         "bcrypt" => bcrypt::hash(password, 10).unwrap(),
         _ => {
@@ -1028,7 +1504,7 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         ("WPA PBKDF2", HashType::WPAPBKDF2, "<64 hex chars>", 256, "WiFi"),
         ("WPA2 PMKID", HashType::WPA2PMKID, "<prefix>:<64 hex>", 256, "WiFi"),
         ("WPA3 SAE", HashType::WPA3SAE, "<64 hex chars>", 256, "WiFi"),
-        ("iSCSI CHAP", HashType::iSCSI_CHAP, "<32 hex chars>", 128, "Application"),
+        ("iSCSI CHAP", HashType::IScsiChap, "<32 hex chars>", 128, "Application"),
         ("Python MD5", HashType::PythonMD5, "<32 hex chars>", 128, "Application"),
         ("RabbitMQ MD5", HashType::RabbitMQMD5, "<32 hex chars>", 128, "Application"),
         ("Redis MD5", HashType::RedisMD5, "<32 hex chars>", 128, "Application"),
@@ -1110,7 +1586,7 @@ fn cmd_prince(detector: &Detector, hash_file: &str, wordlist: &str, _threads: us
     eprintln!("[*] Hash type : {}", cracker.name());
     eprintln!("[*] Target    : {} hashes", hashes.len());
     eprintln!("[*] Wordlist  : {}", wordlist);
-    let results = pwdcrack::attack::prince::run_prince(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    let results = pwdcrack::attack::prince::run_prince(&mut hashes, cracker.as_ref(), wordlist, args.quiet, args.low_mem);
     emit_results(&results, args, &potfile);
 }
 
@@ -1127,7 +1603,7 @@ fn cmd_toggle_case(detector: &Detector, hash_file: &str, wordlist: &str, _thread
     eprintln!("[*] Hash type : {}", cracker.name());
     eprintln!("[*] Target    : {} hashes", hashes.len());
     eprintln!("[*] Wordlist  : {}", wordlist);
-    let results = pwdcrack::attack::toggle::run_toggle(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    let results = pwdcrack::attack::toggle::run_toggle(&mut hashes, cracker.as_ref(), wordlist, args.quiet, args.low_mem);
     emit_results(&results, args, &potfile);
 }
 
@@ -1144,7 +1620,7 @@ fn cmd_substitute(detector: &Detector, hash_file: &str, wordlist: &str, _threads
     eprintln!("[*] Hash type : {}", cracker.name());
     eprintln!("[*] Target    : {} hashes", hashes.len());
     eprintln!("[*] Wordlist  : {}", wordlist);
-    let results = pwdcrack::attack::substitute::run_substitute(&mut hashes, cracker.as_ref(), wordlist, args.quiet);
+    let results = pwdcrack::attack::substitute::run_substitute(&mut hashes, cracker.as_ref(), wordlist, args.quiet, args.low_mem);
     emit_results(&results, args, &potfile);
 }
 

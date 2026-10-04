@@ -146,6 +146,7 @@ pub fn run_bruteforce(
     custom_charsets: &[Option<String>],
     threads: usize,
     quiet: bool,
+    low_mem: bool,
 ) -> Vec<CrackResult> {
     let mask = parse_mask(mask_str);
     let owned_custom: Vec<Vec<u8>> = custom_charsets.iter()
@@ -169,7 +170,8 @@ pub fn run_bruteforce(
     let _progress = ProgressStats::new(total);
 
     let counter = AtomicU64::new(0);
-    let chunk_size = (100_000u64).max(total / (threads.max(1) as u64 * 100).max(1));
+    let base_chunk = if low_mem { 10_000u64 } else { 100_000u64 };
+    let chunk_size = base_chunk.max(total / (threads.max(1) as u64 * 100).max(1));
 
     let results: Vec<CrackResult> = (0..threads).into_par_iter()
         .flat_map(|_| {

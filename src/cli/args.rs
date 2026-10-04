@@ -3,37 +3,34 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(
     name = "pwdcrack",
-    about = "Advanced multi-architecture password hash recovery toolkit — CPU · GPU · FPGA · TPU · Accelerated",
+    about = "Universal password hash recovery toolkit — 350+ hash types, CPU/GPU, low-end to HPC",
     long_about = "\
 Professional-grade hash recovery suite supporting 350+ hash types across all major
 algorithm families: MDx, SHA-1/2/3, BLAKE2/3, RIPEMD, Whirlpool, Streebog,
-GOST94, Tiger, JH, Skein, Shabal, Snefru, SM3, HAS-160, and more.
+GOST, Tiger, JH, Skein, Shabal, Snefru, SM3, HAS-160, Argon2, bcrypt, and more.
 
-Cracking engines: dictionary (with rule-based mangling), brute-force mask,
-combinator, PRINCE, toggle-case, substitution, and hybrid attacks.
+Cracking engines: dictionary (rule-based mangling), brute-force mask, combinator,
+PRINCE, toggle-case, substitution, and hybrid attacks with auto-tier performance.
 
-Hardware backends: CPU with auto-detected SIMD (SSE2/AVX2/AVX-512/NEON/SVE),
-GPU (Vulkan/CUDA/OpenCL/Metal/SYCL), FPGA, TPU, DSP, RISC-V vector, Intel XPU,
-and distributed cluster mode.
-
-Optimized for both high-end workstations and low-end/embedded devices.",
-    version = "1.2.0\nCopyright (c) 2026 Hanif Abdur - AniipID\nProfessional hash recovery toolkit — 350+ hash types, multi-architecture",
+Optimized for all hardware tiers — from embedded/low-end devices to HPC clusters
+with auto-detected SIMD (SSE2/AVX2/AVX-512/NEON/SVE) and GPU acceleration.",
+    version = "1.2.0",
     author = "Hanif Abdur - AniipID",
-    override_help = None,
     display_name = "pwdcrack",
     help_template = "\
-{before-help}{name} v{version}
+{name} v{version}
 
 {about-with-newline}
 
-USAGE: {usage}
+USAGE: pwdcrack <COMMAND> [OPTIONS]
 
 {all-args}
 
 SUBCOMMANDS:
 {subcommands}
 
-{after-help}",
+Run 'pwdcrack <SUBCOMMAND> --help' for more details.
+Copyright (c) 2026 Hanif Abdur - AniipID",
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -93,6 +90,12 @@ pub struct Cli {
     #[arg(short = 'r', long, global = true, help = "Global rules file for all applicable attacks")]
     pub rules_file: Option<String>,
 
+    #[arg(long, global = true, help = "Low-memory mode — reduce buffer sizes for low-end/embedded devices")]
+    pub low_mem: bool,
+
+    #[arg(long, global = true, value_enum, help = "Force hardware tier: low, mid, high, auto")]
+    pub tier: Option<Tier>,
+
     #[arg(long, global = true, help = "Disable colored output")]
     pub no_color: bool,
 
@@ -114,6 +117,14 @@ pub enum OutputFormat {
     Text,
     Json,
     Csv,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tier {
+    Low,
+    Mid,
+    High,
+    Auto,
 }
 
 #[derive(Subcommand, Debug)]

@@ -10,6 +10,8 @@ use jh::{Jh224, Jh256, Jh384, Jh512};
 use skein::{Skein256, Skein512};
 use shabal::{Shabal192, Shabal224, Shabal256, Shabal384, Shabal512};
 use gost94::Gost94CryptoPro;
+use sm3::Sm3;
+use groestl::{Groestl224, Groestl256, Groestl384, Groestl512};
 use des::Des;
 use cipher::{KeyInit, BlockCipherEncrypt, Array};
 
@@ -28,8 +30,11 @@ macro_rules! impl_raw_hash {
                 let mut hasher = <$digest>::new();
                 hasher.update(password.as_bytes());
                 let result = hasher.finalize();
-                let computed = hex::encode(result);
-                computed.eq_ignore_ascii_case(&entry.raw)
+                let hex_len = $bit_len / 4;
+                if entry.raw.len() != hex_len { return false; }
+                let mut hex_buf = [0u8; 128];
+                hex::encode_to_slice(result, &mut hex_buf[..hex_len]).ok();
+                entry.raw.as_bytes().eq_ignore_ascii_case(&hex_buf[..hex_len])
             }
 
             fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
@@ -93,8 +98,10 @@ impl HashCracker for Tiger192Hash {
         let mut hasher = tiger::Tiger::new();
         hasher.update(password.as_bytes());
         let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(&entry.raw)
+        if entry.raw.len() != 48 { return false; }
+        let mut buf = [0u8; 48];
+        hex::encode_to_slice(result, &mut buf).ok();
+        entry.raw.as_bytes().eq_ignore_ascii_case(&buf)
     }
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
@@ -183,6 +190,12 @@ impl_raw_hash!(Blake2b160Hash, HashType::BLAKE2B160, Blake2b<digest::consts::U20
 impl_raw_hash!(Blake2s128Hash, HashType::BLAKE2S128, Blake2s<digest::consts::U16>, 128);
 impl_raw_hash!(Blake2s160Hash, HashType::BLAKE2S160, Blake2s<digest::consts::U20>, 160);
 
+impl_raw_hash!(Sm3Hash, HashType::SM3, Sm3, 256);
+impl_raw_hash!(Groestl224Hash, HashType::Groestl224, Groestl224, 224);
+impl_raw_hash!(Groestl256Hash, HashType::Groestl256, Groestl256, 256);
+impl_raw_hash!(Groestl384Hash, HashType::Groestl384, Groestl384, 384);
+impl_raw_hash!(Groestl512Hash, HashType::Groestl512, Groestl512, 512);
+
 /// Cracker and parser for NTLM hashes (MD4, 32 hex chars).
 pub struct NtlmHash;
 
@@ -198,8 +211,10 @@ impl HashCracker for NtlmHash {
         let bytes: Vec<u8> = utf16.iter().flat_map(|c| c.to_le_bytes()).collect();
         hasher.update(&bytes);
         let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(&entry.raw)
+        if entry.raw.len() != 32 { return false; }
+        let mut buf = [0u8; 32];
+        hex::encode_to_slice(result, &mut buf).ok();
+        entry.raw.as_bytes().eq_ignore_ascii_case(&buf)
     }
 
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
