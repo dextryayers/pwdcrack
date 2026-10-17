@@ -69,7 +69,12 @@ if command -v openssl >/dev/null 2>&1 && openssl dgst -md4 -provider legacy \
     # The harness already checks MD4 against fixed vectors; this confirms openssl
     # agrees with those same vectors, so the vectors themselves are not the
     # thing that is wrong.
-    while IFS=' ' read -r expect_msg expect_hex; do
+    # '|' as the separator, not a space: the input contains a space and shell
+    # word splitting here would hash "message" instead of "message digest".
+    while IFS='|' read -r raw_msg expect_hex; do
+        # Strip the leading space the heredoc introduces, otherwise the message
+        # being hashed is " abc" rather than "abc".
+        expect_msg="${raw_msg# }"
         got=$(printf '%s' "$expect_msg" | openssl dgst -md4 -provider legacy \
               -provider default 2>/dev/null | awk '{print $NF}')
         if [ "$got" != "$expect_hex" ]; then
@@ -79,13 +84,33 @@ if command -v openssl >/dev/null 2>&1 && openssl dgst -md4 -provider legacy \
             exit 1
         fi
     done <<'VECTORS'
- abc a448017aaf21d8525fc10ae87aa6729d
-messagedigest d9130a8164549fe818874806e1c7014b
+ abc|a448017aaf21d8525fc10ae87aa6729d
+message digest|d9130a8164549fe818874806e1c7014b
 VECTORS
     echo "openssl agrees with the MD4 vectors used above"
 else
     echo "note: openssl MD4 unavailable, skipping the openssl cross check"
 fi
 
+# Second stage: compile and run the real .cu kernel bodies on the host, through
+# the shim in scripts/cuda_host_shim.c. This checks the kernel entry points, the
+# thread to candidate mapping, the bounds check and the padding path, not just the
+# compression functions.
 echo
-echo "hash core verified on the host"
+echo "building the kernel body test (host execution of the .cu sources)"
+KERNEL_SHIM_DIR="$(mktemp -d)"
+cat > "$KERNEL_SHIM_DIR/main.c" <<'SHIMEOF'
+#include "cuda_host_shim.c"
+SHIMEOF
+
+if c++ -O2 -I engines/engine-cuda/src/kernels -I scripts \
+      -o "$KERNEL_SHIM_DIR/kernel_test" "$KERNEL_SHIM_DIR/main.c" 2>"$KERNEL_SHIM_DIR/err"; then
+    "$KERNEL_SHIM_DIR/kernel_test"
+else
+    echo "FAIL could not build the kernel body test"
+    cat "$KERNEL_SHIM_DIR/err"
+    exit 1
+fi
+
+echo
+echo "hash core and MD5 kernel body verified on the host"

@@ -25,6 +25,18 @@ impl CudaEngine {
     pub fn init() -> Option<Self> {
         device::init_cuda()
     }
+
+    /// Whether this build carries CUDA kernels.
+    ///
+    /// False when the binary was produced with `PW_CUDA_ALLOW_NO_NVCC=1`, which
+    /// compiles the GPU path out rather than failing the build. Reported
+    /// separately from "is there a device" because the two are different problems
+    /// with different fixes, and a user seeing only "CUDA unavailable" cannot
+    /// tell which one they have.
+    pub fn kernels_embedded() -> bool {
+        kernel::kernels_embedded()
+    }
+
     pub fn info(&self) -> String {
         let mut s = String::new();
         for dev in &self.devices {
