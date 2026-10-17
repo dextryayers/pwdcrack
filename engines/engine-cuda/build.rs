@@ -55,6 +55,9 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src/kernels");
     println!("cargo:rerun-if-changed=build.rs");
+    if let Some(p) = common_dir_path(&manifest) {
+        println!("cargo:rerun-if-changed={}", p.join("hash_core_shared.h").display());
+    }
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
     println!("cargo:rerun-if-env-changed=CUDACXX");
     println!("cargo:rerun-if-env-changed=PW_CUDA_ALLOW_NO_NVCC");
@@ -69,6 +72,14 @@ fn main() {
 
     println!("cargo:warning=using nvcc at {}", nvcc.display());
     emit_ptx(&nvcc, &kernel_dir, &out_dir);
+}
+
+/// Path to `engines/kernel-common`, which holds the shared hash core.
+fn common_dir_path(manifest: &Path) -> Option<PathBuf> {
+    manifest
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("kernel-common"))
 }
 
 /// Looks for `nvcc` in the documented places, in order.
@@ -167,7 +178,19 @@ fn emit_ptx(nvcc: &Path, kernel_dir: &Path, out_dir: &Path) {
         panic!("could not create {}: {e}", ptx_out.display());
     }
 
-    let include = kernel_dir.to_string_lossy().to_string();
+    // engines/kernel-common holds the one copy of the hash core. Both the CUDA
+    // and OpenCL kernels include it, so the include path has to reach it.
+    let common_dir = manifest
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("kernel-common"));
+    let mut include = kernel_dir.to_string_lossy().to_string();
+    if let Some(dir) = common_dir {
+        if dir.exists() {
+            include.push(':');
+            include.push_str(&dir.to_string_lossy());
+        }
+    }
 
     for name in KERNELS {
         let src = kernel_dir.join(format!("{name}.cu"));

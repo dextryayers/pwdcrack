@@ -26,6 +26,29 @@ impl OpenclEngine {
     pub fn init() -> Option<Self> {
         device::init_opencl()
     }
+
+    /// An engine handle for a host where OpenCL enumerated nothing.
+    ///
+    /// `init` returns `None` in that case, which makes an empty engine awkward to
+    /// pass around: callers that only want to ask "why can this not run" have no
+    /// value to hand on. This constructor gives them one, with the platform name
+    /// stating plainly that nothing was found rather than leaving it blank.
+    pub fn unavailable() -> Self {
+        OpenclEngine {
+            platform_name: "none (no vendor OpenCL driver registered a platform)".to_string(),
+            device_count: 0,
+            devices: Vec::new(),
+        }
+    }
+
+    /// Whether this handle refers to an engine with at least one usable device.
+    ///
+    /// Distinct from "the binary was built without the opencl feature", which is
+    /// a build property rather than a host property.
+    pub fn has_device(&self) -> bool {
+        self.device_count > 0
+    }
+
     pub fn info(&self) -> String {
         let mut s = format!("OpenCL Platform: {}\n", self.platform_name);
         for dev in &self.devices {

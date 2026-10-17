@@ -51,7 +51,11 @@ else
 fi
 
 echo "compiling host harness..."
+# The hash core lives in engines/kernel-common and is shared by the CUDA and
+# OpenCL engines. Both include paths are needed: the engine directory has the
+# forwarding header, the common directory has the real one.
 "$CC" -O2 -std=c99 -Wall -Wextra \
+    -I engines/engine-cuda/src/kernels -I engines/kernel-common \
     -o "$OUT" scripts/host_verify.c
 
 if [ -n "$CORPUS" ]; then
@@ -103,7 +107,7 @@ cat > "$KERNEL_SHIM_DIR/main.c" <<'SHIMEOF'
 #include "cuda_host_shim.c"
 SHIMEOF
 
-if c++ -O2 -I engines/engine-cuda/src/kernels -I scripts \
+if c++ -O2 -I engines/engine-cuda/src/kernels -I engines/kernel-common -I scripts \
       -o "$KERNEL_SHIM_DIR/kernel_test" "$KERNEL_SHIM_DIR/main.c" 2>"$KERNEL_SHIM_DIR/err"; then
     "$KERNEL_SHIM_DIR/kernel_test"
 else

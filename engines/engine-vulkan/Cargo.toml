@@ -10,7 +10,11 @@ hex = "0.4"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 ash = { version = "0.38", optional = true }
+# naga 28 is the newest release that both implements `var<storage, read_write>`
+# and compiles on the toolchain this repository targets. See rust-toolchain.toml
+# for the version, and docs/PHASE7_STATUS.md for why it is not 30.
+naga = { version = "28", features = ["wgsl-in", "spv-out"], optional = true }
 
 [features]
 default = []
-vulkan = ["dep:ash"]
+vulkan = ["dep:ash", "dep:naga"]

@@ -306,12 +306,27 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec 0.8.0",
+]
+
+[[package]]
+name = "bit-set"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09ec2f926cc3060f09db9ebc5b52823d85268d24bb917e472c0c4bea35780a7d"
 dependencies = [
- "bit-vec",
+ "bit-vec 0.9.1",
 ]
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bit-vec"
@@ -1394,7 +1409,7 @@ dependencies = [
  "log",
  "md-5",
  "md4",
- "naga",
+ "naga 30.0.0",
  "naga_oil",
  "pollster",
  "sha-1",
@@ -1509,6 +1524,7 @@ dependencies = [
  "ash",
  "hex",
  "log",
+ "naga 28.0.0",
  "serde",
  "thiserror 2.0.19",
 ]
@@ -1914,6 +1930,12 @@ name = "hex-literal"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+
+[[package]]
+name = "hexf-parse"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "hmac"
@@ -2497,12 +2519,38 @@ dependencies = [
 
 [[package]]
 name = "naga"
+version = "28.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "618f667225063219ddfc61251087db8a9aec3c3f0950c916b614e403486f1135"
+dependencies = [
+ "arrayvec",
+ "bit-set 0.8.0",
+ "bitflags 2.13.1",
+ "cfg-if",
+ "cfg_aliases",
+ "codespan-reporting 0.12.0",
+ "half",
+ "hashbrown 0.16.1",
+ "hexf-parse",
+ "indexmap",
+ "libm",
+ "log",
+ "num-traits 0.2.19",
+ "once_cell",
+ "rustc-hash 1.1.0",
+ "spirv 0.3.0+sdk-1.3.268.0",
+ "thiserror 2.0.19",
+ "unicode-ident",
+]
+
+[[package]]
+name = "naga"
 version = "30.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23bf0a141a9ab6f07dbb492db53245e464bc9db42f407772d9ae03d83a2c1033"
 dependencies = [
  "arrayvec",
- "bit-set",
+ "bit-set 0.10.0",
  "bitflags 2.13.1",
  "cfg-if",
  "cfg_aliases",
@@ -2517,7 +2565,7 @@ dependencies = [
  "once_cell",
  "pp-rs",
  "rustc-hash 1.1.0",
- "spirv",
+ "spirv 0.4.0+sdk-1.4.341.0",
  "thiserror 2.0.19",
  "unicode-ident",
 ]
@@ -2543,7 +2591,7 @@ dependencies = [
  "codespan-reporting 0.12.0",
  "data-encoding",
  "indexmap",
- "naga",
+ "naga 30.0.0",
  "regex",
  "rustc-hash 1.1.0",
  "thiserror 2.0.19",
@@ -3684,6 +3732,15 @@ dependencies = [
 
 [[package]]
 name = "spirv"
+version = "0.3.0+sdk-1.3.268.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
+dependencies = [
+ "bitflags 2.13.1",
+]
+
+[[package]]
+name = "spirv"
 version = "0.4.0+sdk-1.4.341.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f"
@@ -4555,7 +4612,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "js-sys",
  "log",
- "naga",
+ "naga 30.0.0",
  "parking_lot",
  "portable-atomic",
  "profiling",
@@ -4577,8 +4634,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08763620e76fc980bca7bf84de82568614487a53172dd968d89187282eb87fa2"
 dependencies = [
  "arrayvec",
- "bit-set",
- "bit-vec",
+ "bit-set 0.10.0",
+ "bit-vec 0.9.1",
  "bitflags 2.13.1",
  "bytemuck",
  "cfg_aliases",
@@ -4586,7 +4643,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
  "log",
- "naga",
+ "naga 30.0.0",
  "naga-types",
  "once_cell",
  "parking_lot",
@@ -4640,7 +4697,7 @@ dependencies = [
  "android_system_properties",
  "arrayvec",
  "ash",
- "bit-set",
+ "bit-set 0.10.0",
  "bitflags 2.13.1",
  "block2",
  "bytemuck",
@@ -4655,7 +4712,7 @@ dependencies = [
  "libc",
  "libloading",
  "log",
- "naga",
+ "naga 30.0.0",
  "naga-types",
  "ndk-sys",
  "objc2",
@@ -4693,7 +4750,7 @@ version = "30.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9eaac644e5008925c78567d272b9d66ef83da55a53cc17fc7daade7bb6e66e5"
 dependencies = [
- "naga",
+ "naga 30.0.0",
  "wgpu-types",
 ]
 
