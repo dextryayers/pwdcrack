@@ -7,6 +7,10 @@ macro_rules! impl_detection_only_hex {
             fn hash_type(&self) -> HashType { $hash_type }
             fn name(&self) -> &'static str { stringify!($name) }
             fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+            /// Recognises the format but cannot compute the digest.
+            /// Reports no matches by design instead of pretending to try.
+            fn is_verifiable(&self) -> bool { false }
+
             fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
         }
         impl HashParser for $name {
@@ -110,6 +114,11 @@ impl HashCracker for DjangoMd5Hash {
     fn hash_type(&self) -> HashType { HashType::DjangoMD5 }
     fn name(&self) -> &'static str { "Django MD5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DjangoMd5Hash {
@@ -137,6 +146,11 @@ impl HashCracker for DjangoSha256Hash {
     fn hash_type(&self) -> HashType { HashType::DjangoSHA256 }
     fn name(&self) -> &'static str { "Django SHA-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DjangoSha256Hash {
@@ -164,6 +178,11 @@ impl HashCracker for DjangoPbkdf2Hash {
     fn hash_type(&self) -> HashType { HashType::DjangoPBKDF2 }
     fn name(&self) -> &'static str { "Django PBKDF2" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DjangoPbkdf2Hash {
@@ -191,6 +210,11 @@ impl HashCracker for JoomlaMd5Hash {
     fn hash_type(&self) -> HashType { HashType::JoomlaMD5 }
     fn name(&self) -> &'static str { "Joomla MD5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for JoomlaMd5Hash {
@@ -214,6 +238,11 @@ impl HashCracker for JoomlaSha256Hash {
     fn hash_type(&self) -> HashType { HashType::JoomlaSHA256 }
     fn name(&self) -> &'static str { "Joomla SHA-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for JoomlaSha256Hash {
@@ -237,6 +266,11 @@ impl HashCracker for Drupal8Hash {
     fn hash_type(&self) -> HashType { HashType::Drupal8 }
     fn name(&self) -> &'static str { "Drupal 8" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Drupal8Hash {
@@ -259,6 +293,11 @@ impl HashCracker for XenForoHash {
     fn hash_type(&self) -> HashType { HashType::XenForo }
     fn name(&self) -> &'static str { "XenForo" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for XenForoHash {
@@ -282,6 +321,11 @@ impl HashCracker for WoltlabHash {
     fn hash_type(&self) -> HashType { HashType::Woltlab }
     fn name(&self) -> &'static str { "Woltlab" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for WoltlabHash {
@@ -305,6 +349,11 @@ impl HashCracker for MyBbHash {
     fn hash_type(&self) -> HashType { HashType::MyBBHash }
     fn name(&self) -> &'static str { "MyBB 1.x" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MyBbHash {
@@ -328,6 +377,11 @@ impl HashCracker for VanillaHash {
     fn hash_type(&self) -> HashType { HashType::Vanilla }
     fn name(&self) -> &'static str { "Vanilla" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for VanillaHash {
@@ -351,6 +405,11 @@ impl HashCracker for FluxBbHash {
     fn hash_type(&self) -> HashType { HashType::FluxBB }
     fn name(&self) -> &'static str { "FluxBB" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for FluxBbHash {
@@ -374,6 +433,11 @@ impl HashCracker for CakePhpHash {
     fn hash_type(&self) -> HashType { HashType::CakePHP }
     fn name(&self) -> &'static str { "CakePHP" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for CakePhpHash {
@@ -397,6 +461,11 @@ impl HashCracker for CodeIgniterHash {
     fn hash_type(&self) -> HashType { HashType::CodeIgniter }
     fn name(&self) -> &'static str { "CodeIgniter" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for CodeIgniterHash {
@@ -420,6 +489,11 @@ impl HashCracker for LaravelBcryptHash {
     fn hash_type(&self) -> HashType { HashType::LaravelBCrypt }
     fn name(&self) -> &'static str { "Laravel bcrypt" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for LaravelBcryptHash {
@@ -443,6 +517,11 @@ impl HashCracker for MagentoHash {
     fn hash_type(&self) -> HashType { HashType::Magento }
     fn name(&self) -> &'static str { "Magento" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MagentoHash {
@@ -466,6 +545,11 @@ impl HashCracker for ModxHash {
     fn hash_type(&self) -> HashType { HashType::MODX }
     fn name(&self) -> &'static str { "MODX" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ModxHash {
@@ -489,6 +573,11 @@ impl HashCracker for MoodleHash {
     fn hash_type(&self) -> HashType { HashType::Moodle }
     fn name(&self) -> &'static str { "Moodle" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MoodleHash {
@@ -512,6 +601,11 @@ impl HashCracker for PrestaShopHash {
     fn hash_type(&self) -> HashType { HashType::PrestaShop }
     fn name(&self) -> &'static str { "PrestaShop" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PrestaShopHash {
@@ -535,6 +629,11 @@ impl HashCracker for Typo3Hash {
     fn hash_type(&self) -> HashType { HashType::TYPO3 }
     fn name(&self) -> &'static str { "TYPO3" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Typo3Hash {
@@ -558,6 +657,11 @@ impl HashCracker for UmbracoHash {
     fn hash_type(&self) -> HashType { HashType::Umbraco }
     fn name(&self) -> &'static str { "Umbraco" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for UmbracoHash {
@@ -581,6 +685,11 @@ impl HashCracker for WhmcsHash {
     fn hash_type(&self) -> HashType { HashType::WHMCS }
     fn name(&self) -> &'static str { "WHMCS" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for WhmcsHash {
@@ -604,6 +713,11 @@ impl HashCracker for ZikulaHash {
     fn hash_type(&self) -> HashType { HashType::Zikula }
     fn name(&self) -> &'static str { "Zikula" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ZikulaHash {
@@ -627,6 +741,11 @@ impl HashCracker for ElggHash {
     fn hash_type(&self) -> HashType { HashType::Elgg }
     fn name(&self) -> &'static str { "Elgg" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ElggHash {
@@ -650,6 +769,11 @@ impl HashCracker for WordPressPhpassHash {
     fn hash_type(&self) -> HashType { HashType::WordPressPHPass }
     fn name(&self) -> &'static str { "WordPress PHPass" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for WordPressPhpassHash {
@@ -673,6 +797,11 @@ impl HashCracker for PhpHashHash {
     fn hash_type(&self) -> HashType { HashType::PHPHash }
     fn name(&self) -> &'static str { "PHP Hash" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PhpHashHash {
@@ -704,6 +833,11 @@ impl HashCracker for Oracle12cHash {
     fn hash_type(&self) -> HashType { HashType::Oracle12c }
     fn name(&self) -> &'static str { "Oracle 12c" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Oracle12cHash {
@@ -731,6 +865,11 @@ impl HashCracker for IbmdB2Hash {
     fn hash_type(&self) -> HashType { HashType::IBMDB2 }
     fn name(&self) -> &'static str { "IBM DB2" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for IbmdB2Hash {
@@ -754,6 +893,11 @@ impl HashCracker for ProgressHash {
     fn hash_type(&self) -> HashType { HashType::Progress }
     fn name(&self) -> &'static str { "Progress" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ProgressHash {
@@ -777,6 +921,11 @@ impl HashCracker for SybaseHash {
     fn hash_type(&self) -> HashType { HashType::Sybase }
     fn name(&self) -> &'static str { "Sybase" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for SybaseHash {
@@ -800,6 +949,11 @@ impl HashCracker for TeradataHash {
     fn hash_type(&self) -> HashType { HashType::Teradata }
     fn name(&self) -> &'static str { "Teradata" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for TeradataHash {
@@ -823,6 +977,11 @@ impl HashCracker for Mssql2000Hash {
     fn hash_type(&self) -> HashType { HashType::MSSQL2000 }
     fn name(&self) -> &'static str { "MSSQL 2000" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Mssql2000Hash {
@@ -846,6 +1005,11 @@ impl HashCracker for Mssql2008Hash {
     fn hash_type(&self) -> HashType { HashType::MSSQL2008 }
     fn name(&self) -> &'static str { "MSSQL 2008" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Mssql2008Hash {
@@ -869,6 +1033,11 @@ impl HashCracker for Mssql2017Hash {
     fn hash_type(&self) -> HashType { HashType::MSSQL2017 }
     fn name(&self) -> &'static str { "MSSQL 2017" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Mssql2017Hash {
@@ -892,6 +1061,11 @@ impl HashCracker for MySQL5Hash {
     fn hash_type(&self) -> HashType { HashType::MySQL5 }
     fn name(&self) -> &'static str { "MySQL 5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MySQL5Hash {
@@ -915,6 +1089,11 @@ impl HashCracker for MySQL8Hash {
     fn hash_type(&self) -> HashType { HashType::MySQL8 }
     fn name(&self) -> &'static str { "MySQL 8" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MySQL8Hash {
@@ -938,6 +1117,11 @@ impl HashCracker for PostgresqlScramHash {
     fn hash_type(&self) -> HashType { HashType::PostgreSQLSCRAM }
     fn name(&self) -> &'static str { "PostgreSQL SCRAM" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PostgresqlScramHash {
@@ -960,6 +1144,11 @@ impl HashCracker for MongoDbHash {
     fn hash_type(&self) -> HashType { HashType::MongoDB }
     fn name(&self) -> &'static str { "MongoDB" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MongoDbHash {
@@ -983,6 +1172,11 @@ impl HashCracker for RedisHash {
     fn hash_type(&self) -> HashType { HashType::Redis }
     fn name(&self) -> &'static str { "Redis" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for RedisHash {
@@ -1006,6 +1200,11 @@ impl HashCracker for RavenDbHash {
     fn hash_type(&self) -> HashType { HashType::RavenDB }
     fn name(&self) -> &'static str { "RavenDB" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for RavenDbHash {
@@ -1029,6 +1228,11 @@ impl HashCracker for CouchDbHash {
     fn hash_type(&self) -> HashType { HashType::CouchDB }
     fn name(&self) -> &'static str { "CouchDB" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for CouchDbHash {
@@ -1052,6 +1256,11 @@ impl HashCracker for CiscoType7Hash {
     fn hash_type(&self) -> HashType { HashType::CiscoType7 }
     fn name(&self) -> &'static str { "Cisco Type 7" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for CiscoType7Hash {
@@ -1075,6 +1284,11 @@ impl HashCracker for JuniperHash {
     fn hash_type(&self) -> HashType { HashType::Juniper }
     fn name(&self) -> &'static str { "Juniper" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for JuniperHash {
@@ -1097,6 +1311,11 @@ impl HashCracker for HuaweiHash {
     fn hash_type(&self) -> HashType { HashType::Huawei }
     fn name(&self) -> &'static str { "Huawei" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for HuaweiHash {
@@ -1120,6 +1339,11 @@ impl HashCracker for NokiaHash {
     fn hash_type(&self) -> HashType { HashType::Nokia }
     fn name(&self) -> &'static str { "Nokia" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for NokiaHash {
@@ -1143,6 +1367,11 @@ impl HashCracker for AlcatelHash {
     fn hash_type(&self) -> HashType { HashType::Alcatel }
     fn name(&self) -> &'static str { "Alcatel" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for AlcatelHash {
@@ -1166,6 +1395,11 @@ impl HashCracker for ZteHash {
     fn hash_type(&self) -> HashType { HashType::ZTE }
     fn name(&self) -> &'static str { "ZTE" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ZteHash {
@@ -1189,6 +1423,11 @@ impl HashCracker for EricssonHash {
     fn hash_type(&self) -> HashType { HashType::Ericsson }
     fn name(&self) -> &'static str { "Ericsson" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for EricssonHash {
@@ -1212,6 +1451,11 @@ impl HashCracker for SnmpHash {
     fn hash_type(&self) -> HashType { HashType::SNMP }
     fn name(&self) -> &'static str { "SNMP" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for SnmpHash {
@@ -1235,6 +1479,11 @@ impl HashCracker for RadiusChapHash {
     fn hash_type(&self) -> HashType { HashType::RADIUSCHAP }
     fn name(&self) -> &'static str { "RADIUS CHAP" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for RadiusChapHash {
@@ -1258,6 +1507,11 @@ impl HashCracker for Kerberos5Hash {
     fn hash_type(&self) -> HashType { HashType::Kerberos5 }
     fn name(&self) -> &'static str { "Kerberos 5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Kerberos5Hash {
@@ -1281,6 +1535,11 @@ impl HashCracker for AfsHash {
     fn hash_type(&self) -> HashType { HashType::AFS }
     fn name(&self) -> &'static str { "AFS" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for AfsHash {
@@ -1304,6 +1563,11 @@ impl HashCracker for DpapiHash {
     fn hash_type(&self) -> HashType { HashType::DPAPI }
     fn name(&self) -> &'static str { "DPAPI" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DpapiHash {
@@ -1322,6 +1586,11 @@ impl HashCracker for BitLockerHash {
     fn hash_type(&self) -> HashType { HashType::BitLocker }
     fn name(&self) -> &'static str { "BitLocker" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for BitLockerHash {
@@ -1335,6 +1604,11 @@ impl HashCracker for TrueCryptHash {
     fn hash_type(&self) -> HashType { HashType::TrueCrypt }
     fn name(&self) -> &'static str { "TrueCrypt" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for TrueCryptHash {
@@ -1348,6 +1622,11 @@ impl HashCracker for FileVaultHash {
     fn hash_type(&self) -> HashType { HashType::FileVault }
     fn name(&self) -> &'static str { "FileVault" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for FileVaultHash {
@@ -1361,6 +1640,11 @@ impl HashCracker for LuksHash {
     fn hash_type(&self) -> HashType { HashType::LUKS }
     fn name(&self) -> &'static str { "LUKS" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for LuksHash {
@@ -1374,6 +1658,11 @@ impl HashCracker for VeraCryptHash {
     fn hash_type(&self) -> HashType { HashType::VeraCrypt }
     fn name(&self) -> &'static str { "VeraCrypt" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for VeraCryptHash {
@@ -1387,6 +1676,11 @@ impl HashCracker for WindowsHelloHash {
     fn hash_type(&self) -> HashType { HashType::WindowsHello }
     fn name(&self) -> &'static str { "Windows Hello" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for WindowsHelloHash {
@@ -1415,6 +1709,11 @@ impl HashCracker for DogecoinHash {
     fn hash_type(&self) -> HashType { HashType::Dogecoin }
     fn name(&self) -> &'static str { "Dogecoin" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DogecoinHash {
@@ -1438,6 +1737,11 @@ impl HashCracker for RippleHash {
     fn hash_type(&self) -> HashType { HashType::Ripple }
     fn name(&self) -> &'static str { "Ripple" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for RippleHash {
@@ -1461,6 +1765,11 @@ impl HashCracker for MoneroHash {
     fn hash_type(&self) -> HashType { HashType::Monero }
     fn name(&self) -> &'static str { "Monero" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MoneroHash {
@@ -1484,6 +1793,11 @@ impl HashCracker for DashHash {
     fn hash_type(&self) -> HashType { HashType::Dash }
     fn name(&self) -> &'static str { "Dash" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DashHash {
@@ -1507,6 +1821,11 @@ impl HashCracker for ZcashHash {
     fn hash_type(&self) -> HashType { HashType::Zcash }
     fn name(&self) -> &'static str { "Zcash" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for ZcashHash {
@@ -1530,6 +1849,11 @@ impl HashCracker for NamecoinHash {
     fn hash_type(&self) -> HashType { HashType::Namecoin }
     fn name(&self) -> &'static str { "Namecoin" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for NamecoinHash {
@@ -1553,6 +1877,11 @@ impl HashCracker for PeercoinHash {
     fn hash_type(&self) -> HashType { HashType::Peercoin }
     fn name(&self) -> &'static str { "Peercoin" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PeercoinHash {
@@ -1578,6 +1907,11 @@ impl HashCracker for DesCryptHash {
     fn hash_type(&self) -> HashType { HashType::DESCrypt }
     fn name(&self) -> &'static str { "DES Crypt" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DesCryptHash {
@@ -1605,6 +1939,11 @@ impl HashCracker for BsdAuthHash {
     fn hash_type(&self) -> HashType { HashType::BSDAuth }
     fn name(&self) -> &'static str { "BSD Auth" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for BsdAuthHash {
@@ -1628,6 +1967,11 @@ impl HashCracker for Md5CryptAprHash {
     fn hash_type(&self) -> HashType { HashType::MD5CryptAPR }
     fn name(&self) -> &'static str { "MD5 Crypt APR" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Md5CryptAprHash {
@@ -1650,6 +1994,11 @@ impl HashCracker for BlowfishOpenbsdHash {
     fn hash_type(&self) -> HashType { HashType::BlowfishOpenBSD }
     fn name(&self) -> &'static str { "Blowfish OpenBSD" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for BlowfishOpenbsdHash {
@@ -1673,6 +2022,11 @@ impl HashCracker for LinuxOverflowHash {
     fn hash_type(&self) -> HashType { HashType::LinuxOverflow }
     fn name(&self) -> &'static str { "Linux Overflow" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for LinuxOverflowHash {
@@ -1686,6 +2040,11 @@ impl HashCracker for UnixOldHash {
     fn hash_type(&self) -> HashType { HashType::UnixOld }
     fn name(&self) -> &'static str { "Unix Old" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for UnixOldHash {
@@ -1709,6 +2068,11 @@ impl HashCracker for DesBsdiHash {
     fn hash_type(&self) -> HashType { HashType::DESBSDi }
     fn name(&self) -> &'static str { "DES BSDi" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for DesBsdiHash {
@@ -1732,6 +2096,11 @@ impl HashCracker for HpManagedHash {
     fn hash_type(&self) -> HashType { HashType::HPManaged }
     fn name(&self) -> &'static str { "HP Managed" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for HpManagedHash {
@@ -1755,6 +2124,11 @@ impl HashCracker for Snefru128LegacyHash {
     fn hash_type(&self) -> HashType { HashType::SNEFRU128Legacy }
     fn name(&self) -> &'static str { "SNEFRU-128 Legacy" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Snefru128LegacyHash {
@@ -1792,6 +2166,11 @@ impl HashCracker for GpgHash {
     fn hash_type(&self) -> HashType { HashType::GPG }
     fn name(&self) -> &'static str { "GPG" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for GpgHash {
@@ -1810,6 +2189,11 @@ impl HashCracker for PgpS2kHash {
     fn hash_type(&self) -> HashType { HashType::PGPS2K }
     fn name(&self) -> &'static str { "PGP S2K" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PgpS2kHash {
@@ -1832,6 +2216,11 @@ impl HashCracker for LotusNotes5Hash {
     fn hash_type(&self) -> HashType { HashType::LotusNotes5 }
     fn name(&self) -> &'static str { "Lotus Notes 5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for LotusNotes5Hash {
@@ -1854,6 +2243,11 @@ impl HashCracker for MssqlOldHash {
     fn hash_type(&self) -> HashType { HashType::MSSQLOld }
     fn name(&self) -> &'static str { "MSSQL Old" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for MssqlOldHash {
@@ -1876,6 +2270,11 @@ impl HashCracker for PostgresqlScramSha256Hash {
     fn hash_type(&self) -> HashType { HashType::PostgreSQLSCRAMSHA256 }
     fn name(&self) -> &'static str { "PostgreSQL SCRAM-SHA-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PostgresqlScramSha256Hash {
@@ -1897,6 +2296,11 @@ impl HashCracker for Wpa2PmkidHash {
     fn hash_type(&self) -> HashType { HashType::WPA2PMKID }
     fn name(&self) -> &'static str { "WPA2 PMKID" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Wpa2PmkidHash {
@@ -1919,6 +2323,11 @@ impl HashCracker for EthereumWalletHash {
     fn hash_type(&self) -> HashType { HashType::EthereumWallet }
     fn name(&self) -> &'static str { "Ethereum Wallet" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for EthereumWalletHash {
@@ -1941,6 +2350,11 @@ impl HashCracker for RippleWalletHash {
     fn hash_type(&self) -> HashType { HashType::RippleWallet }
     fn name(&self) -> &'static str { "Ripple Wallet" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for RippleWalletHash {
@@ -1963,6 +2377,11 @@ impl HashCracker for StellarHash {
     fn hash_type(&self) -> HashType { HashType::Stellar }
     fn name(&self) -> &'static str { "Stellar" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for StellarHash {
@@ -1985,6 +2404,11 @@ impl HashCracker for CardanoHash {
     fn hash_type(&self) -> HashType { HashType::Cardano }
     fn name(&self) -> &'static str { "Cardano" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for CardanoHash {
@@ -2006,6 +2430,11 @@ impl HashCracker for PolkadotHash {
     fn hash_type(&self) -> HashType { HashType::Polkadot }
     fn name(&self) -> &'static str { "Polkadot" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for PolkadotHash {
@@ -2028,6 +2457,11 @@ impl HashCracker for SolanaHash {
     fn hash_type(&self) -> HashType { HashType::Solana }
     fn name(&self) -> &'static str { "Solana" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for SolanaHash {

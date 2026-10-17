@@ -1,4 +1,4 @@
-//! GPU error types — never panic, always fallback gracefully
+//! GPU error types: never panic, always fallback gracefully
 
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ pub enum GpuError {
     #[error("GPU out of memory")]
     OutOfMemory,
 
-    #[error("Device lost — GPU crashed or reset")]
+    #[error("Device lost, GPU crashed or reset")]
     DeviceLost,
 
     #[error("Operation timed out on GPU")]

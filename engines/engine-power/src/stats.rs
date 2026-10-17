@@ -1,4 +1,4 @@
-//! Power statistics collector — tracks energy, power, efficiency
+//! Power statistics collector: tracks energy, power, efficiency
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;

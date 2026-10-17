@@ -1,4 +1,4 @@
-//! engine-web — Real-time web dashboard for pwdcrack
+//! engine-web: Real-time web dashboard for pwdcrack
 //!
 //! REST API + WebSocket for monitoring cracking progress,
 //! managing sessions, and viewing cluster status.

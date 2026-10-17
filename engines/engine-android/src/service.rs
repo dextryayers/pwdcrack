@@ -1,4 +1,4 @@
-//! Background service mode — continuous cracking without TUI
+//! Background service mode: continuous cracking without TUI
 //! Designed for Termux:Background to keep running after terminal closes
 
 use std::sync::atomic::{AtomicBool, Ordering};

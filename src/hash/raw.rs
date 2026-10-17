@@ -140,12 +140,16 @@ impl_raw_hash!(Shabal384Hash, HashType::SHABAL384, Shabal384, 384);
 impl_raw_hash!(Shabal512Hash, HashType::SHABAL512, Shabal512, 512);
 impl_raw_hash!(Gost94CryptoProHash, HashType::GOST94256, Gost94CryptoPro, 256);
 
-// GOST94-512 (GOST R 34.11-94 512-bit variant — detection only, no Rust digest)
+// GOST94-512 (GOST R 34.11-94 512-bit variant, detection only, no Rust digest)
 pub struct Gost94_512Hash;
 impl HashCracker for Gost94_512Hash {
     fn hash_type(&self) -> HashType { HashType::GOST94512 }
     fn name(&self) -> &'static str { "GOST94-512" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for Gost94_512Hash {
@@ -167,6 +171,10 @@ impl HashCracker for Md2Hash {
     fn hash_type(&self) -> HashType { HashType::MD2 }
     fn name(&self) -> &'static str { "MD2" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 

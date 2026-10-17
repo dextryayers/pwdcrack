@@ -4,7 +4,7 @@ use std::sync::Arc;
 use wgpu::*;
 use crate::{GpuEngine, AdapterInfo};
 
-/// Initialize GPU — picks the best available adapter
+/// Initialize GPU: picks the best available adapter
 pub async fn init_gpu() -> Option<GpuEngine> {
     let backends = wgpu::Backends::all();
 
@@ -38,7 +38,7 @@ pub async fn init_gpu() -> Option<GpuEngine> {
     let is_integrated = matches!(adapter_info.device_type, DeviceType::IntegratedGpu);
 
     log::info!(
-        "GPU: {} ({} — {:?})",
+        "GPU: {} ({}, {:?})",
         adapter_info.name,
         if is_integrated { "iGPU" } else { "dGPU" },
         adapter_info.backend,

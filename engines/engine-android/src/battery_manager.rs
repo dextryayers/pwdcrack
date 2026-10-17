@@ -1,4 +1,4 @@
-//! Battery-aware cracking modes — pause/resume based on battery level
+//! Battery-aware cracking modes: pause/resume based on battery level
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -6,10 +6,10 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BatteryMode {
-    Normal,    // >50% — full speed
-    Eco,       // 20-50% — single thread, freq cap
-    Critical,  // <20% — paused, save session
-    Charging,  // Plugged in — full speed
+    Normal,    // >50%: full speed
+    Eco,       // 20-50%: single thread, freq cap
+    Critical,  // <20%: paused, save session
+    Charging,  // Plugged in: full speed
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

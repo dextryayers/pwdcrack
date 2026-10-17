@@ -1,4 +1,4 @@
-//! Core library for pwdcrack — a high-performance password hash cracker.
+//! Core library for pwdcrack: a high-performance password hash cracker.
 //!
 //! This crate provides hash parsing, identification, and cracking
 //! algorithms for a wide range of hash formats (MD5, SHA, NTLM, bcrypt,

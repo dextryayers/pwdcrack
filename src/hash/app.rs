@@ -695,6 +695,11 @@ impl HashCracker for Ntlmv2Hash {
     fn verify(&self, _: &str, _: &HashEntry) -> bool {
         false
     }
+    /// This cracker recognises the format but cannot compute the
+    /// digest, so it reports no matches by design rather than
+    /// pretending to have tried.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -1273,6 +1278,10 @@ impl HashCracker for CiscoPixHash {
     fn hash_type(&self) -> HashType { HashType::CISCOPIX }
     fn name(&self) -> &'static str { "Cisco PIX" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -1300,6 +1309,10 @@ impl HashCracker for Cisco5Hash {
     fn hash_type(&self) -> HashType { HashType::CISCO5 }
     fn name(&self) -> &'static str { "Cisco Type 5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -1367,6 +1380,10 @@ impl HashCracker for SunMd5Hash {
     fn hash_type(&self) -> HashType { HashType::SUNMD5 }
     fn name(&self) -> &'static str { "Sun MD5" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -1391,6 +1408,10 @@ impl HashCracker for BsdiCryptHash {
     fn hash_type(&self) -> HashType { HashType::BSDICRYPT }
     fn name(&self) -> &'static str { "BSDi Crypt" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -1416,6 +1437,10 @@ impl HashCracker for MacosPbkdf2Hash {
     fn hash_type(&self) -> HashType { HashType::MACOSPBKDF2 }
     fn name(&self) -> &'static str { "macOS PBKDF2" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -2178,7 +2203,7 @@ impl HashParser for HmacSha3_512Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-256 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-BLAKE2b-256 (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b256Hash;
 
@@ -2186,6 +2211,10 @@ impl HashCracker for HmacBlake2b256Hash {
     fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B256 }
     fn name(&self) -> &'static str { "HMAC-BLAKE2b-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -2200,7 +2229,7 @@ impl HashParser for HmacBlake2b256Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2s-256 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-BLAKE2s-256 (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2s256Hash;
 
@@ -2208,6 +2237,10 @@ impl HashCracker for HmacBlake2s256Hash {
     fn hash_type(&self) -> HashType { HashType::HMACBLAKE2S256 }
     fn name(&self) -> &'static str { "HMAC-BLAKE2s-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -2222,7 +2255,7 @@ impl HashParser for HmacBlake2s256Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-512 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-BLAKE2b-512 (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b512Hash;
 
@@ -2230,6 +2263,10 @@ impl HashCracker for HmacBlake2b512Hash {
     fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B512 }
     fn name(&self) -> &'static str { "HMAC-BLAKE2b-512" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -2983,9 +3020,16 @@ fn mysql_old_hash(password: &str) -> String {
     let mut nr2: u32 = 0x12345671;
     for c in password.bytes() {
         if c == b' ' || c == b'\t' { continue; }
-        nr ^= (((nr & 63) + add) as u32) * (c as u32) + (nr << 8) as u32;
-        nr2 += (nr2 << 8) ^ (nr as u32);
-        add += c as u32;
+        // Every step here is defined modulo 2^32 by the MySQL pre-4.1 algorithm.
+        // The previous version used plain `+=` and `^=` on shifted values, which
+        // overflows a u32 and panics under debug assertions. A release build
+        // wrapped silently, so the digest was correct only by accident of the
+        // optimisation level.
+        nr ^= (((nr & 63) + add) as u32)
+            .wrapping_mul(c as u32)
+            .wrapping_add(nr << 8);
+        nr2 = nr2.wrapping_add((nr2 << 8) ^ nr);
+        add = add.wrapping_add(c as u32);
     }
     format!("{:08x}{:08x}", nr & 0x7FFFFFFF, nr2 & 0x7FFFFFFF)
 }
@@ -3011,6 +3055,10 @@ impl HashCracker for Oracle7Hash {
     fn hash_type(&self) -> HashType { HashType::ORACLE7 }
     fn name(&self) -> &'static str { "Oracle 7" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3038,6 +3086,10 @@ impl HashCracker for Snefru128Hash {
     fn hash_type(&self) -> HashType { HashType::SNEFRU128 }
     fn name(&self) -> &'static str { "Snefru-128" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3062,6 +3114,10 @@ impl HashCracker for Snefru256Hash {
     fn hash_type(&self) -> HashType { HashType::SNEFRU256 }
     fn name(&self) -> &'static str { "Snefru-256" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3163,13 +3219,17 @@ impl HashParser for HmacGost94Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-Tiger (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-Tiger (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacTigerHash;
 impl HashCracker for HmacTigerHash {
     fn hash_type(&self) -> HashType { HashType::HMACTIGER }
     fn name(&self) -> &'static str { "HMAC-Tiger" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 impl HashParser for HmacTigerHash {
@@ -3191,6 +3251,10 @@ impl HashCracker for LmChapV2Hash {
     fn hash_type(&self) -> HashType { HashType::LMCHAPV2 }
     fn name(&self) -> &'static str { "LM CHAPv2" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3260,6 +3324,10 @@ impl HashCracker for SapCodvnBHash {
     fn hash_type(&self) -> HashType { HashType::SAPCODVNB }
     fn name(&self) -> &'static str { "SAP CODVN B" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3284,6 +3352,10 @@ impl HashCracker for SapCodvnFGHash {
     fn hash_type(&self) -> HashType { HashType::SAPCODVNFG }
     fn name(&self) -> &'static str { "SAP CODVN F/G" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3410,6 +3482,10 @@ impl HashCracker for LotusNotesHash {
     fn hash_type(&self) -> HashType { HashType::LOTUSNOTES }
     fn name(&self) -> &'static str { "Lotus Notes" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3507,7 +3583,7 @@ impl HashParser for Gost94HmacHash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-224 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-BLAKE2b-224 (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b224Hash;
 
@@ -3515,6 +3591,10 @@ impl HashCracker for HmacBlake2b224Hash {
     fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B224 }
     fn name(&self) -> &'static str { "HMAC-BLAKE2b-224" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3529,7 +3609,7 @@ impl HashParser for HmacBlake2b224Hash {
     fn can_parse(&self, _: &str) -> bool { true }
 }
 
-// ── HMAC-BLAKE2b-384 (detection only — uses CtVariableCoreWrapper, incompatible with hmac crate) ──
+// ── HMAC-BLAKE2b-384 (detection only, uses CtVariableCoreWrapper, incompatible with hmac crate) ──
 
 pub struct HmacBlake2b384Hash;
 
@@ -3537,6 +3617,10 @@ impl HashCracker for HmacBlake2b384Hash {
     fn hash_type(&self) -> HashType { HashType::HMACBLAKE2B384 }
     fn name(&self) -> &'static str { "HMAC-BLAKE2b-384" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3559,6 +3643,10 @@ impl HashCracker for Sha256CryptRoundsHash {
     fn hash_type(&self) -> HashType { HashType::SHA256CRYPTROUNDS }
     fn name(&self) -> &'static str { "SHA-256 Crypt ($rounds$)" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3624,6 +3712,10 @@ impl HashCracker for Skip32Hash {
     fn hash_type(&self) -> HashType { HashType::SKIP32 }
     fn name(&self) -> &'static str { "SKIP32" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 
@@ -3648,6 +3740,10 @@ impl HashCracker for XxHash32Hash {
     fn hash_type(&self) -> HashType { HashType::XXHASH32 }
     fn name(&self) -> &'static str { "xxHash32" }
     fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }
+
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }
 

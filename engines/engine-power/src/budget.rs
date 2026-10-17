@@ -1,4 +1,4 @@
-//! Power budget enforcement — limit power consumption to user-specified max
+//! Power budget enforcement: limit power consumption to user-specified max
 
 use crate::WorkloadType;
 use crate::governor;

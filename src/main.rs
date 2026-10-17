@@ -258,7 +258,38 @@ fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, Ha
         eprintln!("[!] No valid hashes found in {}", path);
         std::process::exit(1);
     }
+    warn_unverifiable_types(&results);
     results
+}
+
+/// Reports any detected hash type that this build can recognise but not verify.
+///
+/// Without this, a run against such a type completes normally and reports zero
+/// cracks, which is indistinguishable from a correct negative result. The user
+/// has no way to tell that no hashing was ever performed, which is the failure
+/// this whole mechanism exists to prevent.
+///
+/// Each distinct type is named once with the number of hashes it covers, and
+/// the count of affected hashes is summarised so a mixed file is not reported
+/// per line.
+fn warn_unverifiable_types(results: &[(Box<dyn HashCracker>, HashEntry)]) {
+    let mut blocked: std::collections::BTreeMap<String, usize> = Default::default();
+    for (cracker, _) in results {
+        if !cracker.is_verifiable() {
+            *blocked.entry(cracker.name().to_string()).or_default() += 1;
+        }
+    }
+    if blocked.is_empty() { return; }
+
+    let total: usize = blocked.values().sum();
+    eprintln!();
+    eprintln!("[!] {} of {} hashes cannot be verified by this build.", total, results.len());
+    for (name, count) in &blocked {
+        eprintln!("[!]   {}: {} hash(es) detected, but no implementation exists.", name, count);
+    }
+    eprintln!("[!] These types are recognised for detection and reporting only.");
+    eprintln!("[!] No candidate will be hashed against them. See docs/HASH_TYPES.md.");
+    eprintln!();
 }
 
 fn filter_uncracked(args: &Cli, hashes: &mut Vec<HashEntry>) {
@@ -1585,27 +1616,55 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         return;
     }
 
+    // Ask the registry whether each type can actually be verified, rather than
+    // assuming every listed type is implemented. A hardcoded flag in this table
+    // would drift the moment a cracker is added or fixed, and a type listed as
+    // supported while returning no matches is the failure this crate cares
+    // about most.
+    let detector = Detector::new();
+    let status = |ht: HashType| -> &'static str {
+        match detector.cracker_for_type(ht) {
+            Some(c) if c.is_verifiable() => "yes",
+            Some(_) => "detect-only",
+            None => "unregistered",
+        }
+    };
+
+    let verifiable_count = filtered
+        .iter()
+        .filter(|(_, ht, _, _, _)| status(*ht) == "yes")
+        .count();
+
     if verbose {
-        println!("{:<4} {:<20} {:>8} {:<12} {}", "#", "Algorithm", "Bits", "Category", "Example");
-        println!("{:=<80}", "");
-        for (i, (name, _, example, bits, cat)) in filtered.iter().enumerate() {
+        println!("{:<4} {:<20} {:>8} {:<12} {:<12} {}", "#", "Algorithm", "Bits", "Category", "Verifiable", "Example");
+        println!("{:=<92}", "");
+        for (i, (name, ht, example, bits, cat)) in filtered.iter().enumerate() {
             let bits_str = if *bits > 0 { format!("{}", bits) } else { String::from("-") };
             let ex = if example.len() > 30 {
                 format!("{}...", &example[..30])
             } else {
                 example.to_string()
             };
-            println!("{:<4} {:<20} {:>8} {:<12} {}", i + 1, name, bits_str, cat, ex);
+            println!(
+                "{:<4} {:<20} {:>8} {:<12} {:<12} {}",
+                i + 1, name, bits_str, cat, status(*ht), ex
+            );
         }
     } else {
-        println!("Supported hash types:");
-        println!("{:=<50}", "");
-        for (name, _, _, _, cat) in &filtered {
-            println!("  {:<20}  ({})", name, cat);
+        println!("Hash types:");
+        println!("{:=<56}", "");
+        for (name, ht, _, _, cat) in &filtered {
+            println!("  {:<20}  {:<12}  ({})", name, status(*ht), cat);
         }
     }
-    println!("{:=<50}", "");
+    println!("{:=<56}", "");
     println!("  {} type(s) shown", n);
+    println!("  {} of them can be verified by this build", verifiable_count);
+    if verifiable_count < n {
+        println!("  {} are detection only and will never produce a match",
+                 n - verifiable_count);
+        println!("  see docs/HASH_TYPES.md for the reason for each");
+    }
 }
 
 fn cmd_mask(mask: &str, charsets: &[Option<String>], count: usize, offset: u64) {

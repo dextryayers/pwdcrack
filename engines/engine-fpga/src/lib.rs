@@ -1,4 +1,4 @@
-//! engine-fpga — FPGA hash acceleration
+//! engine-fpga: FPGA hash acceleration
 //!
 //! Components:
 //! - Verilog cores: MD5, SHA256, NTLM (fully pipelined, 1 hash/cycle)
@@ -67,7 +67,7 @@ impl FpgaDevice {
         Ok(())
     }
 
-    /// Crack passwords on FPGA — auto-distributes across available cores
+    /// Crack passwords on FPGA: auto-distributes across available cores
     pub fn crack_md5(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
         if let Some(ref mut sched) = self.scheduler {
             sched.crack_batch(protocol::HashType::MD5, passwords)
@@ -76,7 +76,7 @@ impl FpgaDevice {
         }
     }
 
-    /// Crack passwords on FPGA — SHA-256
+    /// Crack passwords on FPGA: SHA-256
     pub fn crack_sha256(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
         if let Some(ref mut sched) = self.scheduler {
             sched.crack_batch(protocol::HashType::SHA256, passwords)
@@ -85,7 +85,7 @@ impl FpgaDevice {
         }
     }
 
-    /// Crack passwords on FPGA — NTLM
+    /// Crack passwords on FPGA: NTLM
     pub fn crack_ntlm(&mut self, passwords: &[u8]) -> FpgaResult<Vec<bool>> {
         if let Some(ref mut sched) = self.scheduler {
             sched.crack_batch(protocol::HashType::NTLM, passwords)

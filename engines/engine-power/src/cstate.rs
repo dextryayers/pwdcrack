@@ -1,4 +1,4 @@
-//! C-state control — idle core deep sleep management
+//! C-state control: idle core deep sleep management
 
 use std::collections::HashMap;
 use std::fs;

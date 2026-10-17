@@ -13,7 +13,7 @@ pub enum FpgaError {
     #[error("FPGA communication timeout")]
     Timeout,
 
-    #[error("FPGA CRC mismatch — data corruption")]
+    #[error("FPGA CRC mismatch, data corruption")]
     CrcMismatch,
 
     #[error("FPGA core not ready")]

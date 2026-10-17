@@ -384,7 +384,7 @@ async fn handle_worker(
         }
     }
 
-    // Worker disconnected — reclaim its in-flight work
+    // Worker disconnected: reclaim its in-flight work
     if !worker_name.is_empty() {
         let mut infl = in_flight.lock().await;
         let mut q = work_queue.lock().await;
@@ -435,7 +435,7 @@ fn total_keyspace(attack: &AttackType) -> u64 {
             total
         }
         AttackType::Dictionary { .. } => {
-            // Wordlist-based — estimate by file size
+            // Wordlist-based: estimate by file size
             10_000_000 // default estimate
         }
         AttackType::Combinator { left_words, right_words } => {

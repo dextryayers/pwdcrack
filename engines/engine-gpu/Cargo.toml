@@ -2,7 +2,7 @@
 name = "engine-gpu"
 version = "0.1.0"
 edition = "2024"
-description = "GPU-accelerated hash cracking via wgpu/Vulkan — pure Rust, no C"
+description = "GPU-accelerated hash cracking via wgpu/Vulkan: pure Rust, no C"
 
 [dependencies]
 wgpu = "30"

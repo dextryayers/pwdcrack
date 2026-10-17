@@ -226,6 +226,6 @@ fn test_ripemd320_verify() {
 
 #[test]
 fn test_detect_ripemd320() {
-    // RIPEMD-320 is 80 hex chars — unique length, no collision
+    // RIPEMD-320 is 80 hex chars: unique length, no collision
     assert_eq!(detect_type("22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8"), HashType::RIPEMD320);
 }

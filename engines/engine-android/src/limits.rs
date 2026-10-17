@@ -1,4 +1,4 @@
-//! RAM and I/O limits — aggressive streaming for low-RAM devices
+//! RAM and I/O limits: aggressive streaming for low-RAM devices
 
 #[derive(Debug, Clone)]
 pub struct AndroidLimits {
@@ -39,7 +39,7 @@ impl AndroidLimits {
                 max_wordlist_mb: 1024,
             }
         } else {
-            // 4GB+ — can use mmap cautiously
+            // 4GB+: can use mmap cautiously
             AndroidLimits {
                 total_ram_mb,
                 batch_size: 64,

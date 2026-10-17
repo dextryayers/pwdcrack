@@ -2,7 +2,7 @@
 name = "engine-fpga"
 version = "0.1.0"
 edition = "2024"
-description = "FPGA hash acceleration — Verilog cores + Rust PCIe driver"
+description = "FPGA hash acceleration: Verilog cores + Rust PCIe driver"
 
 [dependencies]
 log = "0.4"

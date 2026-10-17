@@ -1,4 +1,4 @@
-//! Android notifications — termux-notification API for crack alerts
+//! Android notifications: termux-notification API for crack alerts
 
 use std::process::Command;
 
@@ -51,7 +51,7 @@ impl AndroidNotification {
     }
 
     pub fn notify_complete(total_cracked: usize, elapsed: &str) {
-        let title = format!("✅ pwdcrack complete — {} cracked", total_cracked);
+        let title = format!("✅ pwdcrack complete, {} cracked", total_cracked);
         let content = format!("Elapsed: {}", elapsed);
         if std::env::var("TERMUX_VERSION").is_ok() {
             let _ = Self::termux_notification(&title, &content, true);

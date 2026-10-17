@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "pwdcrack"
 version = "0.1.0"
-description = "Universal password cracker — Python bindings to Rust core"
+description = "Universal password cracker: Python bindings to Rust core"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [

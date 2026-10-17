@@ -150,7 +150,10 @@ impl HashCracker for Md5Crypt {
     }
 
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
-}
+
+    /// Recognises the format but cannot compute the digest.
+    /// Reports no matches by design instead of pretending to try.
+    fn is_verifiable(&self) -> bool { false }}
 
 impl HashParser for Md5Crypt {
     fn parse(&self, line: &str) -> Option<HashEntry> {

@@ -11,14 +11,20 @@ Read this before relying on any number in this file.
 
 | Area | State |
 |------|-------|
-| Hash detection | Working. 348 hash types are registered for detection. |
-| Hash verification | Partial. A substantial subset is implemented as real verifiers. A number of types are detection only, meaning they can be identified but not cracked. Run `pwdcrack list` to see what is supported. |
+| Hash detection | Working. 354 hash types are registered for detection. |
+| Hash verification | 140 of the 354 types can be verified by this build. The other 214 are detection only: they are recognised and reported, but no candidate is ever hashed against them. `pwdcrack list` shows the status per type, and any attack against a detection-only target prints a warning before it starts, so a run that could never find anything is never mistaken for a real negative result. See `docs/HASH_TYPES.md`. |
 | Attacks | Dictionary, brute force mask, combinator, PRINCE, toggle case, substitution, and rules. |
 | Tier builds | `tier-low` and `tier-mid` build and run. `tier-high` requires GPU engine work that is not complete. |
-| Engines | SIMD detection works. GPU, CUDA, OpenCL, Metal, Vulkan, FPGA, distributed, web, and the remaining engines are incomplete or stubs. See `docs/plan.md` for the current status of each. |
+| Engines | One real kernel: 8 lane multi-buffer MD5 over AVX2, measured at 2.2x to 2.3x over scalar. SHA-NI, NEON, SVE, AVX-512 and SSE2 are documented pass-throughs, not vectorised code. GPU, CUDA, OpenCL, Metal, Vulkan, FPGA, distributed, web, and the remaining engines are incomplete or stubs. See `docs/plan.md` and `docs/PHASE4_STATUS.md`. |
 
 The honest summary: the CPU core does real work, and several upper tiers are not
 finished. Nothing in this README claims a capability that has not been verified.
+
+The distinction that matters throughout this project is between a hash type that
+is *detected* and one that is *verified*. A detector recognises a format and
+produces a type name. A verifier computes the digest. Only the second one can
+ever find a password, and this project keeps the two separate in the type system
+so the gap cannot be hidden.
 
 ## Build
 

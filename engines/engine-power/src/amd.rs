@@ -1,4 +1,4 @@
-//! AMD Zen power driver — reads energy counters from hwmon sysfs
+//! AMD Zen power driver: reads energy counters from hwmon sysfs
 //! /sys/class/hwmon/hwmon*/energy*_input
 //! Zen 3+ (Ryzen 5000+ / EPYC 7003+) supported
 

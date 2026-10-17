@@ -34,13 +34,13 @@ members = [
 name = "pwdcrack"
 version = "1.2.0"
 edition = "2024"
-description = "Universal password cracker — all hardware, all platforms"
+description = "Universal password cracker: all hardware, all platforms"
 authors = ["pwdcrack team"]
 license = "MIT"
 repository = "https://github.com/pwdcrack/pwdcrack"
 
 # ============================================================
-# FEATURES — Hardware Tier System
+# FEATURES: Hardware Tier System
 # ============================================================
 [features]
 default = ["tier-auto"]
@@ -149,7 +149,7 @@ indicatif = "0.17"
 # cargo resolves a single copy rather than two incompatible ones.
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
-# Hash — always included, pure Rust
+# Hash: always included, pure Rust
 md-5 = "0.10"
 des = "0.9"
 cipher = "0.5"

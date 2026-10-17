@@ -1,4 +1,4 @@
-//! Session save/restore — persist cracking progress for resume on battery death
+//! Session save/restore: persist cracking progress for resume on battery death
 
 use std::collections::HashMap;
 use std::fs;

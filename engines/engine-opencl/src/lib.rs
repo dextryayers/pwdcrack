@@ -30,7 +30,7 @@ impl OpenclEngine {
         let mut s = format!("OpenCL Platform: {}\n", self.platform_name);
         for dev in &self.devices {
             s.push_str(&format!(
-                "  CL[{}]: {} ({}) — {} CU, {} MHz, {} MB VRAM\n",
+                "  CL[{}]: {} ({}): {} CU, {} MHz, {} MB VRAM\n",
                 dev.index, dev.name, dev.device_type,
                 dev.compute_units, dev.clock_mhz, dev.vram_mb,
             ));

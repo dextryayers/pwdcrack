@@ -255,10 +255,21 @@ pub type SharedEngine = Arc<dyn Engine>;
 /// A fixed MD5 of a fixed candidate, chosen because MD5 is implemented
 /// everywhere including the CPU fallback, so every engine is measured on
 /// identical work.
+///
+/// The pair is a genuine match, not just two strings that happen to be valid. An
+/// engine that reports a rate without ever finding the target has measured the
+/// compare-and-discard path rather than the match-and-emit path, and the two
+/// differ enough on every accelerated back end to make the number misleading.
+///
+/// `REFERENCE_PASSWORD` and `REFERENCE_DIGEST` are verified against each other
+/// by `reference_workload_is_a_real_match`, which fails loudly if either is
+/// edited without the other.
+pub const REFERENCE_PASSWORD: &str = "pwdcrack-reference-candidate";
+pub const REFERENCE_DIGEST: &str = "8350c7ecc6d4706e12107df747eb6e71";
+
+/// Returns the candidate and its real MD5 digest.
 pub fn reference_workload() -> (&'static str, &'static str) {
-    // MD5("benchmark") = 12a3d3b9d2a8d0d4a3a5f45b1c58e5e, truncated here to the
-    // value computed below. The hash only needs to parse, not to match.
-    ("benchmark", "5f4dcc3b5aa765d61d8327deb882cf99")
+    (REFERENCE_PASSWORD, REFERENCE_DIGEST)
 }
 
 /// Measures an engine's rate on the reference workload.
@@ -371,6 +382,64 @@ impl Engine for CpuEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_workload_is_a_real_match() {
+        // Guards the fixed benchmark pair. The previous version of this file
+        // carried MD5("password") against the candidate "benchmark", with a
+        // comment quoting a digest that matched neither. Every call returned no
+        // hit, so the measurement covered only the compare-and-discard path.
+        use md5::{Digest, Md5};
+
+        let mut h = Md5::new();
+        h.update(REFERENCE_PASSWORD.as_bytes());
+        let computed = hex::encode(h.finalize());
+        assert_eq!(
+            computed, REFERENCE_DIGEST,
+            "REFERENCE_DIGEST is not MD5(REFERENCE_PASSWORD); recompute it before editing either constant"
+        );
+    }
+
+    #[test]
+    fn reference_workload_is_found_by_the_cpu_engine() {
+        // The digest has to be reachable through the normal cracking path, not
+        // only parse. If this fails, the benchmark number describes an engine
+        // that never reports a match.
+        let engine = CpuEngine::new();
+        let cracker = crate::hash::detector::Detector::new()
+            .cracker_for_type(crate::hash::HashType::MD5)
+            .unwrap();
+        let (password, digest) = reference_workload();
+        let entry = HashEntry {
+            raw: digest.to_string(),
+            hash_type: crate::hash::HashType::MD5,
+            hash_bytes: Vec::new(),
+            salt: None,
+            username: None,
+            cracked: false,
+            password: None,
+        };
+        let hits = engine.verify_batch(
+            cracker.as_ref(),
+            &[entry],
+            &[password.to_string()],
+            BatchPlan::everything(1, 1),
+        );
+        assert_eq!(hits.len(), 1, "reference workload did not produce a match");
+        assert_eq!(hits[0].candidate_index, 0);
+        assert_eq!(hits[0].hash_index, 0);
+    }
+
+    #[test]
+    fn benchmark_returns_a_positive_rate() {
+        let engine = CpuEngine {
+            info: EngineInfo::unmeasured("t", "t")
+                .with_batch_size(1)
+                .with_capabilities(CapabilitySet::baseline()),
+        };
+        let rate = benchmark(&engine, 2_000);
+        assert!(rate > 0.0, "benchmark produced no rate");
+    }
 
     #[test]
     fn cpu_engine_is_available_and_measurable() {

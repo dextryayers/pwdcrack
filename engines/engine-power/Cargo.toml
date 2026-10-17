@@ -2,7 +2,7 @@
 name = "engine-power"
 version = "0.1.0"
 edition = "2024"
-description = "Power management — RAPL monitoring, frequency scaling, battery-aware"
+description = "Power management: RAPL monitoring, frequency scaling, battery-aware"
 
 [dependencies]
 log = "0.4"

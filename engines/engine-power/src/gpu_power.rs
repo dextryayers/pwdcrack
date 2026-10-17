@@ -1,4 +1,4 @@
-//! GPU power monitoring — NVIDIA NVML / AMD hwmon
+//! GPU power monitoring: NVIDIA NVML / AMD hwmon
 
 use std::fs;
 use std::path::Path;

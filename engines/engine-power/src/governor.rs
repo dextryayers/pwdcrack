@@ -1,4 +1,4 @@
-//! CPU frequency governor — dynamic frequency scaling
+//! CPU frequency governor: dynamic frequency scaling
 
 use std::fs;
 use std::path::Path;

@@ -60,9 +60,9 @@ impl ThermalStatus {
 
     pub fn action(&self) -> &'static str {
         match self {
-            ThermalStatus::Critical => "STOP — temperature critical!",
-            ThermalStatus::Hot => "Throttling — reduce threads",
-            ThermalStatus::Warm => "Caution — monitor temperature",
+            ThermalStatus::Critical => "STOP: temperature critical!",
+            ThermalStatus::Hot => "Throttling: reduce threads",
+            ThermalStatus::Warm => "Caution: monitor temperature",
             ThermalStatus::Normal => "Normal operation",
             ThermalStatus::Unknown => "No temperature sensor",
         }

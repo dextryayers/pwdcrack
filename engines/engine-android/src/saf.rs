@@ -1,4 +1,4 @@
-//! Storage Access Framework (SAF) — read files from /sdcard
+//! Storage Access Framework (SAF): read files from /sdcard
 
 use std::fs;
 use std::path::Path;

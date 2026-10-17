@@ -1,4 +1,4 @@
-//! Battery monitoring — Android, laptops
+//! Battery monitoring: Android, laptops
 
 use std::fs;
 use std::path::Path;

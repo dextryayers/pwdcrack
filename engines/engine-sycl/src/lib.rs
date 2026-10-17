@@ -27,7 +27,7 @@ impl SyclEngine {
         let mut s = format!("SYCL Platform: {}\n", self.platform_name);
         for dev in &self.devices {
             s.push_str(&format!(
-                "  SYCL[{}]: {} ({}) — {} CU\n",
+                "  SYCL[{}]: {} ({}): {} CU\n",
                 dev.index, dev.name, dev.device_type, dev.compute_units,
             ));
         }

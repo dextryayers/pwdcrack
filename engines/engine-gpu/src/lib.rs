@@ -22,7 +22,7 @@ impl GpuEngine {
 
     pub fn info(&self) -> String {
         format!(
-            "{} ({}) — {} VRAM",
+            "{} ({}): {} VRAM",
             self.adapter.name,
             if self.is_integrated { "iGPU" } else { "dGPU" },
             self.adapter.vram_mb(),
@@ -35,7 +35,7 @@ impl GpuEngine {
 
     pub fn wait(&self) {
         // wgpu 30 handles submission tracking internally.
-        // No explicit poll needed — GPU work completes asynchronously.
+        // No explicit poll needed: GPU work completes asynchronously.
     }
 }
 

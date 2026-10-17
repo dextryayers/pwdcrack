@@ -2,6 +2,10 @@ pub mod app;
 pub mod raw;
 pub mod raw_ext;
 pub mod unix;
+
+/// Tests that enforce honesty about which hash types can actually be verified.
+#[cfg(test)]
+pub mod audit;
 pub mod argon2_scrypt;
 pub mod bcrypt_;
 pub mod detector;
@@ -1242,14 +1246,36 @@ pub trait HashCracker: Send + Sync {
     /// Returns the [`HashType`] this cracker handles.
     fn hash_type(&self) -> HashType;
     /// Returns `true` if `password` matches the given hash entry.
+    ///
+    /// An implementation that cannot actually compute this hash must return
+    /// `false` and override [`HashCracker::is_verifiable`] to say so. Returning
+    /// `false` unconditionally while reporting the type as supported is the one
+    /// failure mode this crate treats as a defect, because the user sees a
+    /// completed run with zero cracks and no way to tell that nothing was ever
+    /// attempted.
     fn verify(&self, password: &str, hash: &HashEntry) -> bool;
     /// Returns a human-readable name for this cracker.
     fn name(&self) -> &'static str;
     /// Returns a boxed clone of this cracker.
     fn clone_box(&self) -> Box<dyn HashCracker>;
+    /// Whether [`HashCracker::verify`] actually computes this hash.
+    ///
+    /// Defaults to `true`. A cracker that only detects the format overrides this
+    /// with `false`, which lets the listing and the attack driver report the gap
+    /// instead of silently returning no matches.
+    ///
+    /// There are 111 hash types in this crate that parse their input but cannot
+    /// verify it. They are listed in `docs/HASH_TYPES.md` with the reason for
+    /// each.
+    fn is_verifiable(&self) -> bool {
+        true
+    }
     /// Verify a batch of passwords against the same hash entry, returning matches.
     /// Default implementation calls verify() in a loop.
     fn verify_batch<'a>(&self, passwords: &[&'a str], hash: &HashEntry) -> Vec<&'a str> {
+        if !self.is_verifiable() {
+            return Vec::new();
+        }
         passwords.iter().filter(|pw| self.verify(pw, hash)).copied().collect()
     }
 }

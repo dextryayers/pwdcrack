@@ -1,4 +1,4 @@
-//! PCIe DMA driver — communicate with FPGA via memory-mapped PCIe BAR
+//! PCIe DMA driver: communicate with FPGA via memory-mapped PCIe BAR
 
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::FileExt;

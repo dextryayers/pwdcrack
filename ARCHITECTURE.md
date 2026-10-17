@@ -33,7 +33,8 @@ exposes `hash`, `attack`, and `potfile` only.
 | `src/main.rs` | Entry point. Argument routing, the 18 command handlers, output formatting, exit codes. |
 | `src/cli/args.rs` | clap derive definitions: `Cli` struct, global options, the `Commands` enum. |
 | `src/cli/mod.rs` | Re-exports `Cli` and `Tier`. |
-| `src/hash/mod.rs` | `HashType` enum (348 variants), `HashEntry`, the `HashCracker` and `HashParser` traits, helpers. |
+| `src/hash/mod.rs` | `HashType` enum (354 variants), `HashEntry`, the `HashCracker` and `HashParser` traits, helpers. |
+| `src/hash/audit.rs` | Tests that enforce the detection versus verification distinction. See `docs/HASH_TYPES.md`. |
 | `src/hash/detector.rs` | `Detector`: the registry of cracker instances plus `detect`, `identify`, `cracker_for_type`. |
 | `src/hash/raw.rs` | Raw digest verifiers: MD5, SHA-1, SHA-2, NTLM, and similar. |
 | `src/hash/raw_ext.rs` | Extended digest verifiers: BLAKE2, BLAKE3, RIPEMD, Whirlpool, Streebog, Tiger, Skein, JH, Shabal, GOST, SM3, Groestl. |
@@ -175,7 +176,6 @@ Twenty five crates live under `engines/`. Their real state:
 
 | Script | Purpose |
 |--------|---------|
-| `Makefile` | `build`, `test`, `bench`, `package`, `docker`, `install` targets. |
 | `scripts/build-all.sh` | Cross-compiles the five supported targets. |
 | `scripts/build-android.sh` | Android builds with the NDK linker set up. |
 | `scripts/cross-compile/android-ndk.sh` | Downloads the NDK and writes linker config. |
