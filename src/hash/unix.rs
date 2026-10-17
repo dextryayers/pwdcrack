@@ -95,23 +95,44 @@ impl Md5Crypt {
             final2 = ctx2.finalize();
         }
 
-        let final_bytes = final2;
-        let mut results = Vec::new();
-        results.push((final_bytes[0] as u64) | ((final_bytes[10] as u64) << 8) | ((final_bytes[20] as u64) << 16) | ((final_bytes[30] as u64) << 24));
-        results.push((final_bytes[1] as u64) | ((final_bytes[11] as u64) << 8) | ((final_bytes[21] as u64) << 16) | ((final_bytes[31] as u64) << 24));
-        results.push((final_bytes[2] as u64) | ((final_bytes[12] as u64) << 8) | ((final_bytes[22] as u64) << 16));
-        results.push((final_bytes[3] as u64) | ((final_bytes[13] as u64) << 8) | ((final_bytes[23] as u64) << 16));
-        results.push((final_bytes[4] as u64) | ((final_bytes[14] as u64) << 8) | ((final_bytes[24] as u64) << 16));
-        results.push((final_bytes[5] as u64) | ((final_bytes[15] as u64) << 8) | ((final_bytes[25] as u64) << 16));
-        results.push((final_bytes[6] as u64) | ((final_bytes[16] as u64) << 8) | ((final_bytes[26] as u64) << 16));
-        results.push((final_bytes[7] as u64) | ((final_bytes[17] as u64) << 8) | ((final_bytes[27] as u64) << 16));
-        results.push((final_bytes[8] as u64) | ((final_bytes[18] as u64) << 8) | ((final_bytes[28] as u64) << 16));
-        results.push((final_bytes[9] as u64) | ((final_bytes[19] as u64) << 8) | ((final_bytes[29] as u64) << 16));
+        // ── BLOCKED: tail encoding is incorrect, see note below ──
+        //
+        // History of this function, for whoever picks this up:
+        //
+        // 1. The loop that appends `final1` used `i.wrapping_sub(16)`. For any
+        //    key length that was not an exact multiple of the block size the
+        //    counter wrapped to near usize::MAX and the loop never returned.
+        //    That part has been fixed (see above) and is provably correct.
+        //
+        // 2. The code below indexes the digest as `b[20]` and `b[30]`. `final2`
+        //    is an MD5 digest, which is 16 bytes, so every one of those reads
+        //    was out of bounds and panicked on every call. It never produced a
+        //    correct hash, not even for a single input.
+        //
+        // 3. The correct md5crypt tail interleaves the 16 digest bytes into
+        //    22 base64 characters (five groups of four plus one group of two)
+        //    using a specific non linear byte order. That order has NOT been
+        //    reproduced here yet.
+        //
+        // Verification status
+        // -------------------
+        // `openssl passwd -1` and `libcrypt.so.1` are available on the build
+        // machine and agree with each other, so they are a usable oracle:
+        //
+        //     openssl passwd -1 -salt abcdefgh 'password'
+        //     -> $1$abcdefgh$G//4keteveJp0qb8z2DxG/
+        //
+        // An implementation written from the algorithm description produced a
+        // final digest that differs from the oracle in every byte position, not
+        // merely in the ordering, so the discrepancy is in the core digest
+        // computation rather than in the base64 tail. Do not "fix" only the
+        // tail: that was tried and does not converge.
+        //
+        // Until a verified implementation replaces this, `verify` must return
+        // false rather than a wrong answer, because a wrong answer here means
+        // either a missed crack or a false positive report.
 
-        for v in results {
-            passwd.push_str(&to64(v, 4));
-        }
-
+        let _ = final2;
         passwd
     }
 }
@@ -121,9 +142,11 @@ impl HashCracker for Md5Crypt {
     fn name(&self) -> &'static str { "MD5 Crypt" }
 
     fn verify(&self, password: &str, entry: &HashEntry) -> bool {
-        let salt = entry.salt.as_deref().unwrap_or("");
-        let computed = Self::crypt_raw(password.as_bytes(), salt.as_bytes());
-        computed == entry.raw
+        // Not implemented yet, see the block comment in `crypt_raw`.
+        // Returning false is deliberate: an unverified md5crypt that produced
+        // a wrong hash would report false positives. See `crypt_raw`.
+        let _ = (password, entry);
+        false
     }
 
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }

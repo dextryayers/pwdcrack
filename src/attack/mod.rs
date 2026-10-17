@@ -1,6 +1,7 @@
 pub mod dictionary;
 pub mod brute;
 pub mod combinator;
+pub mod mask;
 pub mod rules;
 pub mod prince;
 pub mod toggle;
