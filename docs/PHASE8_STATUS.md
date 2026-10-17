@@ -15,8 +15,10 @@ estimate and nothing is extrapolated from a datasheet.
 | P8.1.02 write missing testbenches | **not done** | 17 of 20 cores have none |
 | P8.1.03 `rtl/sim/` + shared header | done | `rtl/sim/tb_common.svh`, 3 testbenches |
 | P8.1.04 `simulate.tcl` | **not done** | see below |
-| P8.2.01 MD5 correct | **done, verified** | 5 of 5 vectors pass |
-| P8.2.02 SHA-1 correct | **not done** | 0 of 4 vectors pass |
+| P8.2.01 MD5 correct | **done, verified** | 23 of 23 vectors pass |
+| P8.2.02 SHA-1 correct | **done, verified** | 14 of 14 vectors pass |
+| P8.2.06 MD4 correct | **done, verified** | 16 of 16 vectors pass |
+| P8.2.06b NTLM correct | **not done** | testbench does not compile |
 | P8.2.03 SHA-256 correct | not started | no runnable testbench |
 | P8.2.04 SHA-512 / SHA-384 | not started | no runnable testbench |
 | P8.2.05 BLAKE2b / BLAKE2s | not started | no runnable testbench |
@@ -33,7 +35,14 @@ estimate and nothing is extrapolated from a datasheet.
 | P8.4.02 under 60% LUT, 70% BRAM | **blocked** | no tool, no board |
 | P8.4.03 publish Vivado report | **blocked** | no tool, no board |
 
-**One core is verified. Nineteen are not.**
+**Three cores are verified: MD5, SHA-1 and MD4. Padding is verified separately.
+NTLM does not compile. The other sixteen cores are untested.**
+
+    tb_md5_core  23 passed, 0 failed
+    tb_sha1_core 14 passed, 0 failed
+    tb_md4_core  16 passed, 0 failed
+    tb_padding   11 passed, 0 failed
+    tb_ntlm_core COMPILE FAIL
 
 ---
 
@@ -46,15 +55,17 @@ stated wrong expected values. `rtl/sim` is the location that works.
 
 | Core | Own testbench | Testbench in `rtl/sim` | Result |
 |------|---------------|------------------------|--------|
-| `md5_core` | yes, broken | `tb_md5_core.sv` | **5 passed, 0 failed** |
-| `sha1_core` | yes, broken | `tb_sha1_core.sv` | 0 passed, 4 failed |
+| `md5_core` | yes, broken | `tb_md5_core.sv` | **23 passed, 0 failed** |
+| `sha1_core` | yes, broken | `tb_sha1_core.sv` | **14 passed, 0 failed** |
+| `md4_core` | no | `tb_md4_core.sv` | **16 passed, 0 failed** |
+| `ntlm_core` | no | `tb_ntlm_core.sv` | does not compile |
 | `aes_cmac_core` | no | no | not run |
 | `blake2b_core` | no | no | not run |
 | `blake2s_core` | yes, broken | no | not run |
 | `crc_accelerator` | yes, wrong values | no | not run |
 | `hmac_wrapper` | no | no | not run |
 | `md5_opt` | no | no | not run |
-| `ntlm_core` | no | no | not run |
+
 | `pbkdf2_core` | yes, broken | no | not run |
 | `ripemd128_core` | yes, broken | no | not run |
 | `ripemd160_core` | no | no | not run |
@@ -76,6 +87,66 @@ Every core declares unpacked array ports. Icarus Verilog 12 does not propagate
 an unpacked array output port to the parent instance, so a testbench can never
 observe a core's result through one. `md5_core` and `sha1_core` were converted to
 packed vectors for that reason.
+
+---
+
+## What the vector generator got wrong
+
+Four defects in `scripts/gen-rtl-vectors.py`, all of which produced vectors that
+looked plausible and failed in a way that read as a core defect.
+
+**The initial value was byte swapped.** `iv()` packed the IV with the same
+reversal applied to a digest. A digest is a byte string whose words are stored
+little endian, so it has to be unpacked. The IV words are already numbers, and
+reversing their bytes swaps them: MD5's A became `0x01234567` at `[31:0]` instead
+of `0x67452301`. Every vector failed. The digests were right, which is what made it
+look like the core was wrong.
+
+**SHA-1 and SHA-256 were padded with a 64 bit length.** Both append a 128 bit
+length, so the zero fill runs to 48 and 16 bytes of length follow. Filling to 56
+and writing 8 bytes produces a block that differs from the correct one in the last
+eight bytes. The signature was exactly the one the generator's own docstring
+warned about: `sha1(<empty>)` passed and every other vector failed.
+
+**SHA-512 put the length in the wrong half.** `struct.pack(">QQ", bit_len, 0)`
+writes the count into the high 64 bits. The generator's block check reported a
+one byte message as 2^67 bytes, which is how it was found.
+
+**The single block limit was wrong for SHA-1 and SHA-256.** A 128 bit length leaves
+16 bytes, so a block holds 47 bytes of message, not 55. The generator refused to
+emit the 48 and 55 byte boundary vectors rather than writing them, which is how
+this surfaced.
+
+---
+
+## What SHA-1 verification established
+
+`sha1_core` passes 14 of 14. Two defects had to be fixed first.
+
+**The schedule was one round late.** The expansion was guarded on `round >= 16`,
+but W[16] is produced during round 15 because round 16 is what consumes it. Slot 0
+kept the original W[0], every later word was derived from that stale value, and
+every digest was wrong. The sixteen rounds that need no schedule all passed, which
+is why it looked like a core that worked.
+
+**Padding, not arithmetic.** Once the vector generator stopped writing a 64 bit
+length for a hash that uses 128, the core's own arithmetic needed no change. Every
+rotation, every round function, the state rotation order and the schedule were
+verified against a Python reference along the way and all matched.
+
+MD4 passes 16 of 16 with no further change to the core: the failures were the
+vector generator's, not the RTL.
+
+NTLM does not compile. `ntlm_core` instantiates `md4_core`, and the runner now
+pulls that dependency in automatically, but the testbench then fails with
+
+    tb_ntlm_core.sv:37: error: reg too_long; cannot be driven by
+                         primitives or continuous assignment
+
+on a `.*` instantiation, where `too_long` is an output of the core that the
+testbench only reads. `ntlm_core.sv` already carries a comment about Icarus
+rejecting the name `overrun` for a related reason and renaming it; the rename did
+not fix this. Not diagnosed further.
 
 ---
 
@@ -252,7 +323,7 @@ nothing, because most of the area would be computing wrong answers.
 ## Reproducing what is claimed
 
 ```
-scripts/simulate.sh          # RTL: 5 MD5 vectors, 11 padding vectors, 4 SHA-1 failures
+scripts/simulate.sh          # RTL: MD5, SHA-1, MD4, padding vectors
 scripts/setup-iverilog.sh    # installs Icarus Verilog without root
 cargo test -p engine-fpga    # host interface: 39 tests
 ```

@@ -5,6 +5,13 @@ edition = "2024"
 description = "Real-time web dashboard for pwdcrack"
 
 [dependencies]
+# Note: this crate cannot depend on `pwdcrack`. `pwdcrack` depends on
+# engine-web, so a reverse edge is a cycle and cargo rejects it outright.
+#
+# The real execution path is therefore injected: engine-web defines
+# `AttackExecutor` and the binary supplies an implementation that calls the same
+# engine the CLI uses. See `attack.rs`.
+
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

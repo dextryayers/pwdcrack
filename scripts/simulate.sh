@@ -138,12 +138,35 @@ for tb in "${BENCHES[@]}"; do
 
     core_src="$(resolve_core "$tb" || true)"
 
+    # Pull in any core the core under test instantiates.
+    #
+    # `ntlm_core` instantiates `md4_core` because NTLM hashes with MD4. Passing
+    # only `ntlm_core.sv` produced "Unknown module type: md4_core", which reads as
+    # a missing module in the design rather than a missing file on the command
+    # line. Dependencies are found by reading the module names out of the source,
+    # one level deep, which covers the current cores without a hand written
+    # dependency table to forget to update.
+    if [ -n "$core_src" ]; then
+        extra=""
+        for inst in $(grep -oE '^[[:space:]]*[a-z0-9_]+_core[[:space:]]+[a-z0-9_]+' \
+                      "$core_src" 2>/dev/null | awk '{print $1}' | sort -u); do
+            [ "$inst" = "$(basename "$core_src" .sv)" ] && continue
+            for d in "$RTL/cores" "$RTL"; do
+                if [ -f "$d/$inst.sv" ] && [ "$d/$inst.sv" != "$core_src" ]; then
+                    extra="$extra $d/$inst.sv"
+                    break
+                fi
+            done
+        done
+        [ -n "$extra" ] && core_src="$core_src $extra"
+    fi
+
     if [ -z "$core_src" ]; then
         # No core to link. The testbench must then be self contained apart from
         # the shared header, which is what tb_padding is.
         echo "LONE          $name  (no core matched, compiling alone)"
     else
-        echo "CORE          $name -> $(basename "$core_src")"
+        echo "CORE          $name -> $(echo "$core_src" | tr " " "\n" | xargs -n1 basename | tr "\n" " ")"
     fi
 
     # shellcheck disable=SC2086

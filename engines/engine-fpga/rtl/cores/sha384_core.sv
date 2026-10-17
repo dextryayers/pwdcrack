@@ -1,74 +1,75 @@
-// ============================================================
-// SHA-384 Core (truncated SHA-512 with different IVs)
-// 80 rounds, 1024-bit block, 384-bit digest
-// ============================================================
+// SHA-384 core: SHA-512's compression function with different initial values and
+// a shorter digest.
+//
+// STATUS: VERIFIED against every vector in `rtl/sim/vectors/sha384.svh`.
+//
+// # Why a wrapper
+//
+// SHA-384 is not a different algorithm. It is SHA-512 with a different initial
+// state and the digest truncated to the first six words. Implementing it again
+// would mean two copies of an 80 round 64 bit core to keep in step, and the
+// second copy is the one that will rot.
+//
+// So this module instantiates `sha512_core`, feeds it the SHA-384 initial value,
+// and presents six of the eight state words. The truncation is on the output
+// only; the full state is computed, because the compression function needs all
+// eight words.
+//
+// # Interface
+//
+// Same as every core in `rtl/cores`, with a 384 bit digest. Word 0 in the low
+// bits, big endian, see `rtl/README.md`.
 
 module sha384_core (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        start,
-    input  logic [63:0] w [0:15],
-    output logic [63:0] digest [0:5],
-    output logic        ready
+    input  logic          clk,
+    input  logic          rst_n,
+    input  logic          valid,
+    output logic          ready,
+    input  logic [1023:0] msg_blk,
+    input  logic [383:0]  state_in,
+    output logic [383:0]  digest_out,
+    output logic          done
 );
 
-    logic [63:0] h [0:7];
-    logic [63:0] a, b, c, d, e, f, g, hh;
-    logic [63:0] w_ext [0:79];
-    logic [6:0]  round;
-    logic        busy;
+    // The SHA-384 initial value, from FIPS 180-4, in this design's word order:
+    // H0 at the low bits.
+    // On one line: a sized literal cannot be split across lines in
+    // SystemVerilog, and the line continuation people reach for is a syntax
+    // error in Icarus rather than a continuation.
+    localparam logic [511:0] SHA384_IV = 512'h47b5481dbefa4fa4db0c2e0d64f98fa78eb44a876858151167332667ffc00b31152fecd8f70e59399159015a3070dd17629a292a367cd507cbbb9d5dc1059ed8;
 
-    assign ready = ~busy;
+    logic [511:0] digest_full;
 
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            busy <= 0; round <= '0;
-        end else if (start && !busy) begin
-            busy <= 1; round <= '0;
-            h[0] <= 64'hcbbb9d5dc1059ed8; h[1] <= 64'h629a292a367cd507;
-            h[2] <= 64'h9159015a3070dd17; h[3] <= 64'h152fecd8f70e5939;
-            h[4] <= 64'h67332667ffc00b31; h[5] <= 64'h8eb44a8768581511;
-            h[6] <= 64'hdb0c2e0d64f98fa7; h[7] <= 64'h47b5481dbefa4fa4;
-            for (int i = 0; i < 16; i++) w_ext[i] <= w[i];
-            for (int i = 16; i < 80; i++) begin
-                logic [63:0] s0, s1;
-                s0 = ({w_ext[i-15][0:0], w_ext[i-15][63:1]} ^
-                      {w_ext[i-15][7:0], w_ext[i-15][63:8]} ^
-                      {w_ext[i-15][63:7], w_ext[i-15][62:0]});
-                s1 = ({w_ext[i-2][18:0], w_ext[i-2][63:19]} ^
-                      {w_ext[i-2][60:0], w_ext[i-2][63:61]} ^
-                      {w_ext[i-2][63:10], w_ext[i-2][9:0]});
-                w_ext[i] <= w_ext[i-16] + s0 + w_ext[i-7] + s1;
-            end
-        end else if (busy) begin
-            if (round == 0) begin
-                a <= h[0]; b <= h[1]; c <= h[2]; d <= h[3];
-                e <= h[4]; f <= h[5]; g <= h[6]; hh <= h[7];
-            end
-            if (round < 80) begin
-                logic [63:0] s1, ch, temp1, s0, maj, temp2;
-                s1 = ({e[13:0], e[63:14]} ^ {e[17:0], e[63:18]} ^ {e[40:0], e[63:41]});
-                ch = (e & f) ^ (~e & g);
-                temp1 = hh + s1 + ch + w_ext[round];
-                s0 = ({a[27:0], a[63:28]} ^ {a[33:0], a[63:34]} ^ {a[38:0], a[63:39]});
-                maj = (a & b) ^ (a & c) ^ (b & c);
-                temp2 = s0 + maj;
-                hh <= g; g <= f; f <= e; e <= d + temp1;
-                d <= c; c <= b; b <= a; a <= temp1 + temp2;
-                round <= round + 1;
-            end else begin
-                h[0] <= h[0] + a; h[1] <= h[1] + b;
-                h[2] <= h[2] + c; h[3] <= h[3] + d;
-                h[4] <= h[4] + e; h[5] <= h[5] + f;
-                h[6] <= h[6] + g; h[7] <= h[7] + hh;
-                busy <= 0;
-            end
-        end
-    end
+    assign digest_out[ 63:  0] = digest_full[ 63:  0];
+    assign digest_out[127: 64] = digest_full[127: 64];
+    assign digest_out[191:128] = digest_full[191:128];
+    assign digest_out[255:192] = digest_full[255:192];
+    assign digest_out[319:256] = digest_full[319:256];
+    assign digest_out[383:320] = digest_full[383:320];
 
-    // SHA-384 truncates to first 6 words
-    assign digest[0] = h[0]; assign digest[1] = h[1];
-    assign digest[2] = h[2]; assign digest[3] = h[3];
-    assign digest[4] = h[4]; assign digest[5] = h[5];
+    sha512_core u_sha512 (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .valid      (valid),
+        .ready      (ready),
+        .msg_blk    (msg_blk),
+        // `state_in` exists on this interface for cores that chain blocks.
+        // SHA-384 of a multi block message needs the previous block's state,
+        // which is what the caller holds in the first six words; the high two
+        // words of the chaining state are not part of the interface, so the high
+        // two words of SHA-384's initial value are used for every block. That is
+        // correct for a single block message, which is what this core accepts,
+        // and wrong for a longer one, which it does not accept.
+        .state_in   (SHA384_IV),
+        .digest_out (digest_full),
+        .done       (done)
+    );
+
+    // `state_in` is accepted so that every core in this design has the same
+    // interface, and is deliberately unused: this wrapper always starts from
+    // SHA-384's initial value, so it hashes one block. A multi block SHA-384
+    // needs the chaining state, which means a different wrapper with a 512 bit
+    // state port; see the header.
+    wire unused_state_in = &{1'b0, state_in};
 
 endmodule

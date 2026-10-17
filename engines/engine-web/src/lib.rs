@@ -3,6 +3,7 @@
 //! REST API + WebSocket for monitoring cracking progress,
 //! managing sessions, and viewing cluster status.
 
+pub mod attack;
 pub mod server;
 pub mod routes;
 pub mod websocket;

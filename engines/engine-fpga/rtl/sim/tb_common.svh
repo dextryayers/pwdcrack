@@ -518,15 +518,17 @@ endfunction
     task automatic drive_ntlm( \
         input string pw, \
         input string name, \
-        input integer cycles \
+        input integer cycles, \
+        output int saw_done \
     ); \
         int waited; \
-        int saw_done; \
         begin \
+            saw_done = 0; \
             while (ready !== 1'b1 && waited < cycles) begin \
                 @(negedge clk); \
                 waited = waited + 1; \
             end \
+            @(negedge clk); \
             pass_bytes = '0; \
             for (int i = 0; i < pw.len() && i < 64; i = i + 1) \
                 pass_bytes[8*i +: 8] = pw[i]; \
@@ -535,15 +537,11 @@ endfunction
             @(negedge clk); \
             valid <= 1'b0; \
             waited = 0; \
-            saw_done = 0; \
-            while (waited < cycles && saw_done == 0) begin \
+            while (waited < cycles && done !== 1'b1 && too_long !== 1'b1) begin \
                 @(negedge clk); \
                 waited = waited + 1; \
-                if (done === 1'b1) saw_done = 1; \
             end \
-            if (saw_done == 0) begin \
-                `TB_FAIL_NOTE(name, "no done signal"); \
-            end \
+            saw_done = (done === 1'b1); \
         end \
     endtask \
     task automatic check_ntlm( \
@@ -552,16 +550,17 @@ endfunction
         input string name, \
         input integer cycles \
     ); \
+        int saw; \
         begin \
-            drive_ntlm(pw, name, cycles); \
-            if (done !== 1'b1) begin \
+            drive_ntlm(pw, name, cycles, saw); \
+            if (saw == 0) begin \
                 `TB_FAIL_NOTE(name, "no done signal"); \
             end else if (digest_out === want) begin \
                 `TB_PASS(name); \
             end else begin \
                 $display("  FAIL [%0d]: %s", test_num, name); \
-                $display("        got      %032x", digest_out); \
-                $display("        expected %032x", want); \
+                $display("        got      %h", digest_out); \
+                $display("        expected %h", want); \
                 fail_count = fail_count + 1; \
                 test_num   = test_num + 1; \
             end \
@@ -572,31 +571,18 @@ endfunction
         input string name, \
         input integer cycles \
     ); \
-        int waited; \
+        int saw; \
         begin \
-            while (ready !== 1'b1 && waited < cycles) begin \
-                @(negedge clk); \
-                waited = waited + 1; \
-            end \
-            pass_bytes = '0; \
-            for (int i = 0; i < pw.len() && i < 64; i = i + 1) \
-                pass_bytes[8*i +: 8] = pw[i]; \
-            pass_len = pw.len(); \
-            valid <= 1'b1; \
-            @(negedge clk); \
-            valid <= 1'b0; \
-            waited = 0; \
-            while (waited < cycles && (done !== 1'b1 && overrun !== 1'b1)) begin \
-                @(negedge clk); \
-                waited = waited + 1; \
-            end \
-            if (overrun === 1'b1 && done !== 1'b1) begin \
+            drive_ntlm(pw, name, cycles, saw); \
+            /* A refused password must raise `too_long` and must not */ \
+            /* produce a digest: acting on a truncated password is a */ \
+            /* wrong answer that looks like a right one. */ \
+            if (saw == 0 && too_long === 1'b1) begin \
                 `TB_PASS(name); \
             end else begin \
                 `TB_FAIL_NOTE(name, \
-                    "an over long password must raise overrun, not done"); \
+                    "an over long password must raise too_long and no done"); \
             end \
-            overrun <= 1'b0; \
         end \
     endtask
 

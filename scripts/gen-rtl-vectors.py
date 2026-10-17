@@ -206,6 +206,35 @@ def pad_merkle_varint(message: bytes) -> bytes:
     return bytes(out)
 
 
+def pad_be(message: bytes) -> bytes:
+    """SHA-1 and SHA-256 padding: terminator, zeros, then a 128 bit length, BE.
+
+    The length field is 128 bits, not 64. SHA-1 and SHA-256 both append the
+    message length as a 128 bit big endian value occupying the final sixteen
+    bytes of the last block; the upper 64 bits are zero for any message under
+    2^61 bytes. MD4 and MD5 append a 64 bit length instead, which is why
+    `pad_merkle_varint` exists separately.
+
+    Both the length field and the message words are big endian in SHA-1 and
+    SHA-256, while MD4, MD5, RIPEMD-160 and NTLM use little endian for both.
+
+    Writing 64 bits here produces a block that differs from the correct one in
+    the last eight bytes, so every non empty vector fails while the empty one
+    passes. That is a padding bug wearing the costume of a core that is right for
+    empty input, which is exactly how it presented: `sha1(<empty>)` passed and
+    every other vector failed. `emit_core` checks the length field of every block
+    it writes for this reason rather than trusting this function.
+    """
+    out = bytearray(message)
+    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    out.append(0x80)
+    # Fill to 48, not 56: the length field is 16 bytes wide.
+    while len(out) % 64 != 48:
+        out.append(0x00)
+    out += struct.pack(">QQ", 0, bit_len)
+    return bytes(out)
+
+
 def pad_be64(message: bytes) -> bytes:
     """SHA-512 and SHA-384 padding: terminator, zeros, then length in BITS, BE.
 
@@ -217,7 +246,10 @@ def pad_be64(message: bytes) -> bytes:
     out.append(0x80)
     while len(out) % 128 != 112:
         out.append(0x00)
-    out += struct.pack(">QQ", bit_len, 0)
+    # High 64 bits first, then the count. Writing them the other way round puts
+    # the length in the upper half, which the generator's own block check
+    # reported as a message of 2^67 bytes for every single byte message.
+    out += struct.pack(">QQ", 0, bit_len)
     return bytes(out)
 
 
@@ -297,7 +329,7 @@ def pack_digest(digest: bytes, word_bits: int, little_endian: bool) -> str:
 class Core:
     def __init__(self, name, title, digest_fn, pad_fn, word_bits, digest_words,
                  block_words, little_endian, max_single, oracle, iv_words,
-                 kind="core"):
+                 length_order, length_words=8, kind="core"):
         self.name = name                  # file stem, also the vector file stem
         self.title = title                # human readable, printed in the TB
         self.digest_fn = digest_fn        # bytes -> digest bytes
@@ -309,10 +341,73 @@ class Core:
         self.max_single = max_single      # longest message that fits one block
         self.oracle = oracle              # what the digest came from
         self.iv_words = iv_words          # initial state, in printed order
+        self.length_order = length_order  # "little", "big" or "blake2b"
+        self.length_words = length_words  # width of the trailing length field
         self.kind = kind                  # "core" or "ntlm"
 
+    def check_word_order(self, message: bytes, padded: bytes) -> None:
+        """The first word of an empty message's block, checked against the rule.
+
+        For a 64 byte block family the first word is the terminator and whatever
+        follows it in the first four bytes. MD4, MD5, RIPEMD-160 and NTLM read
+        words little endian, so the terminator is the LOW byte of word 0 and
+        the word is 0x00000080. SHA-1 and SHA-256 read big endian, so it is
+        0x80000000.
+
+        This is the check that catches a core declared with the wrong endianness:
+        the padding is right, the digest is right, and the block is eight bytes
+        out of place for every message longer than nothing. RIPEMD-160 was
+        declared big endian here and failed all sixteen vectors while its
+        padding, its constants and its two lines were all correct.
+        """
+        if message or len(padded) < 4:
+            return
+        if self.length_order == "blake2b":
+            # BLAKE2b has no 0x80 terminator: the block starts with the message
+            # and ends with the counter and the final block flag. There is
+            # nothing here to check.
+            return
+        first = int.from_bytes(padded[:4], "little" if self.little_endian else "big")
+        want = 0x00000080 if self.little_endian else 0x80000000
+        if first != want:
+            sys.exit(f"{self.name}: first word of the block for an empty message "
+                     f"is {first:#010x}, expected {want:#010x}\n"
+                     f"  the core is declared "
+                     f"{'little' if self.little_endian else 'big'} endian, and the "
+                     f"terminator belongs at the "
+                     f"{'low' if self.little_endian else 'high'} end of word 0")
+
+    def check_padding(self, message: bytes, padded: bytes) -> None:
+        """The last field of every block must be the message length in bits.
+
+        Written as a check rather than trusted as a consequence of the padding
+        function because it is the cheapest possible invariant and it catches
+        the exact bug that cost a day here: a length field in the wrong byte
+        order, which is invisible for a zero length message and wrong for
+        every other one.
+        """
+        want = (len(message) * 8) & ((1 << (8 * self.length_words)) - 1)
+        tail = padded[-self.length_words:]
+        if self.length_order == "little":
+            got = int.from_bytes(tail, "little")
+        elif self.length_order == "big":
+            got = int.from_bytes(tail, "big")
+        else:
+            # BLAKE2b ends the block with the final block flag, then t0, then
+            # the high half t1, so the length is the eight bytes before the last
+            # eight rather than the last eight.
+            if padded[-17] != 0x01:
+                sys.exit(f"{self.name}: block does not end with the BLAKE2b "
+                         f"final block flag, byte -17 is {padded[-17]:#04x}")
+            got = int.from_bytes(padded[-16:-8], "little")
+        if got != want:
+            sys.exit(f"{self.name}: padded block for {len(message)} bytes ends "
+                     f"with {tail.hex()}, which reads as {got} bits, expected "
+                     f"{want}\n  padding is wrong; every vector from this core "
+                     f"would be wrong in the same eight bytes")
+
     def iv(self) -> str:
-        """The initial state as a packed literal, in this core's word order.
+        """The initial state as a packed literal, word 0 in the low bits.
 
         Packed differently from a digest, and the difference matters.
 
@@ -330,9 +425,23 @@ class Core:
         Checked against the packed output: MD5 A must land at `[31:0]` as
         0x67452301.
         """
-        width = self.word_bits // 4
-        return (f"{self.word_bits}'h"
-                + "".join(f"{w:0{width}x}" for w in reversed(self.iv_words)))
+        digits = self.word_bits // 4
+        n = len(self.iv_words)
+        text = "".join(f"{w:0{digits}x}" for w in reversed(self.iv_words))
+        literal_text = f"{n * self.word_bits}'h{text}"
+
+        # Read it back. Word n-1 is written first, so in the parsed number it is
+        # the most significant word and word 0 is the least significant one,
+        # which is the position the core reads.
+        parsed = int(text, 16)
+        mask = (1 << self.word_bits) - 1
+        for i, word in enumerate(self.iv_words):
+            got = (parsed >> (i * self.word_bits)) & mask
+            if got != word:
+                sys.exit(f"{self.name}: IV literal round trip failed at word {i}\n"
+                         f"  want {word:#x}\n  got  {got:#x}\n"
+                         f"  literal {literal_text}")
+        return literal_text
 
 
 IV_MD = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
@@ -352,37 +461,51 @@ IV_SHA384 = [
     0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
 ]
 
+# Longest message that fits one block.
+#
+# Two different numbers, because the length field differs. MD4 and MD5 append a
+# 64 bit length, leaving 8 bytes, so a message may be 55 bytes. SHA-1 and SHA-256
+# append a 128 bit length, leaving 16, so the same block holds only 47. Using 55
+# for both makes the generator emit two block messages for cores that consume one
+# block, and it refuses to write them rather than silently truncating.
+MAX_SINGLE_64 = 55
+MAX_SINGLE_128 = 47
+
 CORES = [
     Core("md5", "MD5 (RFC 1321)",
          lambda m: hashlib.md5(m).digest(), pad_merkle_varint,
-         32, 4, 16, True, 55, "hashlib.md5", IV_MD),
+         32, 4, 16, True, 55, "hashlib.md5", IV_MD, "little"),
     Core("md4", "MD4 (RFC 1320)",
          md4, pad_merkle_varint,
-         32, 4, 16, True, 55, "pure Python MD4, held against OpenSSL", IV_MD),
+         32, 4, 16, True, 55, "pure Python MD4, held against OpenSSL", IV_MD,
+         "little"),
     Core("sha1", "SHA-1 (FIPS 180-4)",
-         lambda m: hashlib.sha1(m).digest(), pad_merkle_varint,
-         32, 5, 16, False, 55, "hashlib.sha1", IV_SHA1),
+         lambda m: hashlib.sha1(m).digest(), pad_be,
+         32, 5, 16, False, MAX_SINGLE_128, "hashlib.sha1", IV_SHA1, "big"),
     Core("sha256", "SHA-256 (FIPS 180-4)",
-         lambda m: hashlib.sha256(m).digest(), pad_merkle_varint,
-         32, 8, 16, False, 55, "hashlib.sha256", IV_SHA256),
+         lambda m: hashlib.sha256(m).digest(), pad_be,
+         32, 8, 16, False, MAX_SINGLE_128, "hashlib.sha256", IV_SHA256, "big"),
     Core("sha512", "SHA-512 (FIPS 180-4)",
          lambda m: hashlib.sha512(m).digest(), pad_be64,
-         64, 8, 16, False, 111, "hashlib.sha512", IV_SHA512),
+         64, 8, 16, False, 111, "hashlib.sha512", IV_SHA512, "big",
+         length_words=16),
     Core("sha384", "SHA-384 (FIPS 180-4)",
          lambda m: hashlib.sha384(m).digest(), pad_be64,
-         64, 6, 16, False, 111, "hashlib.sha384", IV_SHA384),
+         64, 6, 16, False, 111, "hashlib.sha384", IV_SHA384, "big",
+         length_words=16),
     Core("ripemd160", "RIPEMD-160",
          lambda m: hashlib.new("ripemd160", m).digest(), pad_merkle_varint,
-         32, 5, 16, False, 55, "hashlib ripemd160", IV_SHA1),
+         32, 5, 16, True, 55, "hashlib ripemd160", IV_SHA1, "little"),
     Core("blake2b", "BLAKE2b-512, unkeyed",
          blake2b512, pad_blake2b,
-         64, 8, 16, True, 111, "hashlib.blake2b, digest_size=64", IV_SHA512),
+         64, 8, 16, True, 111, "hashlib.blake2b, digest_size=64", IV_SHA512,
+         "blake2b"),
 ]
 
 NTLM = Core("ntlm", "NTLMv1: MD4 over UTF-16-LE",
             ntlm, pad_merkle_varint,
             32, 4, 16, True, 27, "MD4 over UTF-16-LE, MD4 held against OpenSSL",
-            IV_MD, kind="ntlm")
+            IV_MD, "little", kind="ntlm")
 
 CORPUS_FILE = {
     "md5": "md5.txt", "sha256": "sha256.txt", "ntlm": "ntlm.txt",
@@ -521,12 +644,17 @@ def emit_core(core: Core) -> str:
 
     count = 0
     for source, message in messages:
+        # One block or nothing. A message that does not fit cannot be handed to
+        # a single block core, and emitting its digest anyway would produce a
+        # vector no core in this repository can pass.
         if len(message) > core.max_single:
             continue
         padded = core.pad_fn(message)
         if len(padded) != core.block_words * core.word_bits // 8:
             sys.exit(f"{core.name}: padded {len(padded)} bytes, expected "
                      f"{core.block_words * core.word_bits // 8}")
+        core.check_padding(message, padded)
+        core.check_word_order(message, padded)
         digest = core.digest_fn(message)
         if len(digest) != core.digest_words * core.word_bits // 8:
             sys.exit(f"{core.name}: digest {len(digest)} bytes, expected "
