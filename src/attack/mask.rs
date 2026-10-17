@@ -20,7 +20,7 @@
 //! | `?b`         | every byte `0x00`-`0xFF`                 | 256    |
 //! | `?w`         | all printable ASCII                      | 100    |
 //! | `?1`..`?4`   | a user supplied charset                   | varies |
-//! | `(?abc)`     | a literal range, characters used in order | varies |
+//! | `(abc)`      | a literal range, characters used in order | varies |
 //! | `[?u?l]`     | alternation over the listed classes      | varies |
 //! | `\%`         | a literal percent sign                   | 1      |
 //! | any other c  | that literal character                   | 1      |
@@ -228,28 +228,19 @@ impl Mask {
                         }
                     };
                     let inner = &bytes[i + 1..end];
-                    // A leading '?' inside a range means the characters are
-                    // class names, e.g. (?l?u). Otherwise every byte is literal.
-                    let set: Vec<u8> = if inner.first() == Some(&b'?') {
-                        let mut v = Vec::new();
-                        let mut j = 0;
-                        while j + 1 < inner.len() {
-                            let sub = match inner[j + 1] {
-                                b'l' => LOWER.to_vec(),
-                                b'u' => UPPER.to_vec(),
-                                b'd' => DIGIT.to_vec(),
-                                b's' => SPECIAL.to_vec(),
-                                b'h' => HEX_LOWER.to_vec(),
-                                b'H' => HEX_UPPER.to_vec(),
-                                other => vec![other],
-                            };
-                            v.extend_from_slice(&sub);
-                            j += 2;
-                        }
-                        v
-                    } else {
-                        inner.to_vec()
-                    };
+                    // Every byte inside `(...)` is literal, which is the
+                    // hashcat convention. `(?abc)` is the three characters
+                    // `a`, `b`, `c`.
+                    //
+                    // An earlier version tried to detect a leading `?` and
+                    // expand class names, stepping two bytes at a time. That
+                    // made `(?abc)` expand to `a` and `c` only, because `b` sat
+                    // at an odd offset the loop never visited. A user writing
+                    // `(?abc)` expects three characters, not two.
+                    //
+                    // To include class members in a range, use the alternation
+                    // form `[?l?d]`, which is explicit about what it expands.
+                    let set: Vec<u8> = inner.to_vec();
                     if set.is_empty() {
                         return Err(MaskError::EmptyRange { position: open_pos });
                     }
@@ -667,9 +658,26 @@ mod tests {
     #[test]
     fn literal_range_expands() {
         let c = no_custom();
-        let m = Mask::parse("(?abc)?d", &c).unwrap();
+        // `(abc)` is the literal set {a, b, c}: three characters.
+        let m = Mask::parse("(abc)?d", &c).unwrap();
         assert_eq!(m.keyspace(&c).unwrap(), 30);
         assert_eq!(m.candidate_string(0, &c).unwrap(), "a0");
+        // The last position varies fastest, so the ten digits for `a` come
+        // before the ten digits for `b`.
+        assert_eq!(m.candidate_string(1, &c).unwrap(), "a1");
+        assert_eq!(m.candidate_string(10, &c).unwrap(), "b0");
+        assert_eq!(m.candidate_string(20, &c).unwrap(), "c0");
+    }
+
+    #[test]
+    fn question_mark_inside_a_range_is_a_literal_byte() {
+        // `?` has no special meaning inside `(...)`. This test pins that down
+        // because an earlier implementation stripped it, which silently changed
+        // the keyspace a user asked for.
+        let c = no_custom();
+        let m = Mask::parse("(a?c)", &c).unwrap();
+        assert_eq!(m.keyspace(&c).unwrap(), 3);
+        assert_eq!(m.candidate_string(1, &c).unwrap(), "?");
     }
 
     #[test]
@@ -682,9 +690,18 @@ mod tests {
     #[test]
     fn escaped_percent_is_literal() {
         let c = no_custom();
+        // `\%` yields a literal `%`, and the `d` that follows is an ordinary
+        // literal character. The backslash must not swallow the next token's
+        // meaning, so this mask has no expanding position at all.
         let m = Mask::parse("\\%d", &c).unwrap();
-        assert_eq!(m.keyspace(&c).unwrap(), 10);
-        assert_eq!(m.candidate_string(3, &c).unwrap(), "%3");
+        assert_eq!(m.keyspace(&c).unwrap(), 1);
+        assert_eq!(m.candidate_string(0, &c).unwrap(), "%d");
+
+        // A backslash before a real token keeps the token live, so `\%?d` is a
+        // literal `%` followed by one digit and has a keyspace of 10.
+        let m2 = Mask::parse("\\%?d", &c).unwrap();
+        assert_eq!(m2.keyspace(&c).unwrap(), 10);
+        assert_eq!(m2.candidate_string(3, &c).unwrap(), "%3");
     }
 
     #[test]
@@ -706,29 +723,4 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod debug_tests {
-    use super::*;
-    #[test]
-    fn show_tokens() {
-        let c = vec![None, None, None, None];
-        for spec in ["(?abc)?d", "\\%d"] {
-            let m = Mask::parse(spec, &c).unwrap();
-            println!("spec={spec:?} tokens={:?}", m.tokens);
-        }
-    }
-}
 
-#[cfg(test)]
-mod debug_tests2 {
-    use super::*;
-    #[test]
-    fn show_tokens2() {
-        let c = vec![None, None, None, None];
-        let m = Mask::parse("(?abc)?d", &c).unwrap();
-        let sets = m.charsets(&c).unwrap();
-        println!("range sets = {:?}", sets);
-        let m2 = Mask::parse("(?abcd)?d", &c).unwrap();
-        println!("(?abcd) sets = {:?}", m2.charsets(&c).unwrap());
-    }
-}

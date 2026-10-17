@@ -138,6 +138,180 @@ fn print_speed(stats: &ProgressStats, total: u64) {
     );
 }
 
+/// Outcome of a ranged brute force run, so the caller can report partial work.
+pub struct BruteForceOutcome {
+    /// Candidates that matched at least one hash.
+    pub results: Vec<CrackResult>,
+    /// Candidates actually tested.
+    pub tested: u64,
+    /// Total eligible keyspace across every mask length.
+    pub keyspace: u128,
+    /// True when `--limit` cut the run short.
+    pub limited: bool,
+}
+
+/// Formats a keyspace for humans.
+pub fn format_keyspace(n: u128) -> String {
+    if n >= 1_000_000_000_000 {
+        format!("{n} ({:.3} trillion)", n as f64 / 1e12)
+    } else if n >= 1_000_000_000 {
+        format!("{n} ({:.3} billion)", n as f64 / 1e9)
+    } else if n >= 1_000_000 {
+        format!("{n} ({:.3} million)", n as f64 / 1e6)
+    } else {
+        format!("{n}")
+    }
+}
+
+/// Runs a brute force attack with length expansion and a candidate limit.
+///
+/// `min_length` and `max_length` expand the mask across every length in the
+/// inclusive range; `None` for `max_length` means the mask's natural length.
+/// `limit` stops after that many candidates, which is what makes a large mask
+/// testable. The counter is claimed in chunks so the limit is never exceeded
+/// under parallel execution, which is the reason the previous single length
+/// implementation could not offer one at all.
+pub fn run_bruteforce_ranged(
+    hashes: &[HashEntry],
+    cracker: &dyn HashCracker,
+    mask_str: &str,
+    custom_charsets: &[Option<String>],
+    threads: usize,
+    quiet: bool,
+    low_mem: bool,
+    min_length: usize,
+    max_length: Option<usize>,
+    limit: Option<u64>,
+) -> Result<BruteForceOutcome, String> {
+    let custom: Vec<Option<Vec<u8>>> = custom_charsets
+        .iter()
+        .map(|o| o.as_ref().map(|s| s.as_bytes().to_vec()))
+        .collect();
+
+    let masks = crate::attack::mask::expand_lengths(mask_str, min_length, max_length, &custom)
+        .map_err(|e: crate::attack::mask::MaskError| e.to_string())?;
+
+    let total: u128 = masks.iter().fold(0u128, |acc, m| {
+        acc.saturating_add(m.keyspace(&custom).unwrap_or(0))
+    });
+
+    if !quiet {
+        eprintln!("[*] Mask: {}", mask_str);
+        eprintln!("[*] Keyspace: {}", format_keyspace(total));
+        if masks.len() > 1 {
+            let lens: Vec<usize> = masks.iter().map(|m| m.len()).collect();
+            eprintln!("[*] Lengths: {} to {}", lens[0], lens[lens.len() - 1]);
+        }
+    }
+
+    // An explicit limit bounds the work. Without one, a keyspace beyond u64
+    // cannot be indexed by the u64 chunk counter, so it is refused rather than
+    // wrapping to a small number and finishing early having covered nothing.
+    let ceiling: u128 = match limit {
+        Some(l) => std::cmp::min(total, l as u128),
+        None if total > u64::MAX as u128 => {
+            return Err(format!(
+                "Keyspace of {} exceeds the maximum of {} and no --limit was given. \
+                 Narrow the mask or pass --limit.",
+                format_keyspace(total),
+                u64::MAX
+            ));
+        }
+        None => total,
+    };
+    let limited = match limit {
+        Some(l) => (l as u128) < total,
+        None => false,
+    };
+
+    let ceiling_u64 = ceiling.min(u64::MAX as u128) as u64;
+    let pb = setup_progress(ceiling_u64, quiet);
+    #[cfg(feature = "progress-rich")]
+    let progress = ProgressStats::new(ceiling_u64);
+    #[cfg(not(feature = "progress-rich"))]
+    let _progress = ProgressStats::new(ceiling_u64);
+
+    let counter = AtomicU64::new(0);
+    let base_chunk = if low_mem { 10_000u64 } else { 100_000u64 };
+    let chunk_size = base_chunk.max(ceiling_u64 / (threads.max(1) as u64 * 100).max(1));
+
+    let masks_ref = &masks;
+    let custom_ref = &custom;
+
+    let results: Vec<CrackResult> = (0..threads.max(1)).into_par_iter()
+        .flat_map(|_| {
+            let mut local_results = Vec::new();
+            loop {
+                // Claim a chunk atomically. Clamping `end` to the ceiling is what
+                // keeps `--limit` exact under parallel execution.
+                let start = counter.fetch_add(chunk_size, Ordering::Relaxed);
+                if start >= ceiling_u64 {
+                    break;
+                }
+                let end = start.saturating_add(chunk_size).min(ceiling_u64);
+
+                for idx in start..end {
+                    let global = idx as u128;
+                    let mut acc = 0u128;
+                    let mut target: Option<(usize, u128)> = None;
+                    for (i, m) in masks_ref.iter().enumerate() {
+                        let size = m.keyspace(custom_ref).unwrap_or(0);
+                        if global < acc + size {
+                            target = Some((i, global - acc));
+                            break;
+                        }
+                        acc += size;
+                    }
+                    let Some((i, offset)) = target else { continue };
+                    let Ok(password) = masks_ref[i].candidate_string(offset, custom_ref) else {
+                        continue;
+                    };
+
+                    for entry in hashes.iter() {
+                        if cracker.verify(&password, entry) {
+                            local_results.push(CrackResult {
+                                original: entry.raw.clone(),
+                                hash_type: cracker.name().to_string(),
+                                password: Some(password.clone()),
+                            });
+                        }
+                    }
+                    if let Some(ref pb) = pb {
+                        pb.inc(1);
+                    }
+                }
+
+                #[cfg(feature = "progress-rich")]
+                {
+                    progress.record_tested(end - start);
+                    if start % (chunk_size * 100) == 0 {
+                        print_speed(&progress, ceiling_u64);
+                    }
+                }
+            }
+            local_results
+        })
+        .collect();
+
+    #[cfg(feature = "progress-rich")]
+    eprintln!();
+
+    if let Some(ref pb) = pb {
+        if limited {
+            pb.finish_with_message("Stopped at limit");
+        } else {
+            pb.finish_with_message("Done!");
+        }
+    }
+
+    Ok(BruteForceOutcome {
+        results,
+        tested: counter.load(Ordering::Relaxed).min(ceiling_u64),
+        keyspace: total,
+        limited,
+    })
+}
+
 /// Runs a brute-force attack: enumerates all passwords matching a mask and tests them.
 pub fn run_bruteforce(
     hashes: &[HashEntry],

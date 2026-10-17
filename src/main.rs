@@ -400,7 +400,7 @@ fn cmd_dictionary(detector: &Detector, hash_file: &str, wordlist: &str, rules: O
     emit_results(&results, args, &potfile);
 }
 
-fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[Option<String>], threads: usize, args: &Cli, _min_length: usize, _max_length: Option<usize>, _limit: Option<u64>, _session: Option<&str>) {
+fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[Option<String>], threads: usize, args: &Cli, min_length: usize, max_length: Option<usize>, limit: Option<u64>, _session: Option<&str>) {
     let potfile = Potfile::new(&args.potfile);
     let loaded = load_hashes(detector, hash_file);
 
@@ -419,11 +419,40 @@ fn cmd_bruteforce(detector: &Detector, hash_file: &str, mask: &str, charsets: &[
     eprintln!("[*] Mask      : {}", mask);
     eprintln!("[*] Threads   : {}", threads);
 
-    let results = pwdcrack::attack::brute::run_bruteforce(
-        &mut hashes, cracker.as_ref(), mask, charsets, threads, args.quiet, args.low_mem,
-    );
-
-    emit_results(&results, args, &potfile);
+    // `--min-length` and `--max-length` were declared but discarded before
+    // this call existed, so a user could not restrict the password length at
+    // all. `--limit` is now honoured exactly: the counter is claimed in chunks
+    // and clamped, so the number of candidates tested never exceeds the limit
+    // even with every thread claiming work concurrently.
+    match pwdcrack::attack::brute::run_bruteforce_ranged(
+        &hashes,
+        cracker.as_ref(),
+        mask,
+        charsets,
+        threads,
+        args.quiet,
+        args.low_mem,
+        min_length.max(1),
+        max_length,
+        limit,
+    ) {
+        Ok(outcome) => {
+            if !args.quiet {
+                eprintln!(
+                    "[*] Tested {} of {} candidates",
+                    outcome.tested,
+                    pwdcrack::attack::brute::format_keyspace(outcome.keyspace)
+                );
+                if outcome.limited {
+                    eprintln!("[*] Stopped early because --limit was reached");
+                }
+            }
+            emit_results(&outcome.results, args, &potfile);
+        }
+        Err(e) => {
+            eprintln!("[!] {}", e);
+        }
+    }
 }
 
 fn cmd_combinator(detector: &Detector, hash_file: &str, wl1: &str, wl2: &str, threads: usize, args: &Cli, _limit: Option<u64>, _session: Option<&str>) {

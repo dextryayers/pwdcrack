@@ -126,7 +126,10 @@ harness = false
 rayon = "1"
 crossbeam = "0.8"
 serde = { version = "1", features = ["derive"] }
-bincode = "2"
+# The `serde` feature is required for the session checkpoint format, which
+# serialises with `bincode::serde::encode_to_vec` and needs `serde::Serialize`
+# rather than bincode's own derive feature.
+bincode = { version = "2", features = ["serde"] }
 log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
