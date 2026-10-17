@@ -158,11 +158,10 @@ Twenty five crates live under `engines/`. Their real state:
 | `engine-web` | axum dashboard with REST routes and a WebSocket ticker. Attack control routes change state only; they do not start work. No authentication, binds all interfaces by default. |
 | `engine-android` | Termux detection, battery, thermal, storage access framework, notifications. |
 | `engine-bridge` | C ABI is complete and null checked. Python bindings use PyO3 0.23. Perl XS and Node N-API modules are present. |
-| `engine-cuda` | Device enumeration is implemented against the cudarc driver API. Kernels exist but the MD5 kernel does not compute a correct MD5 and is not launched. |
-| `engine-opencl` | Device enumeration works. `crack_md5` returns `NotEnabled` unconditionally and the kernels have the same MD5 defect as CUDA. |
-| `engine-vulkan` | Instance and device enumeration only. No compute pipeline. |
-| `engine-metal` | On non-Apple hosts it reports devices read from a file in `/tmp`. |
-| `engine-sycl` | Returns `None` with a log message. |
+| `engine-cuda` | Kernels and build pipeline written. `hash_core_shared.h` is verified on the host against 220 reference values and the MD5 kernel body is executed through a host shim, 132 checks. No `nvcc` and no CUDA device on the development machine, so nothing has been run on hardware and no throughput is claimed. See `docs/PHASE6_STATUS.md`. |
+| `engine-opencl` | MD5 kernel written and verified: accepted by the OpenCL front end in clang, 201 digest checks, 133 kernel body checks through a host shim. The launch path is not written and `crack_md5` returns a specific diagnosis rather than a generic error. No vendor ICD on this machine, so zero OpenCL devices and no performance claim. See `docs/PHASE7_STATUS.md`. |
+| `engine-vulkan` | **The only GPU path verified on real hardware.** WGSL MD5 kernel compiled to SPIR-V with naga, full compute pipeline in `kernel.rs`, and 121 candidates hashed on an AMD Radeon with every digest matching python hashlib. `run_device_check` reproduces this. See `docs/PHASE7_STATUS.md`. |
+| `engine-metal` | The two fabricated devices and the `/tmp` placeholder file are removed. Reports nothing on non-Apple hosts, which is the truth. No Metal code has been written because the platform is not available here. See `docs/PHASE7_STATUS.md`. |
 | `engine-tpu`, `engine-xpu`, `engine-dsp`, `engine-tensor`, `engine-warp` | Detect or simulate a device, then run scalar CPU loops. Availability reporting is not trustworthy. |
 | `engine-riscv`, `engine-zen`, `engine-embedded` | Architecture detection followed by scalar CPU loops. |
 | `engine-go`, `engine-julia`, `engine-wasm` | Dynamic loading stubs with no consumer. |
@@ -172,7 +171,29 @@ Twenty five crates live under `engines/`. Their real state:
 
 ---
 
-## 6. Build and Release
+## 6. Shared Kernel Core
+
+`engines/kernel-common/hash_core_shared.h` holds the MD5, MD4, SHA-1, SHA-256
+and SHA-512 compression functions and the Merkle-Damgard padding, once.
+
+It is plain C with no device specific code, which is what lets the same source be
+compiled three ways: as CUDA device code, as host C for verification, and, after
+a mechanical transform by `scripts/gen-opencl-core.py`, as OpenCL C. The Vulkan
+engine has its own WGSL kernel because WGSL has no preprocessor include, but it is
+a transcription of the same tables and is checked against the same reference
+digests.
+
+The reason for one copy is that both previous GPU kernels were wrong, differently,
+and neither error was a compile error. Two copies of verified crypto that are
+checked by different tests drift.
+
+`scripts/verify-kernels.sh` checks the header against 220 values from RFC 1321,
+RFC 1320, FIPS 180-4, python hashlib and openssl.
+`scripts/verify-opencl-kernels.sh` checks the generated OpenCL form against the
+same values. `scripts/verify-vulkan-kernels.sh` checks the WGSL kernel and then
+runs it on a device.
+
+## 7. Build and Release
 
 | Script | Purpose |
 |--------|---------|
@@ -182,6 +203,9 @@ Twenty five crates live under `engines/`. Their real state:
 | `scripts/package.sh` | Stages and tars a release tree. |
 | `scripts/test-all.sh` | Runs tests across the default and tier feature sets. |
 | `scripts/test-matrix.sh` | Full feature combination matrix. |
+| `scripts/verify-kernels.sh` | CUDA hash core and MD5 kernel body, on the host. Needs no GPU. |
+| `scripts/verify-opencl-kernels.sh` | OpenCL syntax, core arithmetic, and kernel body. Needs no device. |
+| `scripts/verify-vulkan-kernels.sh` | WGSL tables, SPIR-V emission, and execution on a real Vulkan device. |
 | `install.sh`, `uninstall.sh` | Install to `${PREFIX:-/usr/local}`. |
 | `docker/Dockerfile.{low,mid,high,android}` | Container build recipes per tier. |
 

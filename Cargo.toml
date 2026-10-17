@@ -13,7 +13,6 @@ members = [
     "engines/engine-android",
     "engines/engine-cuda",
     "engines/engine-opencl",
-    "engines/engine-sycl",
     "engines/engine-vulkan",
     "engines/engine-julia",
     "engines/engine-go",
@@ -90,7 +89,6 @@ engine-web  = ["dep:engine-web"]
 engine-android = ["dep:engine-android"]
 engine-cuda = ["dep:engine-cuda"]
 engine-opencl = ["dep:engine-opencl"]
-engine-sycl = ["dep:engine-sycl"]
 engine-vulkan = ["dep:engine-vulkan"]
 engine-julia = ["dep:engine-julia"]
 engine-go = ["dep:engine-go"]
@@ -194,7 +192,6 @@ engine-web  = { path = "engines/engine-web", optional = true }
 engine-android = { path = "engines/engine-android", optional = true }
 engine-cuda = { path = "engines/engine-cuda", optional = true }
 engine-opencl = { path = "engines/engine-opencl", optional = true }
-engine-sycl = { path = "engines/engine-sycl", optional = true }
 engine-vulkan = { path = "engines/engine-vulkan", optional = true }
 engine-julia = { path = "engines/engine-julia", optional = true }
 engine-go = { path = "engines/engine-go", optional = true }

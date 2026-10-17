@@ -1,4 +1,4 @@
-// NTLM hash — MD4 of UTF-16-LE encoded password
+// NTLM hash: MD4 of UTF-16-LE encoded password
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

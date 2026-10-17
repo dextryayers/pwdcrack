@@ -74,7 +74,8 @@ static uint32_t padded_len(uint32_t len) {
     if (len + 9u > PADDED_CAPACITY) return 0u;
     uint32_t total = len + 1u;
     while (total % 64u != 56u) total += 1u;
-    return total + 4u;
+    /* 8 bytes of length field, not 4. */
+    return total + 8u;
 }
 
 static void pad_md(uint32_t *pad, const uint32_t *candidates, uint32_t base, uint32_t len) {
@@ -87,6 +88,10 @@ static void pad_md(uint32_t *pad, const uint32_t *candidates, uint32_t base, uin
     pad[total + 1u] = (bit_len >> 8u) & 0xffu;
     pad[total + 2u] = (bit_len >> 16u) & 0xffu;
     pad[total + 3u] = (bit_len >> 24u) & 0xffu;
+    pad[total + 4u] = 0u;
+    pad[total + 5u] = 0u;
+    pad[total + 6u] = 0u;
+    pad[total + 7u] = 0u;
 }
 
 static void compress(const uint32_t *pad, uint32_t *state, uint32_t off) {
@@ -183,7 +188,9 @@ int main(void) {
          * the host will when it uploads. */
         memset(out, 0, sizeof out);
         memset(lengths, 0, sizeof lengths);
-        for (uint32_t k = 0; k < len; ++k) cands[k] = (uint32_t)((k * 7 + (len % 13)) & 0xff);
+        for (uint32_t k = 0; k < len && k < MAXC; ++k) {
+            cands[k] = (uint32_t)((k * 7 + (len % 13)) & 0xff);
+        }
         lengths[0] = len;
         wgsl_main(cands, lengths, out, 0, 1, MAXC);
 
@@ -192,7 +199,19 @@ int main(void) {
             snprintf(hex + k * 2, 3, "%02x", (unsigned)(out[k] & 0xffu));
         }
         ++checks;
-        if (strcmp(hex, want) != 0) {
+        if (len > MAX_CANDIDATE) {
+            /* Above the kernel's ceiling the digest must stay zero, matching the
+             * refusal to truncate. The corpus, built from python hashlib, has a
+             * real digest for every length, so it is only the kernel's contract
+             * that says zero. Checking that the two agree here is what catches a
+             * truncation regression. */
+            if (strcmp(hex, "00000000000000000000000000000000") != 0) {
+                ++failures;
+                if (failures <= 10) {
+                    printf("FAIL len %u should be zero above the ceiling, got %s\n", len, hex);
+                }
+            }
+        } else if (strcmp(hex, want) != 0) {
             ++failures;
             if (failures <= 10) {
                 printf("FAIL len %u\n  got  %s\n  want %s\n", len, hex, want);

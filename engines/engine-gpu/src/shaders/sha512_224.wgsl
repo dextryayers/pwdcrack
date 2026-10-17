@@ -1,4 +1,4 @@
-// SHA-512/224 — truncated SHA-512 with different IVs
+// SHA-512/224: truncated SHA-512 with different IVs
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

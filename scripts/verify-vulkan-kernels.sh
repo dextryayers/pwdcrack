@@ -82,9 +82,12 @@ if ! command -v vulkaninfo >/dev/null 2>&1; then
     exit 0
 fi
 
-if ! cargo run -q -p engine-vulkan --features vulkan --target-dir .build \
-        --bin device-check 2>"$TMP/dev.err"; then
+# The binary reads the same corpus from the environment so the expected digests
+# come from python hashlib rather than being embedded in the crate.
+if ! PWDCRACK_MD5_CORPUS="$CORPUS" \
+     cargo run -q -p engine-vulkan --features vulkan --target-dir .build \
+     --bin device-check 2>"$TMP/dev.err"; then
     echo "  device check failed:"
-    sed -n '1,20p' "$TMP/dev.err"
+    grep -v "^warning:" "$TMP/dev.err" | grep -v "^ " | grep -v "^$" | sed -n '1,20p'
     exit 1
 fi

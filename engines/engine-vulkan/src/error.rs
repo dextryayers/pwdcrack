@@ -50,6 +50,14 @@ pub enum VulkanError {
     #[error("Vulkan device is out of memory")]
     OutOfMemory,
 
+    /// The device ran the kernel but produced a wrong digest.
+    ///
+    /// Its own variant rather than a generic device error, because a digest
+    /// mismatch means the GPU executed something and the answer was wrong, which
+    /// is a different and more serious problem than a failure to run.
+    #[error("Vulkan kernel produced {count} wrong digest(s): {detail}")]
+    DigestMismatch { count: usize, detail: String },
+
     /// The device reported a problem during dispatch or readback.
     #[error("Vulkan device error: {0}")]
     DeviceError(String),

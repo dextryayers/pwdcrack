@@ -1494,16 +1494,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-sycl"
-version = "0.1.0"
-dependencies = [
- "hex",
- "log",
- "serde",
- "thiserror 2.0.19",
-]
-
-[[package]]
 name = "engine-tensor"
 version = "0.1.0"
 dependencies = [
@@ -1524,6 +1514,7 @@ dependencies = [
  "ash",
  "hex",
  "log",
+ "md-5",
  "naga 28.0.0",
  "serde",
  "thiserror 2.0.19",
@@ -3098,7 +3089,6 @@ dependencies = [
  "engine-power",
  "engine-riscv",
  "engine-simd",
- "engine-sycl",
  "engine-tensor",
  "engine-tpu",
  "engine-vulkan",

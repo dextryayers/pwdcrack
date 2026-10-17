@@ -1,4 +1,4 @@
-// Optimized SHA-512 — 80 steps, 1024-bit block, unrolled schedule
+// Optimized SHA-512: 80 steps, 1024-bit block, unrolled schedule
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

@@ -161,7 +161,11 @@ fn padded_len(len: u32) -> u32 {
         }
         total = total + 1u;
     }
-    return total + 4u;
+    // 56 is where the length field starts and the field is 8 bytes wide, so the
+    // padded message is total + 8 bytes. Advancing by 4 left a length that was not
+    // a multiple of 64, which is why every message of 56 bytes or more was
+    // compressed over a partial final block while every shorter one was correct.
+    return total + 8u;
 }
 
 /// Compresses the 64 byte block of g_pad starting at `off` into g_state.

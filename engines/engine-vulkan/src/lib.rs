@@ -4,13 +4,13 @@ pub mod cracker;
 pub mod error;
 pub mod kernel;
 
-#[cfg(feature = "vulkan")]
-pub use kernel::run_device_check;
-#[cfg(not(feature = "vulkan"))]
 pub use kernel::run_device_check;
 
+#[cfg(feature = "vulkan")]
+pub use kernel::measure_throughput;
+
+#[allow(unused_imports)]
 use log;
-use std::sync::Arc;
 
 #[cfg(feature = "vulkan")]
 use device::VulkanDeviceLimits;
@@ -24,16 +24,23 @@ use device::VulkanDeviceLimits;
 pub struct VulkanEngine {
     pub device_count: usize,
     pub devices: Vec<VulkanDevice>,
+    /// Kept alive for the engine's lifetime. Every later Vulkan call needs the
+    /// instance, so dropping it after enumeration would leave nothing to dispatch
+    /// with. Read by the compute path in `kernel`.
     #[cfg(feature = "vulkan")]
+    #[allow(dead_code)]
     pub(crate) entry: ash::Entry,
     #[cfg(feature = "vulkan")]
+    #[allow(dead_code)]
     pub(crate) instance: ash::Instance,
 }
 
 pub struct VulkanDevice {
     pub index: usize,
-    /// Opaque `VkPhysicalDevice` handle.
+    /// Opaque `VkPhysicalDevice` handle. Retained so a dispatch can be targeted at
+    /// this specific device rather than whichever one happens to be first.
     #[cfg(feature = "vulkan")]
+    #[allow(dead_code)]
     pub(crate) handle: ash::vk::PhysicalDevice,
     pub name: String,
     pub vram_mb: u64,

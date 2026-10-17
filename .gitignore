@@ -1,6 +1,11 @@
 # Rust
 target/
 
+# Alternate cargo target directory used for release and bench builds, because
+# target/release is root owned on the development machine. This is build output
+# and must never be committed; an earlier commit tracked 600 files from it.
+.build/
+
 # Cargo.lock is intentionally committed.
 # pwdcrack ships a binary, so every build must resolve to the exact same
 # dependency versions. An untracked lock file makes releases unreproducible.

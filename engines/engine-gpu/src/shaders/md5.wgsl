@@ -1,4 +1,4 @@
-// MD5 compute shader — 64 passwords per workgroup
+// MD5 compute shader: 64 passwords per workgroup
 // Each invocation verifies one password against the target hash
 // Fully unrolled rounds for constant-time execution
 

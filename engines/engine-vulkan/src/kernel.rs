@@ -27,7 +27,7 @@
 //! any invocation reading the wrong candidate fails at exactly one length.
 
 use crate::error::VulkanError;
-use crate::{device, shader};
+use crate::shader;
 
 /// Bytes per candidate in the input buffer.
 pub const STRIDE: u32 = 128;
@@ -35,16 +35,15 @@ pub const STRIDE: u32 = 128;
 /// Digest width in bytes.
 pub const DIGEST_BYTES: u32 = 16;
 
+/// Longest candidate the kernel will digest, in bytes.
+///
+/// A candidate longer than this is left with a zero digest rather than
+/// truncated. Matches MAX_CANDIDATE in shaders/md5.wgsl, and the two are asserted
+/// to agree by the host verification.
+pub const MAX_CANDIDATE: u32 = 119;
+
 /// Work group size, matching `@workgroup_size(64)` in the shader.
 const WORKGROUP_SIZE: u32 = 64;
-
-/// Upper bound on candidates hashed in one dispatch.
-///
-/// Chosen from the device's `max_compute_work_group_count` rather than fixed, so
-/// a device with a lower dispatch limit still gets a valid configuration. The
-/// buffer for the results must fit in `max_storage_buffer_range`, so the count is
-/// clamped by that too.
-const MAX_CANDIDATES: u32 = 16_384;
 
 /// Result of running the kernel, for the caller to assert against.
 pub struct DeviceRunSummary {
@@ -125,7 +124,8 @@ pub fn run_md5(
         let qp = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(qf_idx)
             .queue_priorities(&[1.0]);
-        let dev_ci = vk::DeviceCreateInfo::default().queue_create_infos(&[qp]);
+        let queue_infos = [qp];
+        let dev_ci = vk::DeviceCreateInfo::default().queue_create_infos(&queue_infos);
         let device = instance
             .create_device(physical, &dev_ci, None)
             .map_err(|e| VulkanError::DeviceError(format!("device: {e}")))?;
@@ -146,7 +146,7 @@ pub fn run_md5(
             staging.extend_from_slice(&fixed);
         }
 
-        let mut lengths: Vec<u32> = candidates.iter().map(|c| c.len() as u32).collect();
+        let lengths: Vec<u32> = candidates.iter().map(|c| c.len() as u32).collect();
 
         // Sizes in bytes. The candidate buffer is u32 per byte because the shader
         // indexes it as array<u32>.
@@ -166,9 +166,16 @@ pub fn run_md5(
 
         let cand_buf = mk_buffer(cand_bytes, vk::BufferUsageFlags::STORAGE_BUFFER)?;
         let len_buf = mk_buffer(len_bytes, vk::BufferUsageFlags::STORAGE_BUFFER)?;
-        let out_buf = mk_buffer(out_bytes(out_words), vk::BufferUsageFlags::STORAGE_BUFFER)?;
+        // Host visible from the start, so the result can be read directly with no
+        // staging copy. The previous version copied out_buf into a separate
+        // TRANSFER_DST buffer, but out_buf had no TRANSFER_SRC usage bit, so the
+        // copy was invalid and the staging buffer stayed all zeros, which looked
+        // exactly like a kernel that hashed nothing.
+        let out_buf = mk_buffer(
+            out_bytes(out_words),
+            vk::BufferUsageFlags::STORAGE_BUFFER,
+        )?;
         let params_buf = mk_buffer(16, vk::BufferUsageFlags::UNIFORM_BUFFER)?;
-        let read_buf = mk_buffer(out_bytes(out_words), vk::BufferUsageFlags::TRANSFER_DST)?;
 
         // Host visible, host coherent memory for the readback. A discrete GPU
         // will not have DEVICE_LOCAL here, which is why the copy goes through a
@@ -198,13 +205,12 @@ pub fn run_md5(
         let mem_len = alloc(len_bytes)?;
         let mem_out = alloc(out_bytes(out_words))?;
         let mem_params = alloc(16)?;
-        let mem_read = alloc(out_bytes(out_words))?;
 
         device.bind_buffer_memory(cand_buf, mem_cand, 0).map_err(|e| VulkanError::DeviceError(format!("bind: {e}")))?;
         device.bind_buffer_memory(len_buf, mem_len, 0).map_err(|e| VulkanError::DeviceError(format!("bind: {e}")))?;
         device.bind_buffer_memory(out_buf, mem_out, 0).map_err(|e| VulkanError::DeviceError(format!("bind: {e}")))?;
         device.bind_buffer_memory(params_buf, mem_params, 0).map_err(|e| VulkanError::DeviceError(format!("bind: {e}")))?;
-        device.bind_buffer_memory(read_buf, mem_read, 0).map_err(|e| VulkanError::DeviceError(format!("bind: {e}")))?;
+
 
         // ash 0.38's map_memory returns (), so the pointer is taken from the
         // memory handle. Memory is host visible and host coherent, so no flush or
@@ -212,14 +218,14 @@ pub fn run_md5(
         let map = |mem: vk::DeviceMemory, size: vk::DeviceSize| -> Result<*mut u8, VulkanError> {
             device
                 .map_memory(mem, 0, size, vk::MemoryMapFlags::empty())
-                .map_err(|e| VulkanError::DeviceError(format!("map: {e}")))?;
-            Ok(mem)
+                .map(|ptr| ptr as *mut u8)
+                .map_err(|e| VulkanError::DeviceError(format!("map: {e}")))
         };
         let cand_ptr = map(mem_cand, cand_bytes)?;
         let len_ptr = map(mem_len, len_bytes)?;
         let out_ptr = map(mem_out, out_bytes(out_words))?;
         let params_ptr = map(mem_params, 16)?;
-        let read_ptr = map(mem_read, out_bytes(out_words))?;
+
 
         std::ptr::copy_nonoverlapping(
             staging.as_ptr() as *const u8,
@@ -231,6 +237,7 @@ pub fn run_md5(
             len_ptr as *mut u8,
             lengths.len() * 4,
         );
+        let _ = len_ptr;
 
         // Uniform: count, stride, two padding words.
         let params: [u32; 4] = [n, STRIDE, 0, 0];
@@ -276,17 +283,20 @@ pub fn run_md5(
             .stage(vk::ShaderStageFlags::COMPUTE)
             .module(module)
             .name(c"main");
+        let set_layouts = [dsl];
+        let no_push_constants: [vk::PushConstantRange; 0] = [];
         let layout_ci = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&[dsl])
-            .push_constant_ranges(&[]);
+            .set_layouts(&set_layouts)
+            .push_constant_ranges(&no_push_constants);
         let layout = device
             .create_pipeline_layout(&layout_ci, None)
             .map_err(|e| VulkanError::PipelineFailed(format!("layout: {e}")))?;
         let pipe_ci = vk::ComputePipelineCreateInfo::default()
             .stage(stage)
             .layout(layout);
+        let pipeline_cis = [pipe_ci];
         let pipeline = device
-            .create_compute_pipelines(vk::PipelineCache::null(), &[pipe_ci], None)
+            .create_compute_pipelines(vk::PipelineCache::null(), &pipeline_cis, None)
             .map_err(|e| VulkanError::PipelineFailed(format!("pipeline: {e:?}")))?
             .remove(0);
 
@@ -297,15 +307,17 @@ pub fn run_md5(
         let uniform_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)];
+        let all_pool_sizes = [pool_sizes[0], uniform_sizes[0]];
         let pool_ci = vk::DescriptorPoolCreateInfo::default()
             .max_sets(1)
-            .pool_sizes(&[pool_sizes[0], uniform_sizes[0]]);
+            .pool_sizes(&all_pool_sizes);
         let pool = device
             .create_descriptor_pool(&pool_ci, None)
             .map_err(|e| VulkanError::DeviceError(format!("pool: {e}")))?;
+        let set_layout_refs = [dsl];
         let set_ci = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(pool)
-            .set_layouts(&[dsl]);
+            .set_layouts(&set_layout_refs);
         let set = device
             .allocate_descriptor_sets(&set_ci)
             .map_err(|e| VulkanError::DeviceError(format!("alloc set: {e}")))?[0];
@@ -369,18 +381,12 @@ pub fn run_md5(
         let groups = (n + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
         device.cmd_dispatch(cb, groups, 1, 1);
 
-        // Copy the results out to host visible memory.
-        let region = vk::BufferCopy::default()
-            .src_offset(0)
-            .dst_offset(0)
-            .size(out_bytes(out_words));
-        device.cmd_copy_buffer(cb, out_buf, read_buf, &[region]);
-
         device
             .end_command_buffer(cb)
             .map_err(|e| VulkanError::DeviceError(format!("end: {e}")))?;
 
-        let submit = vk::SubmitInfo::default().command_buffers(&[cb]);
+        let command_buffers = [cb];
+        let submit = vk::SubmitInfo::default().command_buffers(&command_buffers);
         let fence_ci = vk::FenceCreateInfo::default();
         let fence = device
             .create_fence(&fence_ci, None)
@@ -388,14 +394,15 @@ pub fn run_md5(
         device
             .queue_submit(queue, &[submit], fence)
             .map_err(|e| VulkanError::DeviceError(format!("submit: {e}")))?;
+        let fences = [fence];
         device
-            .wait_for_fences(&[fence], true, u64::MAX)
+            .wait_for_fences(&fences, true, u64::MAX)
             .map_err(|e| VulkanError::DeviceError(format!("wait: {e}")))?;
 
-        // Read back through the mapped host visible buffer, so no extra copy is
-        // needed.
+        // Read straight from the mapped output buffer. Memory is host coherent,
+        // so no invalidate is needed before reading what the GPU just wrote.
         let out_slice =
-            std::slice::from_raw_parts(read_ptr as *const u32, out_words as usize);
+            std::slice::from_raw_parts(out_ptr as *const u32, out_words as usize);
 
         let mut failures = Vec::new();
         let mut checks = 0;
@@ -456,15 +463,21 @@ pub fn run_device_check() -> Result<String, VulkanError> {
     for line in text.lines() {
         let Some((len_s, hex)) = line.split_once(' ') else { continue };
         let Ok(len) = len_s.parse::<usize>() else { continue };
-        if len > MAX_CANDIDATES as usize {
+        // Skip lengths the kernel refuses, except the first one above the
+        // ceiling which is added separately below as the truncation check.
+        if len > MAX_CANDIDATE as usize {
             continue;
         }
         // Same byte pattern the host verification uses.
         candidates.push((0..len).map(|k| ((k * 7 + (len % 13)) & 0xff) as u8).collect::<Vec<u8>>());
         expected.push(Some(hex.to_string()));
     }
-    // One over-length candidate, which must yield no digest.
-    candidates.push(vec![b'x'; MAX_CANDIDATES as usize]);
+    // One candidate exactly at the buffer stride but above the kernel's digest
+    // ceiling. It must produce no digest rather than a digest of a truncated
+    // string. STRIDE is the candidate buffer width, not the batch size; using
+    // the batch limit here previously built a candidate far larger than the
+    // buffer and the run rejected it before reaching the GPU.
+    candidates.push(vec![b'x'; STRIDE as usize]);
     expected.push(None);
 
     let summary = run_md5(&candidates, &expected)?;
@@ -481,10 +494,21 @@ pub fn run_device_check() -> Result<String, VulkanError> {
             out.push_str(&format!("\n  {f}"));
         }
     }
+    // The text carries the detail; the error carries the verdict, so a CI step
+    // that only checks the exit code still fails on a mismatch.
     if summary.failures.is_empty() {
         Ok(out)
     } else {
-        Ok(out)
+        Err(VulkanError::DigestMismatch {
+            count: summary.failures.len(),
+            detail: summary
+                .failures
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; "),
+        })
     }
 }
 
@@ -492,4 +516,57 @@ pub fn run_device_check() -> Result<String, VulkanError> {
 #[cfg(not(feature = "vulkan"))]
 pub fn run_device_check() -> Result<String, VulkanError> {
     Err(VulkanError::FeatureDisabled)
+}
+/// Measures sustained GPU MD5 throughput against the CPU reference.
+///
+/// Returns (gpu hashes per second, cpu hashes per second, ratio). The CPU figure
+/// is measured in the same process on the same machine so the comparison is
+/// between two devices rather than between this GPU and a number from elsewhere.
+///
+/// A ratio below 1 is not a failure. A password cracker with a short wordlist on
+/// an integrated GPU can legitimately lose to the CPU, because the dispatch and
+/// the buffer setup cost more than the hashing at small batch sizes. The number is
+/// reported so that decision can be made with data instead of by assuming a GPU
+/// is always faster.
+#[cfg(feature = "vulkan")]
+pub fn measure_throughput(batch: u32, rounds: u32) -> Result<(f64, f64, f64), VulkanError> {
+    use std::time::Instant;
+
+    let n = batch.min(256);
+    // Password shaped input, 8 to 16 bytes, which is what the hash is usually
+    // asked about.
+    let candidates: Vec<Vec<u8>> = (0..n)
+        .map(|i| format!("Passw0rd-{i:06}").into_bytes())
+        .collect();
+    let expected: Vec<Option<String>> = vec![None; n as usize];
+
+    // Warm up: the first dispatch pays for pipeline compilation and any lazy
+    // device allocation.
+    let _ = run_md5(&candidates, &expected)?;
+
+    let start = Instant::now();
+    for _ in 0..rounds {
+        let _ = run_md5(&candidates, &expected)?;
+    }
+    let gpu_secs = start.elapsed().as_secs_f64();
+
+    // CPU reference over the same inputs, single threaded, matching what the CPU
+    // engine actually does per candidate.
+    let start = Instant::now();
+    let mut acc = 0u64;
+    for _ in 0..rounds {
+        for c in &candidates {
+            use md5::{Digest, Md5};
+            let mut h = Md5::new();
+            h.update(c);
+            acc ^= u64::from(h.finalize()[0]);
+        }
+    }
+    let cpu_secs = start.elapsed().as_secs_f64();
+    std::hint::black_box(acc);
+
+    let total = n as f64 * rounds as f64;
+    let gpu = total / gpu_secs.max(f64::MIN_POSITIVE);
+    let cpu = total / cpu_secs.max(f64::MIN_POSITIVE);
+    Ok((gpu, cpu, gpu / cpu))
 }

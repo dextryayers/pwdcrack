@@ -1,4 +1,4 @@
-// SHA3-256 (Keccak) — 1088-bit rate, 512-bit capacity, 24 rounds
+// SHA3-256 (Keccak): 1088-bit rate, 512-bit capacity, 24 rounds
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

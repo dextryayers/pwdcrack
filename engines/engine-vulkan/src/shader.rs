@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn byte_swapped_magic_is_named_as_such() {
-        let err = validate_spirv(&[0x0302_2307u]).unwrap_err();
+        let err = validate_spirv(&[0x0302_2307]).unwrap_err();
         assert!(
             err.to_string().contains("byte swapped"),
             "expected a byte swapped diagnosis, got: {err}"

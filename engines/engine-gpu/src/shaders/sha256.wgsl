@@ -1,4 +1,4 @@
-// SHA-256 compute shader — 64 passwords per workgroup
+// SHA-256 compute shader: 64 passwords per workgroup
 
 struct Candidate {
     password: array<u32, 16>,

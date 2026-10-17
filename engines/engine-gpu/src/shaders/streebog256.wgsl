@@ -1,4 +1,4 @@
-// Streebog (GOST R 34.11-2012) 256-bit hash — 64-byte block, 12 rounds, LPS
+// Streebog (GOST R 34.11-2012) 256-bit hash: 64-byte block, 12 rounds, LPS
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

@@ -102,7 +102,7 @@ pub fn probe() -> Result<VulkanEngine, VulkanError> {
         let mem = unsafe { instance.get_physical_device_memory_properties(*handle) };
         let heap_count = mem.memory_heap_count as usize;
         let vram_mb = if heap_count > 0 {
-            (unsafe { mem.memory_heaps[0].size }) / 1_048_576
+            mem.memory_heaps[0].size / 1_048_576
         } else {
             0
         };

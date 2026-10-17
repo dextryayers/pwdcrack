@@ -7,6 +7,7 @@ description = "Direct Vulkan compute engine: SPIR-V kernels for hash cracking"
 [dependencies]
 log = "0.4"
 hex = "0.4"
+md-5 = "0.10"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 ash = { version = "0.38", optional = true }

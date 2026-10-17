@@ -1,4 +1,4 @@
-// MD4 compute shader — used for NTLM (with UTF16-LE encoding of password)
+// MD4 compute shader: used for NTLM (with UTF16-LE encoding of password)
 struct Candidate { data: array<u32, 16> }
 struct HashResult { matched: u32 }
 

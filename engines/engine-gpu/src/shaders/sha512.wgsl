@@ -1,4 +1,4 @@
-// SHA-512 compute shader — 64 passwords per workgroup
+// SHA-512 compute shader: 64 passwords per workgroup
 struct Candidate { data: array<u32, 16> }
 struct HashResult { matched: u32 }
 

@@ -1,4 +1,4 @@
-// bcrypt compute shader — cost configurable via uniform
+// bcrypt compute shader: cost configurable via uniform
 // Blowfish-based with 4KB S-boxes (1024 entries × 4 bytes)
 
 struct Candidate {
@@ -284,7 +284,7 @@ fn eksblowfish_setup(password: array<u32, 16>, pw_len: u32, salt: array<u32, 4>,
     return (P, S);
 }
 
-@compute @workgroup_size(4)  // bcrypt is heavy — small workgroups
+@compute @workgroup_size(4)  // bcrypt is heavy: small workgroups
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let idx = id.x;
     if idx >= count { return; }

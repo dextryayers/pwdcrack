@@ -1,4 +1,4 @@
-// bcrypt init / Eksblowfish setup — P-array + S-box initialization
+// bcrypt init / Eksblowfish setup: P-array + S-box initialization
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

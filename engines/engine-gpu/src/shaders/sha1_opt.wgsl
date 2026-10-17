@@ -1,4 +1,4 @@
-// Optimized SHA-1 — 80 steps unrolled with constant-time selection
+// Optimized SHA-1: 80 steps unrolled with constant-time selection
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
