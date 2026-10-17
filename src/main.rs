@@ -1,6 +1,5 @@
 mod cli;
 
-use clap::Parser;
 use cli::{Cli, Tier, args::{Commands, OutputFormat}};
 use pwdcrack::hash::{HashCracker, HashEntry, HashType};
 use pwdcrack::hash::detector::Detector;
@@ -71,7 +70,7 @@ fn init_verbose_engines(_args: &Cli) {
 
 fn main() {
     env_logger::init();
-    let args = Cli::parse();
+    let args = Cli::parse_args();
     let detector = Detector::new();
     let threads = args.threads.unwrap_or_else(|| {
         std::thread::available_parallelism()

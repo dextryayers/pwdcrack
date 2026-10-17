@@ -3,7 +3,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(
     name = "pwdcrack",
-    about = "Universal password hash recovery toolkit — 350+ hash types, CPU/GPU, low-end to HPC",
+    display_name = "pwdcrack",
+    version = "1.2.0",
+    author = "Hanif Abdur - AniipID",
+    about = "Universal password hash recovery toolkit: 350+ hash types, CPU/GPU acceleration, low-end to HPC",
     long_about = "\
 Professional-grade hash recovery suite supporting 350+ hash types across all major
 algorithm families: MDx, SHA-1/2/3, BLAKE2/3, RIPEMD, Whirlpool, Streebog,
@@ -12,104 +15,129 @@ GOST, Tiger, JH, Skein, Shabal, Snefru, SM3, HAS-160, Argon2, bcrypt, and more.
 Cracking engines: dictionary (rule-based mangling), brute-force mask, combinator,
 PRINCE, toggle-case, substitution, and hybrid attacks with auto-tier performance.
 
-Optimized for all hardware tiers — from embedded/low-end devices to HPC clusters
+Optimized for all hardware tiers, from embedded/low-end devices to HPC clusters,
 with auto-detected SIMD (SSE2/AVX2/AVX-512/NEON/SVE) and GPU acceleration.",
-    version = "1.2.0",
-    author = "Hanif Abdur - AniipID",
-    display_name = "pwdcrack",
+    after_help = "\
+Examples:
+  pwdcrack dictionary hashes.txt rockyou.txt -r best64.rule
+  pwdcrack brute-force hashes.txt ?u?l?l?l?l?d?d
+  pwdcrack identify hashes.txt -v
+  pwdcrack show -t
+
+Run 'pwdcrack <COMMAND> --help' for the options of a specific command.
+Copyright (c) 2026 Hanif Abdur - AniipID",
     help_template = "\
 {name} v{version}
 
 {about-with-newline}
+{usage-heading} {usage}
 
-USAGE: pwdcrack <COMMAND> [OPTIONS]
-
-{all-args}
-
-SUBCOMMANDS:
-{subcommands}
-
-Run 'pwdcrack <SUBCOMMAND> --help' for more details.
-Copyright (c) 2026 Hanif Abdur - AniipID",
+{all-args}{after-help}",
 )]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    #[arg(short = 'T', long, global = true, help = "Number of threads (default: all available)")]
+    // ---- Performance ----
+
+    #[arg(short = 'T', long, global = true, help_heading = "Performance", help = "Number of threads (default: all available)")]
     pub threads: Option<usize>,
 
-    #[arg(short = 'p', long, global = true, default_value = "pwdcrack.pot", help = "Potfile path for save/load cracked hashes")]
-    pub potfile: String,
-
-    #[arg(short = 'q', long, global = true, help = "Quiet mode — no progress bar, minimal output")]
-    pub quiet: bool,
-
-    #[arg(long, global = true, default_value = "0", help = "Power budget in watts (0 = unlimited). Requires engine-power feature")]
-    pub power_budget: f64,
-
-    #[arg(long, global = true, help = "Android battery-safe mode (auto-pause on low battery / thermal)")]
-    pub battery_safe: bool,
-
-    #[arg(short = 'o', long, global = true, help = "Save cracked results to a file instead of stdout")]
-    pub output: Option<String>,
-
-    #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Text, help = "Output format: text, json, csv")]
-    pub format: OutputFormat,
-
-    #[arg(long, global = true, help = "Skip hashes already present in potfile")]
-    pub skip_cracked: bool,
-
-    #[arg(long, global = true, help = "Enable GPU engine (requires engine-gpu feature)")]
-    pub gpu: bool,
-
-    #[arg(long, global = true, help = "Enable FPGA acceleration (requires engine-fpga feature)")]
-    pub fpga: bool,
-
-    #[arg(long, global = true, help = "Enable distributed mode (requires engine-distributed feature)")]
-    pub distributed: bool,
-
-    #[arg(long, global = true, help = "Enable Apple Metal acceleration (requires engine-metal feature)")]
-    pub metal: bool,
-
-    #[arg(long, global = true, help = "Enable Google TPU acceleration (requires engine-tpu feature)")]
-    pub tpu: bool,
-
-    #[arg(long, global = true, help = "Enable hybrid CPU+GPU+FPGA scheduler (requires engine-hybrid feature)")]
-    pub hybrid: bool,
-
-    #[arg(long, global = true, help = "Enable tensor/ONNX acceleration (requires engine-tensor feature)")]
-    pub tensor: bool,
-
-    #[arg(long, global = true, help = "Enable Intel XPU/oneAPI (requires engine-xpu feature)")]
-    pub xpu: bool,
-
-    #[arg(long = "disable-simd", global = true, help = "Disable SIMD auto-detection")]
-    pub disable_simd: bool,
-
-    #[arg(short = 'r', long, global = true, help = "Global rules file for all applicable attacks")]
-    pub rules_file: Option<String>,
-
-    #[arg(long, global = true, help = "Low-memory mode — reduce buffer sizes for low-end/embedded devices")]
-    pub low_mem: bool,
-
-    #[arg(long, global = true, value_enum, help = "Force hardware tier: low, mid, high, auto")]
+    #[arg(long, global = true, value_enum, help_heading = "Performance", help = "Force a hardware tier instead of auto-detection")]
     pub tier: Option<Tier>,
 
-    #[arg(long, global = true, help = "Disable colored output")]
-    pub no_color: bool,
+    #[arg(long, global = true, help_heading = "Performance", help = "Low-memory mode: reduce buffer sizes for low-end/embedded devices")]
+    pub low_mem: bool,
 
-    #[arg(long, global = true, help = "Batch mode — suppress interactive prompts")]
-    pub batch: bool,
+    #[arg(long = "disable-simd", global = true, help_heading = "Performance", help = "Disable SIMD auto-detection")]
+    pub disable_simd: bool,
 
-    #[arg(long, global = true, help = "Resume from last session checkpoint")]
-    pub resume: bool,
+    // ---- Engines ----
 
-    #[arg(long, global = true, help = "Enable hardware monitoring (temp, power, utilization)")]
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable GPU acceleration (requires engine-gpu feature)")]
+    pub gpu: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable FPGA acceleration (requires engine-fpga feature)")]
+    pub fpga: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable Apple Metal acceleration (requires engine-metal feature)")]
+    pub metal: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable Google TPU acceleration (requires engine-tpu feature)")]
+    pub tpu: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable hybrid CPU+GPU+FPGA scheduler (requires engine-hybrid feature)")]
+    pub hybrid: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable tensor/ONNX acceleration (requires engine-tensor feature)")]
+    pub tensor: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable Intel XPU/oneAPI (requires engine-xpu feature)")]
+    pub xpu: bool,
+
+    #[arg(long, global = true, help_heading = "Engines", help = "Enable distributed mode (requires engine-distributed feature)")]
+    pub distributed: bool,
+
+    // ---- Power & monitoring ----
+
+    #[arg(long, global = true, default_value = "0", help_heading = "Power & monitoring", help = "Power budget in watts (0 = unlimited; requires engine-power feature)")]
+    pub power_budget: f64,
+
+    #[arg(long, global = true, help_heading = "Power & monitoring", help = "Android battery-safe mode (auto-pause on low battery / thermal)")]
+    pub battery_safe: bool,
+
+    #[arg(long, global = true, help_heading = "Power & monitoring", help = "Enable hardware monitoring (temperature, power, utilization)")]
     pub hwmon: bool,
 
-    #[arg(long, global = true, help = "Enable verbose logging")]
+    // ---- Output ----
+
+    #[arg(short = 'o', long, global = true, help_heading = "Output", help = "Save cracked results to a file instead of stdout")]
+    pub output: Option<String>,
+
+    #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Text, help_heading = "Output", help = "Output format for cracked results")]
+    pub format: OutputFormat,
+
+    #[arg(short = 'q', long, global = true, help_heading = "Output", help = "Quiet mode: no progress bar, minimal output")]
+    pub quiet: bool,
+
+    #[arg(long, global = true, help_heading = "Output", help = "Disable colored output")]
+    pub no_color: bool,
+
+    #[arg(long, global = true, help_heading = "Output", help = "Enable verbose logging")]
     pub verbose: bool,
+
+    // ---- Session & state ----
+
+    #[arg(short = 'p', long, global = true, default_value = "pwdcrack.pot", help_heading = "Session & state", help = "Potfile path for save/load cracked hashes")]
+    pub potfile: String,
+
+    #[arg(short = 'r', long, global = true, help_heading = "Session & state", help = "Global rules file for all applicable attacks")]
+    pub rules_file: Option<String>,
+
+    #[arg(long, global = true, help_heading = "Session & state", help = "Skip hashes that are already present in the potfile")]
+    pub skip_cracked: bool,
+
+    #[arg(long, global = true, help_heading = "Session & state", help = "Batch mode: suppress interactive prompts")]
+    pub batch: bool,
+
+    #[arg(long, global = true, help_heading = "Session & state", help = "Resume from last session checkpoint")]
+    pub resume: bool,
+}
+
+impl Cli {
+    /// Parse command-line arguments.
+    ///
+    /// Same behavior as `Cli::parse()`, with `-h/--help` and `-V/--version`
+    /// shown under the "General" help group instead of the default section.
+    pub fn parse_args() -> Self {
+        let mut cmd = <Self as clap::CommandFactory>::command();
+        cmd.build();
+        let cmd = cmd
+            .mut_arg("help", |a| a.help_heading("General"))
+            .mut_arg("version", |a| a.help_heading("General"));
+        <Self as clap::FromArgMatches>::from_arg_matches(&cmd.get_matches())
+            .unwrap_or_else(|err| err.exit())
+    }
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,18 +157,18 @@ pub enum Tier {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Dictionary attack — wordlist + rule-based mangling
+    /// Dictionary attack: wordlist + rule-based mangling
     ///
     /// Reads a wordlist file line by line, applies optional hashcat/John
     /// rules to mangle each word, and compares against target hashes.
     ///
     /// Example: pwdcrack dictionary hashes.txt rockyou.txt -r rules.rule
     Dictionary {
-        /// Hash file — one hash per line, or user:hash format (e.g. admin:5d41402abc...)
+        /// Hash file (one hash per line, or user:hash format, e.g. admin:5d41402abc...)
         hash_file: String,
-        /// Wordlist file — one candidate per line
+        /// Wordlist file (one candidate per line)
         wordlist: String,
-        /// Rules file — John/Hashcat-compatible rule file
+        /// Rules file (John/Hashcat-compatible syntax)
         #[arg(short = 'r', long)]
         rules: Option<String>,
         /// Only run this many candidates (for testing)
@@ -151,7 +179,7 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Brute-force / Mask attack — enumerate mask patterns
+    /// Brute-force / Mask attack: enumerate mask patterns
     ///
     /// Mask characters:
     ///   ?l lowercase     ?u uppercase     ?d digit
@@ -193,7 +221,7 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Combinator attack — concatenate pairs from two wordlists
+    /// Combinator attack: concatenate pairs from two wordlists
     ///
     /// For every word A from wordlist1 and word B from wordlist2,
     /// hashes A+B and compares against targets. Produces N·M candidates.
@@ -214,7 +242,7 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Identify hash types — scan a file and classify hashes
+    /// Identify hash types: scan a file and classify hashes
     ///
     /// Reads a hash file and detects each hash type based on format/length.
     /// Shows count per type with optional per-hash details.
@@ -226,7 +254,7 @@ pub enum Commands {
         verbose: bool,
     },
 
-    /// Hash a password — compute a hash for testing
+    /// Hash a password: compute a hash for testing
     ///
     /// Computes a hash for the given password using the specified algorithm.
     /// Useful for preparing test hashes or verifying format compatibility.
@@ -264,7 +292,7 @@ pub enum Commands {
         filter: Option<String>,
     },
 
-    /// Dry-run mask — preview mask candidates
+    /// Dry-run mask: preview mask candidates
     ///
     /// Generates sample candidates for a mask pattern without actually
     /// cracking. Useful for testing mask syntax and counting keyspace.
@@ -286,7 +314,7 @@ pub enum Commands {
         offset: u64,
     },
 
-    /// Benchmark — measure hash throughput
+    /// Benchmark: measure hash throughput
     ///
     /// Runs a benchmark for one or all hash types and reports
     /// hashes-per-second. Useful for comparing hardware performance.
@@ -325,7 +353,7 @@ pub enum Commands {
         hash: String,
     },
 
-    /// PRINCE attack — probability-based word generation
+    /// PRINCE attack: probability-based word generation
     ///
     /// Uses the PRINCE algorithm to generate password candidates
     /// from a wordlist based on probability. Efficient for targeted
@@ -351,7 +379,7 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Toggle-case attack — case variants of dictionary words
+    /// Toggle-case attack: case variants of dictionary words
     ///
     /// For each word in the list, tries all case permutations
     /// at toggle points. Effective against simple capitalization.
@@ -370,7 +398,7 @@ pub enum Commands {
         limit: Option<u64>,
     },
 
-    /// Substitution attack — leet/character substitution
+    /// Substitution attack: leet/character substitution
     ///
     /// Applies common character substitutions to dictionary words
     /// (e.g. a→@, e→3, o→0, s→$). Multiple substitution sets available.
@@ -389,7 +417,7 @@ pub enum Commands {
         limit: Option<u64>,
     },
 
-    /// Apply rules to a wordlist — dry-run rule engine
+    /// Apply rules to a wordlist: dry-run rule engine
     ///
     /// Reads a wordlist and rule file, applies the rules, and
     /// writes the resulting candidates. Useful for testing rules.
@@ -408,7 +436,7 @@ pub enum Commands {
         limit: Option<u64>,
     },
 
-    /// Show potfile statistics — breakdown, charts, trends
+    /// Show potfile statistics: breakdown, charts, trends
     ///
     /// Analyzes the potfile and shows cracking statistics:
     /// cracked vs remaining, hash type breakdown, timing info.
@@ -423,7 +451,7 @@ pub enum Commands {
         by_complexity: bool,
     },
 
-    /// Expand a mask pattern — show all matching candidates
+    /// Expand a mask pattern: show all matching candidates
     ///
     /// Fully expands a mask pattern to show all possible passwords.
     /// WARNING: large keyspaces may produce massive output.
@@ -445,7 +473,7 @@ pub enum Commands {
         limit: u64,
     },
 
-    /// Check/validate a hash file — syntax, format, uniqueness
+    /// Check/validate a hash file: syntax, format, uniqueness
     ///
     /// Validates all hashes in a file for correct format and length.
     /// Reports invalid entries and duplicate detection.
