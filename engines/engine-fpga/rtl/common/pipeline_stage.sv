@@ -1,5 +1,5 @@
 // ============================================================
-// Generic Pipeline Stage — valid/ready handshake register
+// Generic Pipeline Stage - valid/ready handshake register
 // ============================================================
 
 module pipeline_stage #(

@@ -1,4 +1,4 @@
-# bcrypt test vectors — hash:password
+# bcrypt test vectors - hash:password
 # Generated with bcrypt crate v0.16 (same as pwdcrack uses)
 $2b$04$2WYyN.eiXbyOO340HLSZYOh7.Nag8klMznoYg9ishyhAaURBnrgPi:password
 $2b$04$mrvCMtFnxP4clKtBQlHGae33WQPFJGxXMVlR7Mj4K9F.L3Dw/3VGO:test123

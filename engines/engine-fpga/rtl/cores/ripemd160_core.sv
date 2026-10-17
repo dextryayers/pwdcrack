@@ -1,5 +1,5 @@
 // ============================================================
-// RIPEMD-160 Core — dual-line 80-step processing
+// RIPEMD-160 Core - dual-line 80-step processing
 // 16-word message block, 160-bit digest
 // ============================================================
 

@@ -29,7 +29,7 @@ set_false_path -to [get_ports uart_tx]
 set_clock_groups -group [get_clocks pcie_clk]
 
 # Timing exceptions for pipeline stages
-# All hash cores have 65/49 stage pipelines — multi-cycle within pipeline
+# All hash cores have 65/49 stage pipelines - multi-cycle within pipeline
 # Pipeline registers are close together, let tool optimize
 
 # Derate for process variation

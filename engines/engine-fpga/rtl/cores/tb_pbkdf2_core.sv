@@ -1,5 +1,5 @@
 // ============================================================
-// PBKDF2-HMAC-SHA256 Testbench — RFC 6070 vectors
+// PBKDF2-HMAC-SHA256 Testbench - RFC 6070 vectors
 // ============================================================
 
 module tb_pbkdf2_core;

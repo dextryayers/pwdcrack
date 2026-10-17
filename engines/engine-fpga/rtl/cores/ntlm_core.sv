@@ -1,5 +1,5 @@
 // ============================================================
-// NTLM Core — ASCII to UTF16-LE converter + MD4 hash
+// NTLM Core - ASCII to UTF16-LE converter + MD4 hash
 // NTLMv1 = MD4(UTF16-LE(password))
 // Fully pipelined: 49-cycle latency
 // ============================================================

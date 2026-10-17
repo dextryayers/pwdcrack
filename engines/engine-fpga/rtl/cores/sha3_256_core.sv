@@ -1,5 +1,5 @@
 // ============================================================
-// SHA3-256 Keccak Core — 24 rounds, 1600-bit state
+// SHA3-256 Keccak Core - 24 rounds, 1600-bit state
 // Theta, Rho, Pi, Chi, Iota steps per FIPS 202
 // ============================================================
 

@@ -12,7 +12,7 @@ module streebog256_core (
     output logic        ready
 );
 
-    // N and C constants (simplified — first 8 rounds of C)
+    // N and C constants (simplified - first 8 rounds of C)
     logic [63:0] C [12];
     logic [63:0] K [7:0];
     logic [63:0] state [7:0];
@@ -30,7 +30,7 @@ module streebog256_core (
         C[10] = 64'h000000000000006a; C[11] = 64'h00000000000000db;
     end
 
-    // S-box (Pi) — simplified linear layer using AES-like SubBytes
+    // S-box (Pi) - simplified linear layer using AES-like SubBytes
     function automatic logic [7:0] S(input logic [7:0] x);
         return {x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]} ^ 8'hfc;
     endfunction

@@ -1,5 +1,5 @@
 # ============================================================
-# pwdcrack Mid-Range — x86_64, AVX2 optimized
+# pwdcrack Mid-Range - x86_64, AVX2 optimized
 # ============================================================
 FROM debian:bookworm-slim
 

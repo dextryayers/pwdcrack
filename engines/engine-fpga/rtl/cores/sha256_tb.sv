@@ -1,5 +1,5 @@
 // ============================================================
-// SHA-256 Core Testbench — comprehensive test vectors
+// SHA-256 Core Testbench - comprehensive test vectors
 // ============================================================
 
 module sha256_tb;

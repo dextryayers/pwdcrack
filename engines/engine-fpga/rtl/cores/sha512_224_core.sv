@@ -1,5 +1,5 @@
 // ============================================================
-// SHA-512/224 Core — truncated SHA-512 with different IVs
+// SHA-512/224 Core - truncated SHA-512 with different IVs
 // 80 rounds, 1024-bit block, 224-bit digest
 // ============================================================
 

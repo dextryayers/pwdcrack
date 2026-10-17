@@ -73,22 +73,35 @@
 // Pure helpers. Reached through `include`; none of these touch module scope.
 // ---------------------------------------------------------------------------
 
-// The MD5 and MD4 initial value, as four little endian words.
+// ---------------------------------------------------------------------------
+// Initial values
 //
-// Word i of MD5 is word i of the digest as printed, so this is the digest
-// `67452301 efcdab89 98badcfe 10325476` with no reordering.
-function automatic [127:0] md5_iv;
-    md5_iv = 128'h67452301_efcdab89_98badcfe_10325476;
-endfunction
+// # Word order in every packed value in this file
+//
+// Word i occupies `[32*i +: 32]`, so word 0 sits in the LOW 32 bits and word n-1
+// at the top. Every packed value here follows that: blocks, states, initial
+// values and expected digests alike.
+//
+// That means an initial value written in the order the specification lists it,
+// which puts A in the high bits, is wrong for these cores. MD5's A is 0x67452301
+// and it must land at `[31:0]`, so the literal reads `10325476 98badcfe efcdab89
+// 67452301`. This is the same transposition `scripts/gen-rtl-vectors.py` corrects
+// for digests, and getting it wrong produces a wrong answer rather than an error.
+// ---------------------------------------------------------------------------
 
-// The SHA-256 and SHA-224 initial state, eight words.
-function automatic [255:0] sha256_iv;
-    sha256_iv = 256'h6a09e667_bb67ae85_3c6ef372_a54ff53a_510e527f_9b05688c_1f83d9ab_5be0cd19;
+// The MD5 and MD4 initial state, four words.
+function automatic [127:0] md5_iv;
+    md5_iv = 128'h10325476_98badcfe_efcdab89_67452301;
 endfunction
 
 // The SHA-1 initial state, five words.
 function automatic [159:0] sha1_iv;
-    sha1_iv = 160'h67452301_efcdab89_98badcfe_10325476_c3d2e1f0;
+    sha1_iv = 160'hc3d2e1f0_10325476_98badcfe_efcdab89_67452301;
+endfunction
+
+// The SHA-256 and SHA-224 initial state, eight words.
+function automatic [255:0] sha256_iv;
+    sha256_iv = 256'h5be0cd19_1f83d9ab_9b05688c_510e527f_a54ff53a_3c6ef372_bb67ae85_6a09e667;
 endfunction
 
 // Builds the single 512 bit block for a message short enough to fit one block.
@@ -138,6 +151,73 @@ function automatic [511:0] md5_padded_block(input string msg);
     // `(8 * n) +: 8`, not `[8 * n]`. A plain bit select truncates 8'h80 to its low
     // bit, which is zero, so the terminator would never be written. The parenthesised
     // base is also required, since `8 * n +: 8` binds as `8 * (n +: 8)`.
+    block[(8 * n) +: 8] = 8'h80;
+    block[32 * 14 +: 32] = n * 8;
+
+    return block;
+endfunction
+
+// Builds the single 512 bit block for SHA-1 and SHA-256.
+//
+// Same padding rule as MD5 and MD4, but big endian within each word, because
+// SHA-1 and SHA-256 read the message most significant byte first. Word i of the
+// result is therefore the bytes at offset 4i in big endian order, which is the
+// opposite of `md5_padded_block` and not interchangeable with it.
+//
+// 55 byte ceiling for the same reason: at 56 the terminator would land on the
+// first byte of the length field.
+function automatic [511:0] sha1_padded_block(input string msg);
+    logic [511:0] block;
+    int           n;
+    int           i;
+    logic [7:0]   ch;
+
+    n = msg.len();
+    if (n > 55) begin
+        $display("FATAL: sha1_padded_block was given a %0d byte message.", n);
+        $display("       A single padded block holds at most 55 bytes.");
+        $fatal(1, "message too long for one padded block");
+    end
+
+    block = '0;
+
+    // The byte goes through a temporary before the shift.
+    //
+    // `32'(msg[i]) << k` inside the expression does not evaluate as expected under
+    // Icarus Verilog: for i = 1 it yields 0x00620000 rather than 0x00000062
+    // shifted, so the assembled word came out as 0x61626300 instead of
+    // 0x61626380. Loading the byte into a plain integer first makes the shift
+    // operate on the value it is supposed to.
+    // Bytes are placed with an explicit concatenation, not a variable shift or a
+    // part-select assignment.
+    //
+    // Both alternatives look correct and both are wrong under Icarus Verilog 12:
+    //
+    //   `32'(msg[i]) << (8 * (3 - (i % 4)))` assembles "abc" as 0x61626300: the
+    //   byte at offset 2 never lands. The same expression is right for one and two
+    //   byte messages, so a test using only short strings does not see it.
+    //   `w[23:16] = msg[1]; w[15:8] = msg[2];` on a word preloaded with msg[0]
+    //   gives 0x00626361, with the first byte pushed out.
+    //
+    // A four byte concatenation reproduces the expected word exactly and is also
+    // what a synthesis tool will build, since it is the natural structure.
+    for (i = 0; i + 4 <= n; i = i + 4) begin
+        block[32 * (i / 4) +: 32] = {
+            8'(msg[i]), 8'(msg[i + 1]), 8'(msg[i + 2]), 8'(msg[i + 3])
+        };
+    end
+
+    // Trailing group of one to three bytes, left aligned as big endian requires.
+    if ((n % 4) != 0) begin
+        ch = 8'(msg[n - 1]);
+        case (n % 4)
+            1: block[32 * (n / 4) +: 32] = {ch, 24'h000000};
+            2: block[32 * (n / 4) +: 32] = {8'(msg[n - 2]), ch, 16'h0000};
+            3: block[32 * (n / 4) +: 32] =
+                   {8'(msg[n - 3]), 8'(msg[n - 2]), ch, 8'h00};
+        endcase
+    end
+
     block[(8 * n) +: 8] = 8'h80;
     block[32 * 14 +: 32] = n * 8;
 
@@ -323,6 +403,26 @@ endfunction
 // The wait for `done` is bounded. A core that never completes and a core that
 // completes wrongly need different investigations, so the two are reported
 // separately.
+// Defines `check_block(blk, iv, want, name, cycles)` for a core whose ports are
+// named `clk`, `msg_word`, `h_in`, `h_out`, `valid` and `done`.
+//
+// `blk`, `iv` and `want` are packed with word i at `[32*i +: 32]`. Word 0 sits in
+// the low bits to match the port indices, which means a digest literal must have
+// each of its four byte groups reversed. `scripts/gen-rtl-vectors.py` does that
+// and self checks the result.
+//
+// # Why the wait polls on the falling edge
+//
+// `done` is a one cycle pulse and the output registers are written by non
+// blocking assignment on the rising edge. Both are correct only in the window
+// between one rising edge and the next.
+//
+// Polling on `@(posedge clk)` reads `done` in the active region, which is one
+// delta after the non blocking update that raised it. By the time the loop re
+// tests, the core has already scheduled `done` low again for the next cycle, so
+// the loop runs one edge past the pulse and then finds `done` low. That reads as
+// a core that never fired. Polling on the falling edge puts both the flag and
+// the data in the same cycle, which is the only place they are in step.
 `define TB_CHECK_BLOCK(NWORDS) \
     task automatic check_block( \
         input [((NWORDS)*32)-1:0] blk, \
@@ -332,39 +432,96 @@ endfunction
         input integer cycles \
     ); \
         int waited; \
+        int saw_done; \
         logic [127:0] got; \
         begin \
             @(posedge clk); \
-            for (int i = 0; i < (NWORDS); i = i + 1) \
-                msg_word[i] <= blk[32*i +: 32]; \
-            for (int i = 0; i < 4; i = i + 1) \
-                h_in[i] <= iv[32*i +: 32]; \
+            msg_word <= blk; \
+            h_in     <= iv; \
             @(posedge clk); \
             valid <= 1'b1; \
             @(posedge clk); \
             valid <= 1'b0; \
-            /* `done` is driven by the core. The testbench only watches it. */ \
             waited = 0; \
-            while (waited < cycles && done !== 1'b1) begin \
-                @(posedge clk); \
+            saw_done = 0; \
+            while (waited < cycles && saw_done == 0) begin \
+                @(negedge clk); \
                 waited = waited + 1; \
+                if (done === 1'b1) saw_done = 1; \
             end \
-            /* Sample on the falling edge, not here. `done` and the output */ \
-            /* registers are both updated by non blocking assignment at the */ \
-            /* rising edge, and those updates land after the active region, so */ \
-            /* reading on the rising edge sees the previous transaction. Half a */ \
-            /* cycle later every update has settled and the pairing is right. */ \
-            @(negedge clk); \
-            /* Pack the words into a plain vector. A concatenation cannot be bit */ \
-            /* selected in Verilog, so TB_FAIL_DIGEST cannot index one. */ \
-            got = {h_out[3], h_out[2], h_out[1], h_out[0]}; \
-            if (done !== 1'b1) begin \
+            /* Sample in the same cycle the flag was seen. Half a cycle later */ \
+            /* the core has moved on to the next transaction. */ \
+            got = h_out; \
+            if (saw_done == 0) begin \
                 `TB_FAIL_NOTE(name, "no done signal"); \
             end else if (got === want) begin \
                 `TB_PASS(name); \
             end else begin \
                 `TB_FAIL_DIGEST(name, got, want); \
             end \
+        end \
+    endtask
+
+// Defines `check_block_start(blk, want, name, cycles)` for a core with a
+// start/ready handshake and a fixed initial value.
+//
+// Not a wrapper around `check_block`. A core in this shape has no `h_in` port
+// and no `done` output: it reports completion by dropping `ready`. Driving it
+// through `check_block` would fail to compile, since the ports it names do not
+// exist.
+//
+// `start` is pulsed for one cycle and the result is taken when `ready` returns
+// high, which is the only completion signal a core in this shape offers.
+//
+// The wait is for `ready` to go LOW then HIGH again, not for it to stay high.
+// Testing `ready === 1` in the loop condition exits immediately: right after the
+// start pulse `busy` is already set, so `ready` is already low and the loop body
+// never runs. The test then compares the untouched initial value against the
+// expected digest and reports a mismatch that looks like a core fault.
+`define TB_CHECK_BLOCK_START(NWORDS, DWORDS) \
+    task automatic check_block_start( \
+        input [((NWORDS)*32)-1:0] blk, \
+        input [((DWORDS)*32)-1:0] want, \
+        input string name, \
+        input integer cycles \
+    ); \
+        int waited; \
+        begin \
+            while (ready !== 1'b1) @(negedge clk); \
+            w <= blk; \
+            @(negedge clk); \
+            start <= 1'b1; \
+            @(negedge clk); \
+            start <= 1'b0; \
+            waited = 0; \
+            while (waited < cycles && ready !== 1'b1) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            if (ready !== 1'b1) begin \
+                `TB_FAIL_NOTE(name, "core never returned to ready"); \
+            end else if (digest === want) begin \
+                `TB_PASS(name); \
+            end else begin \
+                $display("  FAIL [%0d]: %s", test_num, name); \
+                $display("        got      %040x", digest); \
+                $display("        expected %040x", want); \
+                fail_count = fail_count + 1; \
+                test_num   = test_num + 1; \
+            end \
+        end \
+    endtask
+
+// Defines `check_message_start(msg, want, name, cycles)` for the same shape.
+`define TB_CHECK_MESSAGE_START(NWORDS, DWORDS) \
+    task automatic check_message_start( \
+        input string msg, \
+        input [((DWORDS)*32)-1:0] want, \
+        input string name, \
+        input integer cycles \
+    ); \
+        begin \
+            check_block_start(sha1_padded_block(msg), want, name, cycles); \
         end \
     endtask
 

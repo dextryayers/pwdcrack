@@ -1,5 +1,5 @@
 // ============================================================
-// MD5 Core Testbench — comprehensive test vectors
+// MD5 Core Testbench - comprehensive test vectors
 // ============================================================
 
 module md5_tb;

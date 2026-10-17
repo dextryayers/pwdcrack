@@ -131,7 +131,7 @@ module aes_cmac_core (
         sr[95:64]  = {sb[71:64], sb[95:72]};
         sr[63:32]  = {sb[47:32], sb[63:48]};
         sr[31:0]   = {sb[23:16], sb[31:24]};
-        // MixColumns (simplified — GF mult for AES)
+        // MixColumns (simplified - GF mult for AES)
         for (int c = 0; c < 4; c++) begin
             logic [7:0] a0, a1, a2, a3;
             a0 = sr[(8*4*c)+:8]; a1 = sr[(8*4*c+8)+:8];

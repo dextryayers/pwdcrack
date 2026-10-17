@@ -1,5 +1,5 @@
 // ============================================================
-// RIPEMD-128 Core — 64-step dual-line processing
+// RIPEMD-128 Core - 64-step dual-line processing
 // 16-word message block
 // ============================================================
 

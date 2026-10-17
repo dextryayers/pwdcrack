@@ -1,5 +1,5 @@
 # ============================================================
-# pwdcrack High-End — x86_64, GPU passthrough, AVX-512
+# pwdcrack High-End - x86_64, GPU passthrough, AVX-512
 # ============================================================
 FROM ubuntu:24.04
 

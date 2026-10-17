@@ -1,5 +1,5 @@
 // ============================================================
-// RIPEMD-128 Testbench — test vectors
+// RIPEMD-128 Testbench - test vectors
 // ============================================================
 
 module tb_ripemd128_core;

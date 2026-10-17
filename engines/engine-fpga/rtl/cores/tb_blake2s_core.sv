@@ -1,5 +1,5 @@
 // ============================================================
-// BLAKE2s-256 Testbench — "abc" vector
+// BLAKE2s-256 Testbench - "abc" vector
 // ============================================================
 
 module tb_blake2s_core;
@@ -21,7 +21,7 @@ module tb_blake2s_core;
         #10 rst_n = 1;
         #10;
 
-        // BLAKE2s("abc") with 24-bit output — full output
+        // BLAKE2s("abc") with 24-bit output - full output
         // BLAKE2s-256("abc") = 508c5e8c327c14e2e1a72ba34eeb452f...
         msg[0] = 32'h61626380; msg[1] = 32'h00000000;
         msg[2] = 32'h00000000; msg[3] = 32'h00000000;

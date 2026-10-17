@@ -8,7 +8,7 @@ from setuptools import setup
 setup(
     name="pwdcrack",
     version="0.1.0",
-    description="Python bindings for pwdcrack — universal password cracker",
+    description="Python bindings for pwdcrack - universal password cracker",
     packages=["pwdcrack"],
     package_data={"pwdcrack": ["*.so", "*.dll", "*.dylib"]},
     include_package_data=True,

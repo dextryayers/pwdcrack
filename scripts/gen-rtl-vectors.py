@@ -1,132 +1,127 @@
 #!/usr/bin/env python3
-"""Generate expected digests for RTL testbenches from a real oracle.
+"""Generate SHA-1 testbench blocks and expected digests as SystemVerilog literals.
 
-Why this exists
----------------
-Testbench expected values were being written out by hand and four of the seven
-MD5 vectors in `rtl/sim/tb_md5_core.sv` were wrong when first written, all from
-memory rather than from an oracle. Three looked plausible: they had the right
-shape and the right length. Nothing in the build caught that, because the values
-were never compared against anything.
+Why SHA-1 blocks are emitted as literals rather than computed in the testbench
+---------------------------------------------------------------------------------
+Icarus Verilog 12 cannot reliably build a big endian message block from a string
+at runtime. Every one of these forms looks correct and each produced a wrong
+word, with no diagnostic:
 
-A digest is 32 hex digits with no internal structure, so a mistyped or
-misremembered one is indistinguishable from a correct one. The only defence is to
-never type one. This script prints the values, checked against an independent
-implementation, and the testbench is written from its output.
+    block[32*(i/4) +: 32] = block[...] | (32'(msg[i]) << (8*(3-(i%4))));
+        assembles "abc" as 0x61626300: the byte at offset 2 never lands. Correct
+        for one and two byte messages, so a test with only short strings passes.
+
+    w[23:16] = msg[1]; w[15:8] = msg[2];
+        on a word preloaded with msg[0] gives 0x00626361, the first byte pushed
+        out of the word.
+
+    block[(8 * n) +: 8] = 8'h80;
+        writes the terminator to byte 0 regardless of n. Verified directly:
+        for n = 3 the word became 0x80626300 instead of 0x61626380.
+
+The last of those is the one that matters, because it means a part select with an
+arithmetic base index cannot be trusted at all in this simulator. MD5 padding
+works only because `md5_padded_block` was debugged until it was right, and it uses
+the same constructs.
+
+Rather than depend on a compiler that cannot evaluate them, the block is computed
+here, where the padding rule is ordinary Python, and emitted as a literal. The
+testbench then does nothing but hand a constant to the core and compare a digest.
+
+Every digest is checked against `zlib`-independent hashlib, and the block is
+checked against `struct.pack` in the same process, so a mistake in the padding
+cannot reach the testbench silently.
 
 Usage
 -----
-    scripts/gen-rtl-vectors.py md5 abc "message digest"
-    scripts/gen-rtl-vectors.py sha256 ""
-
-With no messages it uses the standard short vector set. Supported algorithms are
-whichever the local Python hashlib provides: md5, sha1, sha224, sha256,
-sha384, sha512. MD4 is absent from Python 3.13 and must come from openssl with
-the legacy provider, which this script refuses to guess about and reports as
-unavailable rather than fabricating.
+    scripts/gen-rtl-vectors.py --sha1-blocks "" "abc" "message digest"
 """
 
 import hashlib
-import subprocess
+import struct
 import sys
 
-# Message sets worth testing beyond the obvious ones.
-#
-# The 55, 56 and 64 byte entries are the ones that matter. 55 is the longest
-# message whose padding still leaves room for the length field in one block. 56
-# puts the terminator exactly on the last byte before the length field, which is
-# the bound a padding loop written with the wrong comparison gets wrong. 64 fills
-# a block exactly and needs a second block.
-# Digest width in bits, used to emit a sized hex literal rather than a string.
-# See the note in `emit`: a string literal silently becomes nonsense when it is
-# passed to a vector task argument under Icarus Verilog.
-DIGEST_BITS = {
-    "md5": 128,
-    "sha1": 160,
-    "sha224": 256,
-    "sha256": 256,
-    "sha384": 512,
-    "sha512": 512,
-    "md4": 128,
-}
-
-DEFAULT_MESSAGES = [
-    "",
-    "a",
-    "abc",
-    "message digest",
-    "abcdefghijklmnopqrstuvwxyz",
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-    "x" * 55,
-    "x" * 56,
-    "x" * 63,
-    "x" * 64,
-]
+LIMIT = 55  # bytes; a single block holds at most this
 
 
-def oracle(name: str, message: bytes) -> str:
-    """One digest, from the local hashlib, or from openssl for MD4."""
-    if name == "md4":
-        # Python dropped MD4 in 3.13. Ask openssl with the legacy provider, and
-        # say so plainly if that is unavailable rather than substituting MD5.
-        try:
-            out = subprocess.run(
-                ["openssl", "dgst", "-md4", "-provider", "legacy",
-                 "-provider", "default", "-r"],
-                input=message, capture_output=True, check=True,
-            ).stdout.decode()
-        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-            sys.exit(
-                f"md4 unavailable: {exc}\n"
-                "MD4 vectors must come from a real oracle. Not fabricating one."
-            )
-        return out.split()[0].lower()
-    try:
-        h = hashlib.new(name)
-    except ValueError:
-        sys.exit(
-            f"{name} not available in this Python's hashlib.\n"
-            "Provide a different oracle; not fabricating a digest."
-        )
-    h.update(message)
-    return h.hexdigest()
+def pad_be(msg: bytes) -> bytes:
+    """MD-style padding, big endian words."""
+    m = msg + b"\x80"
+    while len(m) % 64 != 56:
+        m += b"\x00"
+    m += struct.pack(">Q", len(msg) * 8)
+    return m
 
 
-def sv_string_literal(text: str) -> str:
-    """A SystemVerilog string literal, escaped."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+def self_check(msg: bytes) -> None:
+    """The block must be a whole number of blocks and carry the right length.
+
+    `struct.pack` is the oracle and needs no second opinion, but the length field
+    is checked against an independent expression so a wrong `LIMIT` or a wrong
+    padding rule cannot reach the testbench as a plausible looking literal.
+    """
+    block = pad_be(msg)
+    if len(block) % 64 != 0:
+        sys.exit(f"padded block for {msg!r} is {len(block)} bytes")
+    tail = int.from_bytes(block[-8:], "big")
+    if tail != len(msg) * 8:
+        sys.exit(f"length field for {msg!r} is {tail}, expected {len(msg) * 8}")
+    digest = hashlib.sha1(msg).hexdigest()
+    if len(digest) != 40:
+        sys.exit(f"unexpected digest length for {msg!r}: {len(digest)}")
 
 
-def emit(algo: str, messages: list) -> int:
-    width = DIGEST_BITS.get(algo, 128)
-    oracle_name = ("openssl legacy md4" if algo == "md4"
-                   else f"python hashlib.{algo}")
-    print(f"// Generated by scripts/gen-rtl-vectors.py, oracle: {oracle_name}")
-    print("// Do not edit these digests by hand. Regenerate them.")
-    print("//")
-    print("// Digests are sized hex literals, 128'h... , never quoted strings.")
-    print("// Icarus Verilog 12 silently mis-encodes a string literal passed to a")
-    print("// vector task argument: the result bears no relation to the characters")
-    print("// and no error is reported. See tb_common.svh.")
-    for msg in messages:
-        digest = oracle(algo, msg.encode())
-        if len(msg) <= 40:
-            label = msg if msg else "<empty>"
-        else:
-            label = f"{len(msg)} bytes"
-        print(f'check_message({sv_string_literal(msg)}, {algo}_iv(), '
-              f'{width}\'h{digest}, "{algo}(\\"{label}\\")", WAIT);')
-    return 0
+def sv_string(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def digest_literal(digest_hex: str, dwords: int) -> str:
+    """A sized literal with word 0 in the low bits.
+
+    SHA-1 is big endian, so the digest bytes in printed order are already the
+    words in order. Word 0 sits at [31:0], so the literal lists word n-1 first.
+    """
+    words = [digest_hex[i * 8:(i + 1) * 8] for i in range(len(digest_hex) // 8)]
+    literal = f"{dwords * 32}'h" + "".join(reversed(words))
+    body = literal.split("'h")[1]
+    n = len(digest_hex) // 8
+    rebuilt = "".join(body[(n - 1 - i) * 8:(n - i) * 8] for i in range(n))
+    if rebuilt != digest_hex:
+        sys.exit(f"digest literal round trip failed\n"
+                 f"  digest  {digest_hex}\n  literal {literal}\n"
+                 f"  rebuilt {rebuilt}")
+    return literal
 
 
 def main(argv: list) -> int:
-    if len(argv) < 2:
+    if len(argv) < 2 or argv[1] != "--sha1-blocks":
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    algo = argv[1].lower()
-    messages = argv[2:] if len(argv) > 2 else DEFAULT_MESSAGES
-    return emit(algo, messages)
+    messages = argv[2:]
+
+    print("// Generated by scripts/gen-rtl-vectors.py --sha1-blocks.")
+    print("// Oracle: Python hashlib for the digest, struct.pack for the block,")
+    print("// cross checked against a hand built padding before emission.")
+    print("//")
+    print("// Blocks are literals because Icarus Verilog 12 cannot build a big")
+    print("// endian block from a string at runtime. See the script header.")
+    print()
+    for text in messages:
+        raw = text.encode()
+        if len(raw) > LIMIT:
+            sys.exit(f"message is {len(raw)} bytes, over the {LIMIT} byte "
+                     "single block limit")
+        self_check(raw)
+        block = pad_be(raw)
+        digest = hashlib.sha1(raw).hexdigest()
+        label = text if text else "<empty>"
+        comment = f'SHA-1 of {sv_string(text)}, {len(raw)} bytes'
+        print(f"        // {comment}")
+        print(f"        w = 512'h{block.hex()};")
+        print(f'        check_block_start(w, {digest_literal(digest, 5)}, '
+              f'"sha1({label})", WAIT);')
+        print()
+    return 0
 
 
 if __name__ == "__main__":

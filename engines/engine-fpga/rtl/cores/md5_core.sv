@@ -1,17 +1,24 @@
 // ============================================================
-// MD5 Pipelined Core — 1 hash/cycle, 65-cycle latency
+// MD5 Pipelined Core - 1 hash/cycle, 65-cycle latency
 // 64 rounds fully unrolled with valid/ready handshake
 // ============================================================
 
-module md5_core (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        valid,
-    output logic        ready,
-    input  logic [31:0] msg_word  [15:0],
-    input  logic [31:0] h_in      [3:0],
-    output logic [31:0] h_out     [3:0],
-    output logic        done
+module md5_core #(
+    // 0 waits forever for the DUT to finish and reports "no done signal".
+    // 200 covers the 65 cycle pipeline plus the reference cycle margin.
+    parameter integer DEFAULT_WAIT = 200
+) (
+    input  logic          clk,
+    input  logic          rst_n,
+    input  logic          valid,
+    output logic          ready,
+    // One 512 bit block, word i at [32*i +: 32], so word 0 is the first word of
+    // the message in MD5's little endian order.
+    input  logic [511:0]  msg_word,
+    // Chaining state, word i at [32*i +: 32].
+    input  logic [127:0]  h_in,
+    output logic [127:0]  h_out,
+    output logic          done
 );
 
     // MD5 K constants: floor(2^32 × abs(sin(i+1))) for i=0..63
@@ -98,10 +105,10 @@ module md5_core (
             end
         end else begin
             // Stage 0: load input
-            a_pipe[0] <= h_in[0];
-            b_pipe[0] <= h_in[1];
-            c_pipe[0] <= h_in[2];
-            d_pipe[0] <= h_in[3];
+            a_pipe[0] <= h_in[31:0];
+            b_pipe[0] <= h_in[63:32];
+            c_pipe[0] <= h_in[95:64];
+            d_pipe[0] <= h_in[127:96];
             valid_pipe[0] <= valid;
 
             // Stages 1-64: MD5 rounds
@@ -117,8 +124,16 @@ module md5_core (
                     3: f = c_pipe[r] ^ (b_pipe[r] | ~d_pipe[r]);
                 endcase
 
-                temp = a_pipe[r] + f + msg_word[g_idx] + K[r];
-                temp = {temp << s(r[5:0]), temp >> (32 - s(r[5:0]))};
+                temp = a_pipe[r] + f + msg_word[32 * g_idx +: 32] + K[r];
+                // ROTL by s(r), as an explicit shift and or.
+                //
+                // Not `{temp << s, temp >> (32 - s)}`. That concatenation is 64
+                // bits wide, and assigning it to a 32 bit variable keeps only the
+                // low half, which is `temp >> (32 - s)`. The left shift is
+                // discarded, so every round shifted right instead of rotating
+                // and every digest came out wrong. The defect was invisible
+                // because the core had never been simulated.
+                temp = (temp << s(r[5:0])) | (temp >> (32 - s(r[5:0])));
                 temp = temp + b_pipe[r];
 
                 a_pipe[r+1] <= d_pipe[r];
@@ -129,18 +144,19 @@ module md5_core (
             end
 
             // Stage 65: final addition
-            a_pipe[65] <= a_pipe[64] + h_in[0];
-            b_pipe[65] <= b_pipe[64] + h_in[1];
-            c_pipe[65] <= c_pipe[64] + h_in[2];
-            d_pipe[65] <= d_pipe[64] + h_in[3];
+            a_pipe[65] <= a_pipe[64] + h_in[31:0];
+            b_pipe[65] <= b_pipe[64] + h_in[63:32];
+            c_pipe[65] <= c_pipe[64] + h_in[95:64];
+            d_pipe[65] <= d_pipe[64] + h_in[127:96];
             valid_pipe[65] <= valid_pipe[64];
         end
     end
 
-    assign h_out[0] = a_pipe[65];
-    assign h_out[1] = b_pipe[65];
-    assign h_out[2] = c_pipe[65];
-    assign h_out[3] = d_pipe[65];
+    // Packed output with word i at [32*i +: 32].
+    assign h_out[31:0]   = a_pipe[65];
+    assign h_out[63:32]  = b_pipe[65];
+    assign h_out[95:64]  = c_pipe[65];
+    assign h_out[127:96] = d_pipe[65];
     assign done = valid_pipe[65];
     assign ready = 1'b1;  // Always ready for next input
 

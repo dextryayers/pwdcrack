@@ -1,5 +1,5 @@
 // ============================================================
-// MD5 Optimized Core — 64-step fully unrolled, pipelined
+// MD5 Optimized Core - 64-step fully unrolled, pipelined
 // Same interface as md5_core but with 81-cycle latency
 // for full message expansion (same as sha1_opt pattern)
 // ============================================================

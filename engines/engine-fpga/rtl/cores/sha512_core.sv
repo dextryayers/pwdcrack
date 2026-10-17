@@ -1,4 +1,4 @@
-// SHA-512 pipelined core — 80-cycle latency, 1024-bit block
+// SHA-512 pipelined core - 80-cycle latency, 1024-bit block
 module sha512_core (
     input  logic        clk,
     input  logic        rst_n,

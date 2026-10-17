@@ -1,5 +1,5 @@
 # ============================================================
-# pwdcrack Android — Cross-compilation environment
+# pwdcrack Android - Cross-compilation environment
 # ============================================================
 FROM ubuntu:24.04
 

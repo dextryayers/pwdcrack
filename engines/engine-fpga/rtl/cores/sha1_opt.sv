@@ -1,5 +1,5 @@
 // ============================================================
-// SHA-1 Optimized Core — full 80-step unrolled pipeline
+// SHA-1 Optimized Core - full 80-step unrolled pipeline
 // Pre-computed K constants, valid/ready handshake
 // ============================================================
 

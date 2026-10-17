@@ -1,5 +1,5 @@
 """
-pwdcrack — high-performance hash cracker with GPU/FPGA/CLI support.
+pwdcrack - high-performance hash cracker with GPU/FPGA/CLI support.
 
 Python API providing full access to pwdcrack's hash detection,
 verification, and cracking capabilities.

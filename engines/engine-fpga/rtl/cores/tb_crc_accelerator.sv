@@ -1,5 +1,5 @@
 // ============================================================
-// CRC Accelerator Testbench — CRC32 sanity vectors
+// CRC Accelerator Testbench - CRC32 sanity vectors
 // ============================================================
 
 module tb_crc_accelerator;

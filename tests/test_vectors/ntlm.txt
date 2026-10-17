@@ -1,4 +1,4 @@
-# NTLM test vectors — hash:password
+# NTLM test vectors - hash:password
 # Format: <hex_ntlm_hash>:<plaintext_password>
 # Note: NTLM = MD4(UTF16-LE(password))
 # Hashes computed with md4 crate v0.10

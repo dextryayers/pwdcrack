@@ -1,5 +1,5 @@
 # ============================================================
-# pwdcrack Low-End Alpine — 32-bit, minimal size
+# pwdcrack Low-End Alpine - 32-bit, minimal size
 # ============================================================
 FROM i686/alpine:latest
 

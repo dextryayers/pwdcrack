@@ -1,5 +1,5 @@
 // ============================================================
-// Whirlpool Hash Core — AES-like 10 rounds, 512-bit state
+// Whirlpool Hash Core - AES-like 10 rounds, 512-bit state
 // SubBytes, ShiftColumns, MixRows, AddRoundKey
 // ============================================================
 

@@ -1,4 +1,4 @@
-// HMAC wrapper — supports MD5, SHA-1, SHA-256 hash cores
+// HMAC wrapper - supports MD5, SHA-1, SHA-256 hash cores
 // Implements FIPS 198 HMAC: HMAC(K,m) = H((K' ^ opad) || H((K' ^ ipad) || m))
 module hmac_wrapper #(
     parameter HASH_WIDTH  = 256,

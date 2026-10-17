@@ -1,5 +1,5 @@
 // ============================================================
-// Synchronous FIFO — valid/ready handshake
+// Synchronous FIFO - valid/ready handshake
 // ============================================================
 
 module fifo #(

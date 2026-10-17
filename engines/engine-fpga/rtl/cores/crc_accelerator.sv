@@ -1,5 +1,5 @@
 // ============================================================
-// Parallel CRC Accelerator — 3-stage pipelined
+// Parallel CRC Accelerator - 3-stage pipelined
 // WIDTH: 32 (CRC-32) or 64 (CRC-64)
 // POLY: configurable polynomial
 // Processes 8 bytes (64 bits) per cycle

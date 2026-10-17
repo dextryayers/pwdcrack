@@ -1,5 +1,5 @@
 // ============================================================
-// BLAKE2s-256 Core — 10 rounds, 64-byte block
+// BLAKE2s-256 Core - 10 rounds, 64-byte block
 // IV from sqrt fractions of first 8 primes
 // ============================================================
 
