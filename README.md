@@ -1,4 +1,4 @@
-# pwdcrack
+# pwdcrack V1.2.0
 
 Offline password hash recovery toolkit. Detects, verifies, and cracks hashes across
 the major algorithm families using CPU, GPU, FPGA, and distributed back ends.
