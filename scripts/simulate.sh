@@ -76,13 +76,16 @@ fi
 echo "simulator: $($IVL_BIN -V 2>&1 | head -1)"
 
 # ---- collect testbenches ----
-# rtl/sim is the maintained location. rtl/cores is still searched so the old
-# broken copies stay visible in the report rather than silently disappearing; they
-# are expected to fail to compile until they are rewritten or removed.
-mapfile -t BENCHES < <(
-    { find "$SIM" -name 'tb_*.sv' 2>/dev/null; \
-      find "$RTL/cores" -name 'tb_*.sv' -o -name '*_tb.sv' 2>/dev/null; } | sort -u
-)
+#
+# Only rtl/sim is searched. The testbenches that used to sit in rtl/cores were
+# written in SystemVerilog Icarus Verilog 12 cannot parse, none of them ever ran,
+# and several stated wrong expected values. They are not part of the report:
+# a list that is mostly known dead entries hides the two that matter.
+#
+# Every testbench in rtl/sim follows the tb_<core>_core.sv convention and includes
+# tb_common.svh. A testbench with no matching core, such as tb_padding, is
+# compiled alone.
+mapfile -t BENCHES < <(find "$SIM" -name 'tb_*.sv' 2>/dev/null | sort)
 
 if [ -n "${1:-}" ]; then
     mapfile -t BENCHES < <(printf '%s\n' "${BENCHES[@]}" | grep -- "$1")

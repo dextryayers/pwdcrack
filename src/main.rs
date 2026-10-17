@@ -141,14 +141,73 @@ fn main() {
     // handle rather than a value.
     #[cfg(feature = "engine-distributed")]
     let _dist_handle = if args.distributed {
-        let cfg = engine_distributed::DistributedConfig {
-            // Binding is left to the engine default. See docs/plan.md P9.1.01:
-            // the default currently binds all interfaces without authentication,
-            // which is tracked as a security finding.
+        // The token comes from the environment when it is not on the command
+        // line. An argument appears in the process list, which every other user
+        // on the machine can read, and the whole point of the token is that it
+        // is not public.
+        let token = args
+            .token
+            .clone()
+            .or_else(|| std::env::var("PWDCRACK_CLUSTER_TOKEN").ok());
+
+        let mut cfg = engine_distributed::DistributedConfig {
+            token,
+            allow_exposed_bind: args.allow_exposed_bind,
             ..Default::default()
         };
+
+        if let Some(b) = &args.bind {
+            match b.parse() {
+                Ok(a) => cfg.listen_addr = a,
+                Err(e) => {
+                    eprintln!(
+                        "[!] --bind {b}: not a valid socket address ({e}). \
+                         Use HOST:PORT, for example 127.0.0.1:5555."
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        if let Some(m) = &args.master {
+            match m.parse() {
+                Ok(a) => cfg.master_addr = Some(a),
+                Err(e) => {
+                    eprintln!(
+                        "[!] --master {m}: not a valid socket address ({e}). \
+                         Use HOST:PORT, for example 127.0.0.1:5555."
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // Checked here, before the runtime is built, so an unsafe configuration
+        // is refused at startup with an explanation instead of after a socket
+        // exists. `run` checks again; this one gives the user the message
+        // immediately.
+        match cfg.resolve_bind() {
+            Ok(decision) => {
+                if let Some(warning) = &decision.warning {
+                    eprintln!("warning: {warning}");
+                }
+                cfg.listen_addr = decision.addr;
+            }
+            Err(e) => {
+                eprintln!("[!] distributed: {e}");
+                std::process::exit(1);
+            }
+        }
+
         let role = if cfg.is_master() { "master" } else { "worker" };
-        log::info!("Distributed: starting {role} node");
+        log::info!(
+            "Distributed: starting {role} node on {} (auth: {})",
+            cfg.listen_addr,
+            if cfg.auth().is_configured() {
+                "token"
+            } else {
+                "none"
+            }
+        );
 
         // `DistributedConfig::run` is async. The engine owns its runtime, so the
         // task is spawned rather than blocking the synchronous CLI path.

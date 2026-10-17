@@ -377,12 +377,25 @@ endfunction
         test_num   = test_num + 1; \
     end
 
-// Defines `tb_report(NAME)`, which prints the tally and fails the process if
-// anything failed.
+// Defines `tb_report(NAME)`, which prints the tally, ends the simulation, and
+// fails the process if anything failed.
 //
-// `$fatal` rather than `$finish`, so the exit status is non zero. A testbench
-// that reports failures and exits zero is a testbench whose result can be
-// ignored, which is the defect this macro exists to remove.
+// # Both exit paths, and why each one is required
+//
+// On failure: `$fatal(1, ...)`, so the exit status is non zero. A testbench that
+// reports failures and exits zero is a testbench whose result can be ignored,
+// which is the defect this macro exists to remove.
+//
+// On success: `$finish`. Without it the free running clock in the testbench
+// keeps scheduling events after the last assertion, the simulation never ends,
+// and `vvp` runs until something kills it. That is not a slow test, it is a hang
+// with no output, and it is indistinguishable from a core that never finished.
+// `scripts/simulate.sh` puts a deadline on every run for the same reason, so a
+// future testbench that forgets this line is reported as a timeout rather than
+// stalling the gate.
+//
+// The tally is printed before either exit, so the counts survive into the log
+// whichever path is taken.
 `define TB_REPORT(SUITE) \
     task automatic tb_report(input string suite); \
         begin \
@@ -391,6 +404,10 @@ endfunction
             if (fail_count != 0) begin \
                 $fatal(1, "%0d assertion(s) failed in %s", fail_count, suite); \
             end \
+            if (test_num == 0) begin \
+                $fatal(1, "%s ran no assertions at all", suite); \
+            end \
+            $finish; \
         end \
     endtask
 

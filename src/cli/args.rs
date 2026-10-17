@@ -78,6 +78,41 @@ pub struct Cli {
     #[arg(long, global = true, help_heading = "Engines", help = "Enable distributed mode (requires engine-distributed feature)")]
     pub distributed: bool,
 
+    /// Address the cluster master listens on.
+    ///
+    /// Defaults to 127.0.0.1. Any other address is reachable from the network,
+    /// so it is refused unless it is passed explicitly, and it is refused again
+    /// without `--token`. See `engine_distributed::netpolicy`.
+    #[arg(long, global = true, value_name = "ADDR", help_heading = "Engines", help = "Address for the cluster master to listen on (default 127.0.0.1:5555). A non-loopback address must be given explicitly and requires --token")]
+    pub bind: Option<String>,
+
+    /// Address of the master, for a worker node.
+    #[arg(long, global = true, value_name = "ADDR", help_heading = "Engines", help = "Master address for a worker node")]
+    pub master: Option<String>,
+
+    /// Shared secret for cluster authentication.
+    ///
+    /// Can also come from PWDCRACK_CLUSTER_TOKEN, which keeps it out of the
+    /// process list where every other user on the machine can read it.
+    #[arg(long, global = true, value_name = "TOKEN", help_heading = "Engines", help = "Shared token for cluster authentication. Prefer the PWDCRACK_CLUSTER_TOKEN environment variable, which keeps it out of the process list")]
+    pub token: Option<String>,
+
+    /// Confirms a non-loopback bind address.
+    ///
+    /// Kept separate from `--bind` so that exposing a port is a second, distinct
+    /// act rather than a side effect of naming an address.
+    #[arg(long, global = true, help_heading = "Engines", help = "Confirm that --bind may use a non-loopback address. Required in addition to --token")]
+    pub allow_exposed_bind: bool,
+
+    /// Directory a worker will read wordlists from.
+    ///
+    /// Repeatable. A worker refuses every dictionary unit unless at least one is
+    /// given: the master chooses which file inside these directories is opened,
+    /// and cannot widen the grant. Without this flag a worker ignores dictionary
+    /// work entirely rather than opening whatever path the master names.
+    #[arg(long, global = true, value_name = "DIR", help_heading = "Engines", help = "Directory a worker may read wordlists from. Repeatable. Without it a worker refuses all dictionary work rather than opening any path the master names")]
+    pub wordlist_dir: Vec<String>,
+
     // ---- Power & monitoring ----
 
     #[arg(long, global = true, default_value = "0", help_heading = "Power & monitoring", help = "Power budget in watts (0 = unlimited; requires engine-power feature)")]

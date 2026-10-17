@@ -1,127 +1,733 @@
 #!/usr/bin/env python3
-"""Generate SHA-1 testbench blocks and expected digests as SystemVerilog literals.
+"""Generate the SystemVerilog test vectors for every FPGA core in this repository.
 
-Why SHA-1 blocks are emitted as literals rather than computed in the testbench
----------------------------------------------------------------------------------
-Icarus Verilog 12 cannot reliably build a big endian message block from a string
-at runtime. Every one of these forms looks correct and each produced a wrong
-word, with no diagnostic:
+Why a generator
+---------------
+A test vector for a hash core is two things: a padded message block and the
+digest of the message. Both are pure functions of the message, and both are easy
+to get wrong by transcription. Three of the four digests that were once written
+into ``rtl/cores/md5_tb.sv`` by hand were wrong, all of them plausible, and that
+file did not compile so nobody saw it. Every vector in this repository is now
+emitted by this script, which derives the block from the message with ordinary
+Python and derives the digest with an independent implementation. Nothing is
+transcribed.
 
-    block[32*(i/4) +: 32] = block[...] | (32'(msg[i]) << (8*(3-(i%4))));
-        assembles "abc" as 0x61626300: the byte at offset 2 never lands. Correct
-        for one and two byte messages, so a test with only short strings passes.
+Two oracles, never one
+----------------------
+Where a second implementation exists, both are used and a disagreement is
+fatal:
 
-    w[23:16] = msg[1]; w[15:8] = msg[2];
-        on a word preloaded with msg[0] gives 0x00626361, the first byte pushed
-        out of the word.
+    md5, sha1, sha256, sha512, sha384   hashlib
+    ripemd160, blake2b                  hashlib
+    crc32                               zlib.crc32
+    md4                                 the pure Python MD4 below, checked
+                                        against the four RFC 1320 vectors
+    ntlm                                md4 over UTF-16-LE, checked against the
+                                        MD4 result it contains
 
-    block[(8 * n) +: 8] = 8'h80;
-        writes the terminator to byte 0 regardless of n. Verified directly:
-        for n = 3 the word became 0x80626300 instead of 0x61626380.
+The MD4 case matters because Python's ``hashlib`` dropped MD4 in 3.9 and the
+OpenSSL 3 provider does not expose it either, so there is no system digest to
+compare against. The pure Python implementation is therefore self checked
+against RFC 1320 test suite values at import time, and the NTLM vectors are
+checked against an independent UTF-16-LE construction.
 
-The last of those is the one that matters, because it means a part select with an
-arithmetic base index cannot be trusted at all in this simulator. MD5 padding
-works only because `md5_padded_block` was debugged until it was right, and it uses
-the same constructs.
+The corpus
+----------
+Three sources, all of them messages this tool actually has to handle:
 
-Rather than depend on a compiler that cannot evaluate them, the block is computed
-here, where the padding rule is ordinary Python, and emitted as a literal. The
-testbench then does nothing but hand a constant to the core and compare a digest.
+1. ``tests/test_vectors/{md5,sha256,ntlm}.txt``. These are ``hash:password``
+   pairs already checked in by the Rust side. Every one of them is re-hashed
+   here first. A vector whose stored hash does not match its password is a bug
+   in the corpus and stops the generator rather than reaching a testbench as a
+   plausible looking expectation.
+2. A boundary corpus around the block sizes: 0, 1, 3, 43, 54, 55 bytes for the
+   64 byte block algorithms, and the equivalent set for the 128 byte block
+   algorithms. 55 and 56 are the pair that separates a correct padding loop from
+   one that tests ``len % 64 != 56`` before appending the terminator.
+3. Messages containing bytes that break careless implementations: an embedded
+   NUL is impossible in a Verilog string literal, so the corpus avoids it, but
+   spaces, quotes, backslashes and high bytes are all present.
 
-Every digest is checked against `zlib`-independent hashlib, and the block is
-checked against `struct.pack` in the same process, so a mistake in the padding
-cannot reach the testbench silently.
+Word order
+----------
+Every core in ``rtl/cores`` follows one convention, documented in
+``rtl/README.md``:
+
+    a block is ``NW`` words of ``W`` bits, word 0 in the LEAST significant bits;
+    word i is bytes ``[i*W/8, (i+1)*W/8)`` of the padded block, in the byte order
+    the core reads them, so a little endian core gets its bytes reversed inside
+    each word and a big endian core does not;
+    a digest is ``DW`` words, word 0 in the least significant bits, and word 0 is
+    the first group of digest bytes in printed order, again byte reversed for a
+    little endian core.
+
+So a hex literal always lists word n-1 first, and a little endian core also has
+each group reversed. ``pack_block`` and ``pack_digest`` below are the only place
+that knows this, and each one re-reads its own output and compares it against the
+input bytes, so a reversal mistake fails here rather than in a testbench.
 
 Usage
 -----
-    scripts/gen-rtl-vectors.py --sha1-blocks "" "abc" "message digest"
+    scripts/gen-rtl-vectors.py --write      regenerate rtl/sim/vectors/*.svh
+    scripts/gen-rtl-vectors.py --check      fail if the committed files differ
+    scripts/gen-rtl-vectors.py --list       list the cores and vector counts
+    scripts/gen-rtl-vectors.py --show md5   print one core's vectors to stdout
+
+``scripts/simulate.sh`` runs ``--check`` before it simulates anything, so a
+hand edited vector file fails the gate instead of quietly disagreeing with the
+oracle.
 """
 
+from __future__ import annotations
+
+import argparse
 import hashlib
+import pathlib
+import re
 import struct
 import sys
+import zlib
 
-LIMIT = 55  # bytes; a single block holds at most this
+REPO = pathlib.Path(__file__).resolve().parent.parent
+SIM = REPO / "engines" / "engine-fpga" / "rtl" / "sim"
+VECTORS = SIM / "vectors"
+CORPUS_DIR = REPO / "tests" / "test_vectors"
 
-
-def pad_be(msg: bytes) -> bytes:
-    """MD-style padding, big endian words."""
-    m = msg + b"\x80"
-    while len(m) % 64 != 56:
-        m += b"\x00"
-    m += struct.pack(">Q", len(msg) * 8)
-    return m
+GENERATED_NOTE = "// GENERATED FILE. DO NOT EDIT."
+GENERATOR_PATH = "scripts/gen-rtl-vectors.py"
 
 
-def self_check(msg: bytes) -> None:
-    """The block must be a whole number of blocks and carry the right length.
+# ---------------------------------------------------------------------------
+# Reference implementations
+# ---------------------------------------------------------------------------
 
-    `struct.pack` is the oracle and needs no second opinion, but the length field
-    is checked against an independent expression so a wrong `LIMIT` or a wrong
-    padding rule cannot reach the testbench as a plausible looking literal.
+def md4(message: bytes) -> bytes:
+    """MD4, RFC 1320.
+
+    Python's hashlib dropped MD4 in 3.9 and OpenSSL 3 moved it to the legacy
+    provider, so neither ``hashlib.new('md4')`` nor a linked OpenSSL is
+    available. This is the reference implementation used to generate the MD4
+    and NTLM vectors, and ``_md4_self_check`` at the bottom of this file holds
+    it against the RFC's own test suite.
     """
-    block = pad_be(msg)
-    if len(block) % 64 != 0:
-        sys.exit(f"padded block for {msg!r} is {len(block)} bytes")
-    tail = int.from_bytes(block[-8:], "big")
-    if tail != len(msg) * 8:
-        sys.exit(f"length field for {msg!r} is {tail}, expected {len(msg) * 8}")
-    digest = hashlib.sha1(msg).hexdigest()
-    if len(digest) != 40:
-        sys.exit(f"unexpected digest length for {msg!r}: {len(digest)}")
+    def rol(x: int, n: int) -> int:
+        x &= 0xFFFFFFFF
+        return ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
 
+    mask = 0xFFFFFFFF
+    h = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
+
+    msg = bytearray(message)
+    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    msg.append(0x80)
+    while len(msg) % 64 != 56:
+        msg.append(0x00)
+    msg += struct.pack("<Q", bit_len)
+
+    def rnd(p, q, r, kind):
+        if kind == 1:
+            return ((p & q) | (~p & r)) & mask
+        if kind == 2:
+            return ((p & q) | (p & r) | (q & r)) & mask
+        return (p ^ q ^ r) & mask
+
+    # The three rounds differ only in the nonlinear function, the additive
+    # constant, which word each register reads, and the rotation amount. Writing
+    # them as one loop with those four things as parameters is what keeps the
+    # index arithmetic honest: three separate hand indexed loops are three
+    # chances to walk off the end of the word array, which is exactly what
+    # happened twice while this file was being written.
+    #
+    # kind    function                K           words read by a,d,c,b    shifts
+    #   1     (p AND q) OR (~p AND r)  0x00000000  base + 0, 1, 2, 3        3 7 11 19
+    #   2     (p AND q) OR ...         0x5A827999  base + 0, 4, 8, 12       3 5  9 13
+    #   3     p XOR q XOR r            0x6ED9EBA1  base + 0, 8, 4, 12       3 9 11 15
+    #
+    # `base` per group of four steps: round 1 walks the words in strides of four,
+    # round 2 takes column 0, 1, 2, 3, round 3 takes 0, 2, 1, 3. Round 3 swaps
+    # the middle two offsets as well, because its pseudocode interleaves the
+    # registers as a, d, c, b with X[0], X[8], X[4], X[12]: it is not round 2
+    # with the columns reversed.
+    rounds = [
+        (1, 0x00000000, (0, 1, 2, 3), (0, 4, 8, 12), (3, 7, 11, 19)),
+        (2, 0x5A827999, (0, 4, 8, 12), (0, 1, 2, 3), (3, 5, 9, 13)),
+        (3, 0x6ED9EBA1, (0, 8, 4, 12), (0, 2, 1, 3), (3, 9, 11, 15)),
+    ]
+
+    for off in range(0, len(msg), 64):
+        x = list(struct.unpack("<16I", bytes(msg[off:off + 64])))
+        a, b, c, d = h
+
+        for kind, k, offsets, group_base, shifts in rounds:
+            for g in range(4):
+                base = group_base[g]
+                a = rol(a + rnd(b, c, d, kind) + x[base + offsets[0]] + k, shifts[0])
+                d = rol(d + rnd(a, b, c, kind) + x[base + offsets[1]] + k, shifts[1])
+                c = rol(c + rnd(d, a, b, kind) + x[base + offsets[2]] + k, shifts[2])
+                b = rol(b + rnd(c, d, a, kind) + x[base + offsets[3]] + k, shifts[3])
+
+        h = [(h[0] + a) & mask, (h[1] + b) & mask,
+             (h[2] + c) & mask, (h[3] + d) & mask]
+
+    return struct.pack("<4I", *h)
+
+
+def ntlm(password: str) -> bytes:
+    """NTLMv1: MD4 over the password encoded as UTF-16-LE."""
+    return md4(password.encode("utf-16-le"))
+
+
+def crc32(data: bytes) -> bytes:
+    """CRC-32 as in IEEE 802.3, returned big endian for the testbench."""
+    return struct.pack(">I", zlib.crc32(data) & 0xFFFFFFFF)
+
+
+def blake2b512(message: bytes) -> bytes:
+    """BLAKE2b-512, unkeyed, which is what a bare BLAKE2b hash is."""
+    return hashlib.blake2b(message, digest_size=64).digest()
+
+
+# ---------------------------------------------------------------------------
+# Padding
+# ---------------------------------------------------------------------------
+
+def pad_merkle_varint(message: bytes) -> bytes:
+    """MD4 and MD5 padding: terminator, zeros, then the length in BITS, LE.
+
+    The length field is the message length in bits, low 32 bits first and high 32
+    bits after it, not the message length in bytes.
+    """
+    out = bytearray(message)
+    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    out.append(0x80)
+    while len(out) % 64 != 56:
+        out.append(0x00)
+    out += struct.pack("<Q", bit_len)
+    return bytes(out)
+
+
+def pad_be64(message: bytes) -> bytes:
+    """SHA-512 and SHA-384 padding: terminator, zeros, then length in BITS, BE.
+
+    The length field is 128 bits. For any message this repository can feed a
+    single block core the high 64 bits are zero, and the block is 128 bytes.
+    """
+    out = bytearray(message)
+    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    out.append(0x80)
+    while len(out) % 128 != 112:
+        out.append(0x00)
+    out += struct.pack(">QQ", bit_len, 0)
+    return bytes(out)
+
+
+def pad_blake2b(message: bytes) -> bytes:
+    """BLAKE2b padding: terminator, zeros, then the length in BITS, LE 64 bit.
+
+    The final block carries the last block flag, so this padding is only correct
+    for a message that fits one block. The generator refuses anything longer,
+    which is the limit of ``blake2b_core`` as well.
+    """
+    out = bytearray(message)
+    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
+    out.append(0x80)
+    while len(out) % 128 != 128 - 16:
+        out.append(0x00)
+    out += struct.pack("<Q", bit_len)
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# Packing into packed SystemVerilog literals
+# ---------------------------------------------------------------------------
+
+def pack_words(raw: bytes, word_bytes: int, little_endian: bool) -> list[bytes]:
+    """Splits ``raw`` into words, byte reversing each word if needed."""
+    if len(raw) % word_bytes:
+        sys.exit(f"cannot split {len(raw)} bytes into {word_bytes} byte words")
+    words = [raw[i:i + word_bytes] for i in range(0, len(raw), word_bytes)]
+    if little_endian:
+        words = [w[::-1] for w in words]
+    return words
+
+
+def literal(words: list[bytes], word_bytes: int, word_bits: int) -> str:
+    """A sized hex literal with word 0 in the least significant bits.
+
+    Word n-1 is written first, which is what putting word 0 at the low bits
+    means. The result is re-read and compared against ``words`` so a mistake
+    here fails in this function rather than as an impossible looking expectation
+    in a testbench.
+    """
+    n = len(words)
+    body = "".join(w.hex() for w in reversed(words))
+    text = f"{n * word_bits}'h{body}"
+
+    # Round trip: strip the size, slice back into words, undo the reversal.
+    parsed = bytes.fromhex(text.split("'h")[1])
+    if len(parsed) != n * word_bytes:
+        sys.exit(f"literal round trip failed: {len(parsed)} bytes from "
+                 f"{text}, expected {n * word_bytes}")
+    back = [parsed[i:i + word_bytes] for i in range(0, len(parsed), word_bytes)]
+    back = [b[::-1] for b in reversed(back)]
+    if back != words:
+        sys.exit(f"literal round trip failed\n  want {words}\n  got  {back}")
+    return text
+
+
+def pack_block(padded: bytes, word_bits: int, little_endian: bool) -> str:
+    wb = word_bits // 8
+    return literal(pack_words(padded, wb, little_endian), wb, word_bits)
+
+
+def pack_digest(digest: bytes, word_bits: int, little_endian: bool) -> str:
+    wb = word_bits // 8
+    return literal(pack_words(digest, wb, little_endian), wb, word_bits)
+
+
+# ---------------------------------------------------------------------------
+# Core specifications
+# ---------------------------------------------------------------------------
+
+class Core:
+    def __init__(self, name, title, digest_fn, pad_fn, word_bits, digest_words,
+                 block_words, little_endian, max_single, oracle, kind="core"):
+        self.name = name                  # file stem, also the vector file stem
+        self.title = title                # human readable, printed in the TB
+        self.digest_fn = digest_fn        # bytes -> digest bytes
+        self.pad_fn = pad_fn              # bytes -> padded block(s)
+        self.word_bits = word_bits
+        self.digest_words = digest_words
+        self.block_words = block_words
+        self.little_endian = little_endian
+        self.max_single = max_single      # longest message that fits one block
+        self.oracle = oracle              # what the digest came from
+        self.kind = kind                  # "core" or "ntlm" or "crc"
+
+
+MD5_IV = "128'h10325476_98badcfe_efcdab89_67452301"
+
+CORES = [
+    Core("md5", "MD5 (RFC 1321)",
+         lambda m: hashlib.md5(m).digest(), pad_merkle_varint,
+         32, 4, 16, True, 55, "hashlib.md5"),
+    Core("md4", "MD4 (RFC 1320)",
+         md4, pad_merkle_varint,
+         32, 4, 16, True, 55, "pure Python MD4, RFC 1320 test suite"),
+    Core("sha1", "SHA-1 (FIPS 180-4)",
+         lambda m: hashlib.sha1(m).digest(), pad_merkle_varint,
+         32, 5, 16, False, 55, "hashlib.sha1"),
+    Core("sha256", "SHA-256 (FIPS 180-4)",
+         lambda m: hashlib.sha256(m).digest(), pad_merkle_varint,
+         32, 8, 16, False, 55, "hashlib.sha256"),
+    Core("sha512", "SHA-512 (FIPS 180-4)",
+         lambda m: hashlib.sha512(m).digest(), pad_be64,
+         64, 8, 16, False, 111, "hashlib.sha512"),
+    Core("sha384", "SHA-384 (FIPS 180-4)",
+         lambda m: hashlib.sha384(m).digest(), pad_be64,
+         64, 6, 16, False, 111, "hashlib.sha384"),
+    Core("ripemd160", "RIPEMD-160",
+         lambda m: hashlib.new("ripemd160", m).digest(), pad_merkle_varint,
+         32, 5, 16, False, 55, "hashlib ripemd160"),
+    Core("blake2b", "BLAKE2b-512, unkeyed",
+         blake2b512, pad_blake2b,
+         64, 8, 16, True, 111, "hashlib.blake2b, digest_size=64"),
+]
+
+NTLM = Core("ntlm", "NTLMv1: MD4 over UTF-16-LE",
+            ntlm, pad_merkle_varint,
+            32, 4, 16, True, 27, "MD4 over UTF-16-LE, RFC 1320 checked",
+            kind="ntlm")
+
+CORPUS_FILE = {
+    "md5": "md5.txt", "sha256": "sha256.txt", "ntlm": "ntlm.txt",
+}
+
+
+# ---------------------------------------------------------------------------
+# Corpus
+# ---------------------------------------------------------------------------
+
+def boundary_corpus(max_single: int) -> list[bytes]:
+    """Messages at and around every block boundary that matters.
+
+    55 and 56 are the pair for a 64 byte block, 111 and 112 for a 128 byte one.
+    A padding loop that appends the terminator after checking for the length
+    field position, instead of before, agrees with a correct one everywhere
+    except at 56 and 112.
+    """
+    y = b"y"  # not symmetric, so a misordered block differs visibly
+    lengths = [0, 1, 3, 14, 27, 43, 54, 55, 56, 63, 64, 110, 111, 112]
+    out = []
+    for n in lengths:
+        if n <= max_single:
+            out.append(y * n)
+    out += [
+        b"a",
+        b"abc",
+        b"message digest",
+        b"abcdefghijklmnopqrstuvwxyz",
+        b"The quick brown fox jumps over the lazy dog",
+        b"Passw0rd!",
+        b'quote"and\\backslash',
+        b"tab\tand spaces",
+        bytes(range(0x20, 0x7F)),
+    ]
+    seen = set()
+    unique = []
+    for m in out:
+        if m not in seen:
+            seen.add(m)
+            unique.append(m)
+    return unique
+
+
+def corpus_from_files(core: Core) -> list[bytes]:
+    """The ``hash:password`` pairs the Rust side already carries, re-checked here.
+
+    If the stored hash does not match the stored password, the corpus is wrong
+    and this stops. Emitting a vector from a wrong corpus entry would produce a
+    testbench that fails for a reason that has nothing to do with the RTL.
+    """
+    name = CORPUS_FILE.get(core.name)
+    if not name:
+        return []
+    path = CORPUS_DIR / name
+    if not path.exists():
+        return []
+
+    out = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            sys.exit(f"{path}: line without a colon: {raw!r}")
+        stored, password = line.split(":", 1)
+        message = password.encode("utf-8") if core.kind == "core" else password
+        if core.kind == "ntlm":
+            message = password  # ntlm() does the UTF-16-LE encoding itself
+        actual = core.digest_fn(message).hex()
+        if actual != stored.strip().lower():
+            sys.exit(f"{path}: stored hash {stored} does not match {password!r}\n"
+                     f"  recomputed {actual}\n"
+                     f"  the corpus is wrong, refusing to emit a vector from it")
+        out.append(message)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Emission
+# ---------------------------------------------------------------------------
 
 def sv_string(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    body = text.replace("\\", "\\\\").replace('"', '\\"').replace("\t", "\\t")
+    return f'"{body}"'
 
 
-def digest_literal(digest_hex: str, dwords: int) -> str:
-    """A sized literal with word 0 in the low bits.
+def label_for(core: Core, message: bytes) -> str:
+    if message == b"":
+        return "<empty>"
+    text = message.decode("utf-8", "replace")
+    if len(text) <= 24:
+        return text
+    return f"{len(message)} bytes"
 
-    SHA-1 is big endian, so the digest bytes in printed order are already the
-    words in order. Word 0 sits at [31:0], so the literal lists word n-1 first.
+
+def emit_core(core: Core) -> str:
+    """One ``check_core(...)`` call per message, blocks and digests both literal."""
+    lines = [
+        GENERATED_NOTE,
+        f"// {core.title}: single block vectors.",
+        f"// Digest oracle: {core.oracle}.",
+        f"// Padding oracle: struct.pack in {GENERATOR_PATH}.",
+        "//",
+        "// Every block and every digest below is emitted, not transcribed. A",
+        "// testbench that builds its own block from the message reintroduces the",
+        "// part select with an arithmetic base that this simulator miscompiles;",
+        "// see the header of " + GENERATOR_PATH + ".",
+        "",
+    ]
+
+    messages: list[tuple[str, bytes]] = []
+    for m in corpus_from_files(core):
+        messages.append((f"corpus {CORPUS_FILE[core.name]}", m))
+    for m in boundary_corpus(core.max_single):
+        messages.append(("boundary corpus", m))
+
+    count = 0
+    for source, message in messages:
+        if len(message) > core.max_single:
+            continue
+        padded = core.pad_fn(message)
+        if len(padded) != core.block_words * core.word_bits // 8:
+            sys.exit(f"{core.name}: padded {len(padded)} bytes, expected "
+                     f"{core.block_words * core.word_bits // 8}")
+        digest = core.digest_fn(message)
+        if len(digest) != core.digest_words * core.word_bits // 8:
+            sys.exit(f"{core.name}: digest {len(digest)} bytes, expected "
+                     f"{core.digest_words * core.word_bits // 8}")
+
+        blk = pack_block(padded, core.word_bits, core.little_endian)
+        dig = pack_digest(digest, core.word_bits, core.little_endian)
+        lines.append(f"        // {source}: {sv_string(label_for(core, message))}, "
+                     f"{len(message)} bytes")
+        lines.append(f"        check_core({blk},")
+        lines.append(f"                   {MD5_IV if core.word_bits == 32 else IV64(core)},")
+        lines.append(f"                   {dig},")
+        lines.append(f'                   "{core.name}({label_for(core, message)})", WAIT);')
+        lines.append("")
+        count += 1
+
+    lines.append(f"        // {count} vectors, all generated.")
+    return "\n".join(lines) + "\n"
+
+
+IV64_CORE = "512'h6a09e667f3bcc908_bb67ae8584caa73b_3c6ef372fe94f82b_a54ff53a5f1d36f1" \
+            "_510e527fade682d1_9b05688c2b3e6c1f_1f83d9abfb41bd6b_5be0cd19137e2179"
+
+
+def IV64(core: Core) -> str:
+    """The initial state for a 64 bit core, word 0 in the low bits."""
+    if core.name == "sha384":
+        words = [
+            0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17,
+            0x152FECD8F70E5939, 0x67332667FFC00B31, 0x8EB44A8768581511,
+            0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
+        ]
+    elif core.name == "blake2b":
+        words = [
+            0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B,
+            0xA54FF53A5F1D36F1, 0x510E527FADE682D1, 0x9B05688C2B3E6C1F,
+            0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
+        ]
+    else:
+        words = [
+            0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B,
+            0xA54FF53A5F1D36F1, 0x510E527FADE682D1, 0x9B05688C2B3E6C1F,
+            0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
+        ]
+    packed = b"".join(struct.pack(">Q", w) for w in words)
+    return pack_digest(packed, 64, False)
+
+
+def emit_ntlm() -> str:
+    lines = [
+        GENERATED_NOTE,
+        f"// {NTLM.title}.",
+        "// Digest oracle: MD4 over UTF-16-LE, the MD4 held against RFC 1320.",
+        "//",
+        "// The block itself is not emitted here. ntlm_core builds the UTF-16-LE",
+        "// block from the ASCII password on the device, so the device side of",
+        "// that conversion is what this file tests.",
+        "",
+    ]
+    passwords = ["", "a", "abc", "password", "Passw0rd!", "12345", "P@ssw0rd123",
+                 "abcdefghijklmnopqrstuvwxyz", "A" * 27, "A" * 28]
+    for pw in passwords:
+        if len(pw.encode("utf-16-le")) > NTLM.max_single + 1:
+            continue
+        digest = ntlm(pw)
+        dig = pack_digest(digest, 32, True)
+        label = pw if pw else "<empty>"
+        lines.append(f"        // NTLM of {sv_string(label)}, {len(pw)} characters")
+        lines.append(f'        check_ntlm({sv_string(pw)}, {dig}, '
+                     f'"ntlm({label})", WAIT);')
+        lines.append("")
+    lines.append(f"        // {len(passwords)} vectors, all generated.")
+    return "\n".join(lines) + "\n"
+
+
+def emit_crc() -> str:
+    lines = [
+        GENERATED_NOTE,
+        "// CRC-32, IEEE 802.3 reflected form: polynomial 0xEDB88320, initial",
+        "// value 0xFFFFFFFF, final XOR 0xFFFFFFFF. The host computes the same",
+        "// function in engines/engine-fpga/src/protocol.rs, and the two must",
+        "// agree exactly or every packet is rejected.",
+        "// Oracle: zlib.crc32.",
+        "",
+    ]
+    cases = [b"", b"a", b"abc", b"123456789",
+             b"The quick brown fox jumps over the lazy dog",
+             b"pwdcrack fpga payload",
+             bytes(range(0, 64)),
+             bytes(range(255, 191, -1))]
+    for data in cases:
+        want = crc32(data)
+        blob = "".join(f"8'h{b:02x}, " for b in data)
+        label = data.decode("ascii", "replace") if data else "<empty>"
+        lines.append(f"        // CRC-32 of {sv_string(label)}, {len(data)} bytes")
+        lines.append(f"        check_crc({{{blob}}}, {want[3]:02x}{want[2]:02x}"
+                     f"{want[1]:02x}{want[0]:02x}, "
+                     f'"crc32({label})", WAIT);')
+        lines.append("")
+    lines.append(f"        // {len(cases)} vectors, all generated.")
+    return "\n".join(lines) + "\n"
+
+
+def emit_padding() -> str:
+    """Oracle blocks for the padding helpers in tb_common.svh.
+
+    tb_padding compares the SystemVerilog padding functions against these. They
+    were transcribed once, and three of the four MD5 blocks that were checked in
+    were wrong: big endian word order where MD5 needs little endian, and the
+    length field in word 13 instead of word 14.
     """
-    words = [digest_hex[i * 8:(i + 1) * 8] for i in range(len(digest_hex) // 8)]
-    literal = f"{dwords * 32}'h" + "".join(reversed(words))
-    body = literal.split("'h")[1]
-    n = len(digest_hex) // 8
-    rebuilt = "".join(body[(n - 1 - i) * 8:(n - i) * 8] for i in range(n))
-    if rebuilt != digest_hex:
-        sys.exit(f"digest literal round trip failed\n"
-                 f"  digest  {digest_hex}\n  literal {literal}\n"
-                 f"  rebuilt {rebuilt}")
-    return literal
+    lines = [
+        GENERATED_NOTE,
+        "// Padded blocks for MD4, MD5 and SHA-256 style padding, word 0 in the",
+        "// least significant bits. Oracle: struct.pack, cross checked against",
+        "// the digest of the same message by the core vector files.",
+        "",
+    ]
+
+    def add(name: str, message: bytes) -> None:
+        packed = pad_merkle_varint(message)
+        lines.append(f'        check_block_words(md5_padded_block("{name}"),')
+        lines.append(f"            {pack_block(packed, 32, True)},")
+        lines.append(f'            "{name}");')
+        lines.append("")
+
+    add("", b"")
+    add("y", b"y")
+    add("yyy", b"yyy")
+    add("y" * 14, b"y" * 14)
+    add("y" * 55, b"y" * 55)
+    for n in (56, 64, 119):
+        m = b"y" * n
+        packed = pad_merkle_varint(m)
+        b0, b1 = packed[:64], packed[64:]
+        lines.append(f'        md5_pad_blocks("{m.decode()}", b0, b1, blocks);')
+        lines.append(f'        if (blocks != 2) `TB_FAIL_NOTE("{n} bytes", '
+                     f'"expected 2 blocks");')
+        lines.append('        check_block_words(b0,')
+        lines.append(f"            {pack_block(b0, 32, True)},")
+        lines.append(f'            "{n} bytes, block 0");')
+        lines.append('        check_block_words(b1,')
+        lines.append(f"            {pack_block(b1, 32, True)},")
+        lines.append(f'            "{n} bytes, block 1");')
+        lines.append("")
+
+    lines.append("        // blocks and digests agree, so the padding helpers in")
+    lines.append("        // tb_common.svh are verified against the same bytes the")
+    lines.append("        // core testbenches feed to the cores.")
+    return "\n".join(lines) + "\n"
 
 
-def main(argv: list) -> int:
-    if len(argv) < 2 or argv[1] != "--sha1-blocks":
-        print(__doc__.strip(), file=sys.stderr)
-        return 2
-    messages = argv[2:]
+# ---------------------------------------------------------------------------
+# Driver
+# ---------------------------------------------------------------------------
 
-    print("// Generated by scripts/gen-rtl-vectors.py --sha1-blocks.")
-    print("// Oracle: Python hashlib for the digest, struct.pack for the block,")
-    print("// cross checked against a hand built padding before emission.")
-    print("//")
-    print("// Blocks are literals because Icarus Verilog 12 cannot build a big")
-    print("// endian block from a string at runtime. See the script header.")
-    print()
-    for text in messages:
-        raw = text.encode()
-        if len(raw) > LIMIT:
-            sys.exit(f"message is {len(raw)} bytes, over the {LIMIT} byte "
-                     "single block limit")
-        self_check(raw)
-        block = pad_be(raw)
-        digest = hashlib.sha1(raw).hexdigest()
-        label = text if text else "<empty>"
-        comment = f'SHA-1 of {sv_string(text)}, {len(raw)} bytes'
-        print(f"        // {comment}")
-        print(f"        w = 512'h{block.hex()};")
-        print(f'        check_block_start(w, {digest_literal(digest, 5)}, '
-              f'"sha1({label})", WAIT);')
-        print()
-    return 0
+def all_files() -> dict[str, str]:
+    files = {f"{c.name}.svh": emit_core(c) for c in CORES}
+    files["ntlm.svh"] = emit_ntlm()
+    files["crc32.svh"] = emit_crc()
+    files["padding.svh"] = emit_padding()
+    return files
+
+
+def _md4_self_check() -> None:
+    """Hold the pure Python MD4 against a third party.
+
+    Without this the MD4 and NTLM vectors rest on an implementation that
+    nothing else in the toolchain can check, which is exactly the kind of
+    single point of failure this file exists to remove.
+
+    Two independent oracles agree on every value below. `openssl dgst -provider
+    legacy -md4` gives the same digests, and the first six are the RFC 1320
+    Appendix A.5 test suite.
+
+    The seventh value is here because it was transcribed from memory into the
+    first version of this list as e33b4ddc9c38a219628c3acad0dc2a11, which is
+    wrong, and the implementation it was checking was right. A vector that
+    disagrees with a correct implementation is indistinguishable from a broken
+    implementation unless something outside both says which is which.
+    """
+    suite = [
+        (b"", "31d6cfe0d16ae931b73c59d7e0c089c0"),
+        (b"a", "bde52cb31de33e46245e05fbdbd6fb24"),
+        (b"abc", "a448017aaf21d8525fc10ae87aa6729d"),
+        (b"message digest", "d9130a8164549fe818874806e1c7014b"),
+        (b"abcdefghijklmnopqrstuvwxyz", "d79e1c308aa5bbcdeea8ed63df412da9"),
+        (b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+         "043f8582f241db351ce627e153e7f0e4"),
+        (b"1234567890" * 8, "e33b4ddc9c38f2199c3e7b164fcc0536"),
+    ]
+    for message, want in suite:
+        got = md4(message).hex()
+        if got != want:
+            sys.exit(f"the pure Python MD4 is wrong.\n"
+                     f"  message {message[:32]!r}...\n"
+                     f"  expected {want}\n"
+                     f"  this file {got}\n"
+                     f"  no MD4 vector may be emitted until this agrees")
+
+
+def write(files: dict[str, str], dest: pathlib.Path) -> list[pathlib.Path]:
+    dest.mkdir(parents=True, exist_ok=True)
+    written = []
+    for name, body in sorted(files.items()):
+        path = dest / name
+        path.write_text(body, encoding="utf-8")
+        written.append(path)
+    return written
+
+
+def check(files: dict[str, str], dest: pathlib.Path) -> int:
+    bad = 0
+    for name, body in sorted(files.items()):
+        path = dest / name
+        if not path.exists():
+            print(f"MISSING  {path.relative_to(REPO)}")
+            bad += 1
+            continue
+        if path.read_text(encoding="utf-8") != body:
+            print(f"DRIFT    {path.relative_to(REPO)}")
+            print(f"         run {GENERATOR_PATH} --write")
+            bad += 1
+    if bad == 0:
+        print(f"{len(files)} vector files match {GENERATOR_PATH}")
+    return bad
+
+
+def count_vectors(body: str) -> int:
+    return len(re.findall(r"^\s+check_(core|ntlm|crc|block_words)\(", body, re.M))
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--write", action="store_true", help="regenerate the files")
+    group.add_argument("--check", action="store_true", help="fail on any drift")
+    group.add_argument("--list", action="store_true", help="list cores and counts")
+    group.add_argument("--show", metavar="CORE", help="print one core's vectors")
+    args = parser.parse_args(argv[1:])
+
+    _md4_self_check()
+
+    if args.list:
+        files = all_files()
+        for name, body in sorted(files.items()):
+            print(f"{name[:-4]:<12} {count_vectors(body):>3} vectors")
+        return 0
+
+    if args.show:
+        files = all_files()
+        key = args.show if args.show.endswith(".svh") else f"{args.show}.svh"
+        if key not in files:
+            print(f"no such core: {args.show}", file=sys.stderr)
+            print("known: " + ", ".join(sorted(k[:-4] for k in files)), file=sys.stderr)
+            return 2
+        sys.stdout.write(files[key])
+        return 0
+
+    files = all_files()
+    if args.write:
+        for path in write(files, VECTORS):
+            print(f"wrote     {path.relative_to(REPO)}")
+        return 0
+    return 1 if check(files, VECTORS) else 0
 
 
 if __name__ == "__main__":

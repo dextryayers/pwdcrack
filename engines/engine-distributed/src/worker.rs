@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 use tokio::time;
 
 use crate::verify;
+use crate::wordlist::WordlistPolicy;
 use crate::protocol::{
     self, Message, WorkerStats, Capabilities, CrackedEntry, WorkUnit, AttackType,
 };
@@ -15,9 +16,27 @@ pub struct WorkerNode {
     pub stream: Option<TcpStream>,
     tested: Arc<AtomicU64>,
     cracked: Arc<AtomicU64>,
+    /// Directories this worker will open wordlists from, chosen locally.
+    /// A master cannot widen it.
+    wordlists: WordlistPolicy,
 }
 
 impl WorkerNode {
+    /// The directories this worker will open wordlists from.
+    pub fn roots(&self) -> &[std::path::PathBuf] {
+        self.wordlists.roots()
+    }
+
+    /// True when this worker will refuse every dictionary unit.
+    pub fn refuses_all_wordlists(&self) -> bool {
+        self.wordlists.is_deny_all()
+    }
+
+    /// Builds a worker with no granted wordlist directories.
+    ///
+    /// Every dictionary work unit is refused until [`WorkerNode::with_wordlist_dirs`]
+    /// names somewhere to read from. Defaulting to "read whatever the master asks
+    /// for" is the defect P9.1.05 describes, so it is not a default here.
     pub fn new(master_addr: &str) -> Self {
         WorkerNode {
             master_addr: master_addr.to_string(),
@@ -25,7 +44,21 @@ impl WorkerNode {
             stream: None,
             tested: Arc::new(AtomicU64::new(0)),
             cracked: Arc::new(AtomicU64::new(0)),
+            wordlists: WordlistPolicy::deny_all(),
         }
+    }
+
+    /// Grants directories this worker may read wordlists from.
+    ///
+    /// Takes paths the operator chose on this machine. The master cannot widen
+    /// the grant, only pick a file inside what is already granted.
+    pub fn with_wordlist_dirs<I, P>(mut self, dirs: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<std::path::Path>,
+    {
+        self.wordlists = WordlistPolicy::new(dirs)?;
+        Ok(self)
     }
 
     pub async fn connect(&mut self) -> Result<(), String> {
@@ -88,10 +121,19 @@ impl WorkerNode {
                 }
             }
             AttackType::Dictionary { wordlist_path, rules } => {
-                let words = match read_wordlist_lines(wordlist_path, start, end) {
+                // Resolved against the directories this worker was granted, with
+                // symlinks followed before the containment check. A refused path
+                // is logged with the reason and the unit is skipped: the master
+                // named something this worker may not open, and continuing would
+                // mean opening it anyway.
+                let base = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let words = match self.wordlists.read_lines(wordlist_path, &base, start, end) {
                     Ok(w) => w,
                     Err(e) => {
-                        log::error!("Failed to read wordlist '{}': {}", wordlist_path, e);
+                        log::error!(
+                            "Refused wordlist '{}': {e}",
+                            wordlist_path
+                        );
                         return Vec::new();
                     }
                 };
@@ -402,21 +444,4 @@ fn apply_one(word: &str, op: &RuleOp) -> Vec<String> {
             vec![c.into_iter().collect()]
         }
     }
-}
-
-fn read_wordlist_lines(path: &str, start: u64, end: u64) -> Result<Vec<String>, String> {
-    use std::io::{BufRead, BufReader};
-    let file = std::fs::File::open(path).map_err(|e| format!("open {}: {}", path, e))?;
-    let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let i = i as u64;
-        if i >= end { break; }
-        if i < start { continue; }
-        match line {
-            Ok(l) => lines.push(l),
-            Err(e) => return Err(format!("read {} line {}: {}", path, i, e)),
-        }
-    }
-    Ok(lines)
 }
