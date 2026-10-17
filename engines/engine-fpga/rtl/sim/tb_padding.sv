@@ -1,26 +1,31 @@
-// Padding testbench for MD4, MD5 and SHA-256 style messages.
+// Padding testbench for MD4, MD5, RIPEMD-160 and SHA-1 style messages.
 //
 // # Why this is separate from the core testbenches
 //
-// A one block core cannot check padding past 55 bytes, because the message does
-// not fit. `md5_padded_block` refuses anything longer, which is correct, but it
-// leaves the 56, 64 and 119 byte cases with no coverage anywhere.
+// A single block core cannot check padding past 55 bytes, because the message
+// does not fit. The padding helpers in tb_common.svh refuse anything longer,
+// which is correct and which leaves the 56, 64 and 119 byte cases with no
+// coverage anywhere.
 //
 // Those are exactly the lengths where a padding loop written with the wrong
 // comparison goes wrong. The terminator must land on the first byte after the
 // message and the length field starts at byte 56 of the final block. A loop that
 // checks `len % 64 != 56` before appending the terminator rather than after
 // produces a different block at 55 and at 56 and nowhere else in the range. No
-// core in this repository can be fed those messages, so the padding itself has to
-// be verified directly. That is what this file does.
+// core in this repository can be fed those messages, so the padding itself has
+// to be verified directly.
 //
-// # Word order in the literals
+// # Against what
 //
-// The helpers place word i at `[32*i +: 32]`, so word 0 occupies the lowest 32
-// bits and a hex literal must therefore list word 15 first. The literals below
-// were generated with that reversal applied; writing them the other way round
-// transposes the message and is the same class of error as the endianness bug in
-// the old `md5_tb.sv`.
+// `scripts/gen-rtl-vectors.py`, from `struct.pack`. The blocks in
+// `vectors/padding.svh` are emitted, not transcribed: the previous version of
+// this file carried them as literals, and three of the four MD5 blocks were
+// wrong, using big endian word order where MD5 needs little endian and placing
+// the length field in word 13 instead of word 14.
+//
+// The same generator produces the block and the digest for each core, so a
+// padding error here and a core error there cannot both be explained by the
+// same mistake.
 
 `include "tb_common.svh"
 
@@ -34,7 +39,9 @@ module tb_padding;
     int           blocks;
 
     // Compares one produced block against the oracle block, word by word, and
-    // names the first word that differs.
+    // names the first word that differs. Word by word because a whole block
+    // comparison only says "wrong", and the first differing word says which
+    // half of the padding rule is wrong.
     task automatic check_block_words(
         input [511:0] got,
         input [511:0] want,
@@ -61,59 +68,9 @@ module tb_padding;
     endtask
 
     initial begin
-        $display("=== MD4/MD5/SHA-256 padding ===");
+        $display("=== MD4/MD5/RIPEMD-160/SHA-1 padding, generated from struct.pack ===");
 
-        // ---- Oracle blocks, generated from Python struct.pack ----
-        // The message is 64 repetitions of y. Its bytes are not
-        // symmetric, so a block built with the wrong word order differs
-        // visibly rather than matching by accident.
-
-        check_block_words(md5_padded_block(""),
-            512'h00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080,
-            "empty");
-
-        check_block_words(md5_padded_block("y"),
-            512'h00000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008079,
-            "one byte");
-
-        check_block_words(md5_padded_block("yyy"),
-            512'h00000000000000180000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080797979,
-            "three bytes");
-
-        check_block_words(md5_padded_block("yyyyyyyyyyyyyy"),
-            512'h00000000000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000807979797979797979797979797979,
-            "fourteen bytes");
-
-        check_block_words(md5_padded_block("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"),
-            512'h00000000000001b88079797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979,
-            "55 bytes, the longest that fits one block");
-
-        md5_pad_blocks("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", b0, b1, blocks);
-        if (blocks != 2) `TB_FAIL_NOTE("56 bytes, the first length needing a second block", "expected 2 blocks");
-        check_block_words(b0,
-            512'h00000000000000807979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979,
-            "56 bytes, the first length needing a second block, block 0");
-        check_block_words(b1,
-            512'h00000000000001c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
-            "56 bytes, the first length needing a second block, block 1");
-
-        md5_pad_blocks("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", b0, b1, blocks);
-        if (blocks != 2) `TB_FAIL_NOTE("64 bytes, exactly one full block", "expected 2 blocks");
-        check_block_words(b0,
-            512'h79797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979,
-            "64 bytes, exactly one full block, block 0");
-        check_block_words(b1,
-            512'h00000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080,
-            "64 bytes, exactly one full block, block 1");
-
-        md5_pad_blocks("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", b0, b1, blocks);
-        if (blocks != 2) `TB_FAIL_NOTE("119 bytes, the two block ceiling", "expected 2 blocks");
-        check_block_words(b0,
-            512'h79797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979,
-            "119 bytes, the two block ceiling, block 0");
-        check_block_words(b1,
-            512'h00000000000003b88079797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979,
-            "119 bytes, the two block ceiling, block 1");
+        `include "vectors/padding.svh"
 
         tb_report("padding");
     end

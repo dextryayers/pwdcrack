@@ -750,6 +750,67 @@ def emit_crc() -> str:
     return "\n".join(lines) + "\n"
 
 
+def emit_top() -> str:
+    """One vector per core, routed through the top level's selector.
+
+    The per core testbenches already prove each core. What this file adds is the
+    thing they cannot: that `rtl/top.sv` wires every core to the right slice of
+    the wide ports and that the selector reaches the right one. A mux wired to
+    the wrong core produces a digest that is right for a different algorithm,
+    which is the kind of bug no per core test can see.
+
+    The selector encoding here must match the parameters in `rtl/top.sv`.
+    """
+    lines = [
+        GENERATED_NOTE,
+        "// One vector per core, driven through the top level's mux.",
+        "// Oracle: the same as each core's own vector file.",
+        "",
+    ]
+    sel = {
+        "md5": 0, "md4": 1, "sha1": 2, "sha256": 3,
+        "sha512": 4, "sha384": 5, "ripemd160": 6,
+    }
+    for core in CORES:
+        if core.name not in sel:
+            continue
+        # The boundary message that exercises the length field: 55 bytes for the
+        # 64 byte block cores, 111 for the 128 byte ones.
+        message = b"y" * core.max_single
+        padded = core.pad_fn(message)
+        core.check_padding(message, padded)
+        core.check_word_order(message, padded)
+        digest = core.digest_fn(message)
+        blk = pack_block(padded, core.word_bits, core.little_endian)
+        dig = pack_digest(digest, core.word_bits, core.little_endian)
+        lines.append(f"        // {core.title}, {len(message)} bytes, "
+                     f"the single block limit")
+        lines.append(f"        check_top(4'h{sel[core.name]:x},")
+        lines.append(f"                 {widen(blk, 1024)},")
+        lines.append(f"                 {widen(core.iv(), 512)},")
+        lines.append(f"                 {widen(dig, 512)},")
+        lines.append(f'                 "{core.name}({len(message)} bytes through the top)",')
+        lines.append("                 WAIT);")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def widen(literal: str, bits: int) -> str:
+    """Widens a packed literal to the top level's port width, with zeros.
+
+    The top level presents every core through 1024 and 512 bit ports, so each
+    core's own literal has to be zero extended. The value is unchanged: the
+    extra bits are above every core's own payload, and no core reads them.
+    """
+    size, body = literal.split("'h")
+    have = int(size)
+    if have == bits:
+        return literal
+    if have > bits:
+        sys.exit(f"cannot widen a {have} bit literal to {bits} bits")
+    return f"{bits}'h" + "0" * ((bits - have) // 4) + body
+
+
 def emit_padding() -> str:
     """Oracle blocks for the padding helpers in tb_common.svh.
 
@@ -808,6 +869,7 @@ def all_files() -> dict[str, str]:
     files["ntlm.svh"] = emit_ntlm()
     files["crc32.svh"] = emit_crc()
     files["padding.svh"] = emit_padding()
+    files["top.svh"] = emit_top()
     return files
 
 

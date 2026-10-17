@@ -498,21 +498,30 @@ module ripemd160_core (
 
                     step <= step + 7'd1;
                 end else begin
-                    // Combine the two lines. Each output word takes the
-                    // left line's middle register and the right line's:
+                    // Combine the two lines. The specification writes this as a
+                    // rotation of the chaining values rather than in place:
                     //
-                    //     h0 = h0 + b + c2      h3 = h3 + a + b2
-                    //     h1 = h1 + c + d2      h4 = h4 + b + c2
-                    //     h2 = h2 + d + e2
+                    //     T  = h0 + c + d2
+                    //     h0 = h1 + d + e2
+                    //     h1 = h2 + e + a2
+                    //     h2 = h3 + a + b2
+                    //     h3 = h4 + b + c2
+                    //     h4 = T
                     //
                     // with (a, b, c, d, e) the left line and (a2, b2, c2, d2,
-                    // e2) the right. The additions read `state_in`, still the
-                    // value the block started from.
-                    la <= state_in[ 31:  0] + lb + rc;
-                    lb <= state_in[ 63: 32] + lc + rd;
-                    lc <= state_in[ 95: 64] + ld + re;
-                    ld <= state_in[127: 96] + le + ra;
-                    le <= state_in[159:128] + la + rb;
+                    // e2) the right. So each output takes the NEXT chaining
+                    // value, and the sum involving h0 lands in the last word.
+                    // Writing it as "h0 = h0 + b + c2" is off by one word in
+                    // every position and produces a digest whose bytes are all
+                    // right in the wrong places.
+                    //
+                    // The additions read `state_in`, still the value the block
+                    // started from, since no new block can arrive while busy.
+                    la <= state_in[ 63: 32] + lc + rd;
+                    lb <= state_in[ 95: 64] + ld + re;
+                    lc <= state_in[127: 96] + le + ra;
+                    ld <= state_in[159:128] + la + rb;
+                    le <= state_in[ 31:  0] + lb + rc;
                     busy   <= 1'b0;
                     done_r <= 1'b1;
                 end

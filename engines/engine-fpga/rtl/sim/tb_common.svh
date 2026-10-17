@@ -602,15 +602,26 @@ endfunction
 `define TB_CHECK_CRC \
     task automatic drive_crc_byte( \
         input logic [7:0] b, \
+        input logic init, \
         input logic last \
     ); \
         begin \
+            /* From a falling edge, for the same reason as `check_core`: */ \
+            /* values set just after a rising edge are gone before the */ \
+            /* core's next sampling edge and the byte is never captured. */ \
+            @(negedge clk); \
             data_in   <= b; \
+            /* `crc_init` marks the FIRST byte of a message and reloads the */ \
+            /* register with 0xFFFFFFFF. Driving it low throughout, which */ \
+            /* reads the natural way, makes every message after the first */ \
+            /* continue the previous one. */ \
+            crc_init  <= init; \
             valid     <= 1'b1; \
             byte_last <= last; \
             @(negedge clk); \
             valid     <= 1'b0; \
             byte_last <= 1'b0; \
+            crc_init  <= 1'b0; \
         end \
     endtask \
     task automatic check_crc( \
@@ -623,9 +634,8 @@ endfunction
         int waited; \
         int i; \
         begin \
-            crc_init <= 1'b0; \
             for (i = 0; i < n; i = i + 1) \
-                drive_crc_byte(data[8*i +: 8], i == n - 1); \
+                drive_crc_byte(data[8*i +: 8], i == 0, i == n - 1); \
             waited = 0; \
             while (waited < cycles && done !== 1'b1) begin \
                 @(negedge clk); \
@@ -651,12 +661,13 @@ endfunction
     ); \
         int waited; \
         begin \
+            @(negedge clk); \
             crc_init <= 1'b1; \
             data_in  <= 8'h00; \
-            valid    <= 1'b1; \
+            /* `valid` stays low: there is no byte. See crc32_accel. */ \
+            valid     <= 1'b0; \
             byte_last <= 1'b1; \
             @(negedge clk); \
-            valid     <= 1'b0; \
             byte_last <= 1'b0; \
             crc_init  <= 1'b0; \
             waited = 0; \

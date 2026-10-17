@@ -1545,6 +1545,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
+ "getrandom 0.2.17",
+ "hex",
  "log",
  "serde",
  "serde_json",

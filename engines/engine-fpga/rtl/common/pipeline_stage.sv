@@ -1,3 +1,28 @@
+// ============================================================================
+// STATUS: NOT VERIFIED. Not instantiated in `rtl/top.sv`, not in any testbench.
+//
+// Nothing in this file has been shown to produce a correct digest for any
+// input. P8.2.10 requires the design to contain only verified blocks, and an
+// unverified core in a bitstream is a core whose digest is a plausible wrong
+// answer, which for a cracker is worse than no core at all.
+//
+// What it would take to bring this one in:
+//
+//   1. a testbench in `rtl/sim/`, using the generated vectors;
+//   2. the core renamed to the `<algorithm>_core` convention and given the
+//      interface every other core uses: `valid`, `ready`, `msg_blk`,
+//      `state_in`, `digest_out`, `done`, word 0 in the least significant
+//      bits, described in `rtl/README.md`;
+//   3. an entry in scripts/gen-rtl-vectors.py, so the vectors come from an
+//      oracle rather than from memory.
+//
+// See docs/PHASE8_STATUS.md for the state of every core and
+// docs/PHASE8_STATUS.md#unverified for what each of these needs.
+//
+// Why: a utility block, not a hash core, not instantiated by `rtl/top.sv`
+// and not covered by any testbench.
+// ============================================================================
+
 // ============================================================
 // Generic Pipeline Stage - valid/ready handshake register
 // ============================================================

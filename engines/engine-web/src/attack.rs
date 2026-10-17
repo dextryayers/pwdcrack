@@ -149,6 +149,16 @@ pub trait AttackExecutor: Send + Sync {
     ///
     /// The executor knows the engine's memory limits; the dashboard does not.
     fn batch_size(&self) -> u64;
+
+    /// Whether this executor can actually run anything.
+    ///
+    /// The dashboard shows this before an operator clicks start, so nobody
+    /// discovers it by pressing a button. The default is `true`, because an
+    /// implementation that refuses to override this is claiming to work; only a
+    /// deliberate no-op like [`NullExecutor`] says otherwise.
+    fn is_null(&self) -> bool {
+        false
+    }
 }
 
 /// Control flags the runner observes between batches.
@@ -302,6 +312,13 @@ impl Drop for AttackHandle {
     fn drop(&mut self) {
         // Nothing can reach this handle any more, so the task would report
         // progress for an attack with no owner. Abort rather than leave it.
+        //
+        // The control flag is set first, and it matters. Aborting the task stops
+        // the work but leaves `Control` saying Running, so anyone holding a clone
+        // of it is told an attack is in progress when its task is already dead.
+        // That is the same class of lie this module exists to remove, so the
+        // flag is corrected here rather than only the task being killed.
+        self.control.stop();
         self.abort.abort();
     }
 }
@@ -416,6 +433,10 @@ impl AttackExecutor for NullExecutor {
 
     fn batch_size(&self) -> u64 {
         1024
+    }
+
+    fn is_null(&self) -> bool {
+        true
     }
 }
 

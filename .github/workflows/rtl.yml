@@ -1,0 +1,84 @@
+name: rtl
+
+# The RTL gate: every hash core against generated vectors.
+#
+# The point of this workflow is that a wrong digest is caught by a machine other
+# than the one that wrote it. It runs scripts/simulate.sh, which is the same
+# script a developer runs, and it fails if the committed vector files have
+# drifted from the generator, which is what stops a hand edited expectation from
+# becoming the new normal.
+#
+# It does not synthesise. No vendor tool runs here, and no timing or utilisation
+# figure is produced or claimed. See docs/FPGA_RESULTS.md.
+
+on:
+  push:
+    paths:
+      - "engines/engine-fpga/**"
+      - "scripts/gen-rtl-vectors.py"
+      - "scripts/simulate.sh"
+      - "scripts/setup-iverilog.sh"
+      - ".github/workflows/rtl.yml"
+  pull_request:
+    paths:
+      - "engines/engine-fpga/**"
+      - "scripts/gen-rtl-vectors.py"
+      - "scripts/simulate.sh"
+      - "scripts/setup-iverilog.sh"
+      - ".github/workflows/rtl.yml"
+  workflow_dispatch:
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install a Verilog simulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iverilog
+
+      - name: Report the simulator version
+        run: iverilog -V | head -1
+
+      # The vector corpus is read by the generator from tests/test_vectors, so a
+      # wrong hash in that corpus fails the generator rather than producing a
+      # vector nobody can account for. This step prints it so a failure in CI is
+      # visible as a corpus problem and not as a digest mismatch.
+      - name: Check the vector corpus against an oracle
+        run: |
+          python3 - <<'PY'
+          import hashlib, struct, sys, zlib
+          sys.path.insert(0, "scripts")
+          import importlib.util
+          spec = importlib.util.spec_from_file_location(
+              "gen", "scripts/gen-rtl-vectors.py")
+          gen = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(gen)
+
+          checked = 0
+          for name, fn in [("md5.txt", lambda p: hashlib.md5(p.encode()).hexdigest()),
+                           ("sha256.txt", lambda p: hashlib.sha256(p.encode()).hexdigest()),
+                           ("ntlm.txt", gen.ntlm)]:
+              for line in open(f"tests/test_vectors/{name}"):
+                  line = line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  stored, password = line.split(":", 1)
+                  if fn(password) != stored:
+                      sys.exit(f"{name}: {password!r} is {fn(password)}, not {stored}")
+                  checked += 1
+          print(f"{checked} corpus entries recomputed and matched")
+          PY
+
+      - name: Check the generated vectors are current
+        run: ./scripts/gen-rtl-vectors.py --check
+
+      - name: Inventory
+        run: ./scripts/simulate.sh --inventory
+
+      - name: Simulate every testbench
+        run: ./scripts/simulate.sh
