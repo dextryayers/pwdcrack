@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 
 const DEFAULT_CHECKPOINT: &str = "/tmp/pwdcrack_checkpoint.json";
 
+#[derive(Debug, Clone)]
 pub struct DistributedConfig {
     pub listen_addr: SocketAddr,
     pub master_addr: Option<SocketAddr>,

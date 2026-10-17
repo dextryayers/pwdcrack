@@ -135,10 +135,42 @@ fn main() {
         None
     };
 
+    // `DistributedNode` never existed in engine-distributed. The crate exposes
+    // `DistributedConfig` plus a `MasterNode` and a `WorkerNode`, and the node
+    // runs on its own tokio task, so the handle here is a config plus a join
+    // handle rather than a value.
     #[cfg(feature = "engine-distributed")]
-    let _dist_engine = if args.distributed {
-        Some(engine_distributed::DistributedNode::new("0.0.0.0:0"))
-    } else { None };
+    let _dist_handle = if args.distributed {
+        let cfg = engine_distributed::DistributedConfig {
+            // Binding is left to the engine default. See docs/plan.md P9.1.01:
+            // the default currently binds all interfaces without authentication,
+            // which is tracked as a security finding.
+            ..Default::default()
+        };
+        let role = if cfg.is_master() { "master" } else { "worker" };
+        log::info!("Distributed: starting {role} node");
+
+        // `DistributedConfig::run` is async. The engine owns its runtime, so the
+        // task is spawned rather than blocking the synchronous CLI path.
+        let cfg_for_task = cfg.clone();
+        Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .map_err(|e| format!("distributed runtime: {e}"))
+                .and_then(|rt| {
+                    rt.spawn(async move { cfg_for_task.run().await });
+                    Ok(rt)
+                }),
+        )
+    } else {
+        None
+    };
+    #[cfg(feature = "engine-distributed")]
+    if let Some(Err(e)) = &_dist_handle {
+        log::error!("Distributed: {}", e);
+    }
 
     #[cfg(feature = "engine-android")]
     let mut _android_engine = {
@@ -1507,7 +1539,7 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         ("Python MD5", HashType::PythonMD5, "<32 hex chars>", 128, "Application"),
         ("RabbitMQ MD5", HashType::RabbitMQMD5, "<32 hex chars>", 128, "Application"),
         ("Redis MD5", HashType::RedisMD5, "<32 hex chars>", 128, "Application"),
-        ("Unknown", HashType::Unknown, "—", 0, "Fallback"),
+        ("Unknown", HashType::Unknown, "-", 0, "Fallback"),
     ];
 
     let filtered = match filter {
@@ -1528,7 +1560,7 @@ fn cmd_list(verbose: bool, filter: Option<&str>) {
         println!("{:<4} {:<20} {:>8} {:<12} {}", "#", "Algorithm", "Bits", "Category", "Example");
         println!("{:=<80}", "");
         for (i, (name, _, example, bits, cat)) in filtered.iter().enumerate() {
-            let bits_str = if *bits > 0 { format!("{}", bits) } else { String::from("—") };
+            let bits_str = if *bits > 0 { format!("{}", bits) } else { String::from("-") };
             let ex = if example.len() > 30 {
                 format!("{}...", &example[..30])
             } else {
@@ -1771,45 +1803,45 @@ fn cmd_suggest(detector: &Detector, hash: &str) {
                 println!("  ⚡  GPU/FPGA/Warp acceleration supported");
             }
             if is_slow {
-                println!("  🔒  Slow/iterated hash — GPU resistance is high, focus on targeted dictionary");
+                println!("  🔒  Slow/iterated hash: GPU resistance is high, focus on targeted dictionary");
             }
             if bits >= 256 && !is_fast {
-                println!("  🔒  256+ bit — dictionary + rules is most efficient per watt");
+                println!("  🔒  256+ bit: dictionary + rules is most efficient per watt");
             }
 
             // Domain-specific advice
             if matches!(ht, HashType::NTLM | HashType::LM | HashType::NTLMV1 | HashType::NTLMV2
                 | HashType::DCC1 | HashType::DCC2 | HashType::DCC3) {
-                println!("  💻  Windows credential — try patterns: P@ssw0rd, Welcome1, Admin123");
+                println!("  💻  Windows credential: try patterns like P@ssw0rd, Welcome1, Admin123");
             }
             if matches!(ht, HashType::MD5Crypt | HashType::SHA256Crypt | HashType::SHA512Crypt
                 | HashType::SHA256CRYPTROUNDS) {
-                println!("  🐧  Unix shadow — try Linux patterns: seasonal + year + special");
+                println!("  🐧  Unix shadow: try Linux patterns such as seasonal + year + special");
             }
             if matches!(ht, HashType::PHPASS | HashType::DRUPAL7 | HashType::EPI
                 | HashType::PUNBB | HashType::IPB2 | HashType::IPB3 | HashType::VBULLETIN3
                 | HashType::VBULLETIN5 | HashType::SMF | HashType::MEDIAWIKI) {
-                println!("  🌐  CMS/Forum — try site-related keywords + common passwords");
+                println!("  🌐  CMS/Forum: try site-related keywords and common passwords");
             }
             if matches!(ht, HashType::MYSQL41 | HashType::MYSQL321 | HashType::POSTGRESQL
                 | HashType::ORACLE10G | HashType::ORACLE11G | HashType::ORACLE7
                 | HashType::MSSQL2005 | HashType::MSSQL2012) {
-                println!("  🗄️   Database — try admin/service account patterns");
+                println!("  🗄️   Database: try admin and service account patterns");
             }
             if matches!(ht, HashType::SAPCODVNB | HashType::SAPCODVNFG) {
-                println!("  🏢  SAP — try default SAP* passwords, company-related terms");
+                println!("  🏢  SAP: try default SAP* passwords and company-related terms");
             }
             if matches!(ht, HashType::LOTUSNOTES | HashType::NSLDAP) {
-                println!("  📧  Enterprise — try organizational patterns,季节+year");
+                println!("  📧  Enterprise: try organizational patterns such as seasonal + year");
             }
             if matches!(ht, HashType::SKIP32 | HashType::XXHASH32 | HashType::CRC24) {
-                println!("  🔧  Checksum/Light — NOT a cryptographic hash, trivial to invert");
+                println!("  🔧  Checksum/Light: NOT a cryptographic hash, trivial to invert");
             }
             if matches!(ht, HashType::PLAINTEXT | HashType::CHALLENGE | HashType::CRAMMD5) {
-                println!("  🪪  Identity/Challenge — password == raw or derived from challenge");
+                println!("  🪪  Identity/Challenge: password is the raw hash or derived from the challenge");
             }
             if matches!(ht, HashType::SNEFRU128 | HashType::SNEFRU256 | HashType::GOST94256 | HashType::GOST94512) {
-                println!("  📜  Legacy hash — limited cracking resources available");
+                println!("  📜  Legacy hash: limited cracking resources available");
             }
 
             if let Some(ref salt) = entry.salt {

@@ -91,7 +91,7 @@ pub fn probe() -> Option<MetalDeviceInfo> {
     if !cfg!(target_os = "macos") {
         return None;
     }
-    Self::detect_all()
+    MetalDevice::detect_all()
         .into_iter()
         .find(|d| !d.name.is_empty())
         .map(|d| MetalDeviceInfo {

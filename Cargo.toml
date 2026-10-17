@@ -82,7 +82,10 @@ engine-gpu  = ["dep:engine-gpu"]
 engine-fpga = ["dep:engine-fpga"]
 engine-jit  = ["dep:engine-jit"]
 engine-power = ["dep:engine-power"]
-engine-distributed = ["dep:engine-distributed"]
+# `dep:tokio` is required because the synchronous CLI has to host the engine's
+# async `run()` on its own runtime. Without it the binary cannot drive the
+# distributed engine at all.
+engine-distributed = ["dep:engine-distributed", "dep:tokio"]
 engine-web  = ["dep:engine-web"]
 engine-android = ["dep:engine-android"]
 engine-cuda = ["dep:engine-cuda"]
@@ -136,6 +139,12 @@ cfg-if = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
 indicatif = "0.17"
+
+# Async runtime
+# Only needed to host the distributed engine's tokio task from the synchronous
+# CLI entry point. Pinned to the same major version engine-distributed uses so
+# cargo resolves a single copy rather than two incompatible ones.
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 # Hash — always included, pure Rust
 md-5 = "0.10"

@@ -171,7 +171,6 @@ impl WorkerNode {
         let stream = self.stream.take().unwrap();
         let (mut reader, mut writer) = tokio::io::split(stream);
         let node_name = self.node_name.clone();
-        let tested = Arc::clone(&self.tested);
         let cracked = Arc::clone(&self.cracked);
 
 

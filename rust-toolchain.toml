@@ -1,0 +1,35 @@
+# Toolchain declaration for pwdcrack.
+#
+# Why this file exists
+# --------------------
+# The workspace uses Rust edition 2024, which requires rustc 1.85 or newer.
+# The GPU engine additionally pulls wgpu 30 and naga 30, which require
+# rustc 1.87. Declaring the minimum here stops a build failure from appearing
+# as a confusing "package requires rustc X" error deep in the dependency tree.
+#
+# Current state of the development machine
+# ---------------------------------------
+# The machine this repository was last edited on provides rustc 1.85.1, which
+# is below the 1.87 floor required by `engine-gpu`. As a result:
+#
+#   * `cargo build`, `cargo test`, and `cargo check` work for every default and
+#     non-GPU feature combination.
+#   * `cargo check --features engine-gpu` and `--features tier-high` fail with
+#     "wgpu@30.0.0 requires rustc 1.87.0".
+#
+# This is an environment limitation, not a defect in the GPU engine code. Once
+# a toolchain at or above 1.87 is available, the GPU combination builds without
+# source changes.
+#
+# To resolve, either install a newer toolchain:
+#
+#   rustup toolchain install 1.87
+#   rustup default 1.87
+#
+# or pin the GPU dependencies down to versions compatible with 1.85, which
+# trades away current wgpu support for buildability on this host. Prefer the
+# first option.
+
+[toolchain]
+channel = "1.87"
+components = ["rustfmt", "clippy"]

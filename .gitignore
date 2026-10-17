@@ -1,6 +1,9 @@
 # Rust
 target/
-Cargo.lock
+
+# Cargo.lock is intentionally committed.
+# pwdcrack ships a binary, so every build must resolve to the exact same
+# dependency versions. An untracked lock file makes releases unreproducible.
 
 # Build artifacts
 *.o
@@ -19,10 +22,12 @@ build/
 *.egg
 
 # Perl
+# Note: only build output is ignored here.
+# lib/pwdcrack.pm and perl/pwdcrack.xs are sources and must stay tracked,
+# so the blanket *.pm and *.xs rules were removed.
 blib/
-*.pm
-*.xs
 Makefile.old
+pm_to_blib
 
 # FPGA
 *.bit

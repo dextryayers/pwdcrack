@@ -74,7 +74,7 @@ impl std::fmt::Display for RiscvVectorInfo {
 
 /// Probe the host for RISC-V vector support. `None` when unavailable.
 pub fn probe() -> Option<RiscvVectorInfo> {
-    let eng = Self::detect();
+    let eng = RiscvVector::detect();
     if !eng.is_available() {
         return None;
     }

@@ -42,26 +42,32 @@ impl Md5Crypt {
         ctx1.update(password);
         let final1 = ctx1.finalize();
 
-        let mut i = password.len();
-        while i > 0 {
-            if i > 16 {
-                let range = if i > 16 { 16 } else { i };
-                ctx.update(&final1[..range]);
-            } else {
-                ctx.update(&final1[..i]);
-            }
-            i = i.wrapping_sub(16);
+        // Truncate the key length to the largest multiple of 16 that is not
+        // greater than the key, then feed `final1` in at most 16 byte chunks
+        // from that truncated length down to 1.
+        //
+        // The reference implementation loops `for (i = strlen(key); i; i -= 16)`
+        // so the sequence is `len & !15, ..., 16, 1` for a non-multiple length
+        // and `len, ..., 16, 1` for an exact multiple. The previous code used
+        // `i.wrapping_sub(16)`, which wrapped to near usize::MAX for any length
+        // that was not a multiple of 16 and never terminated.
+        for i in (1..=password.len()).rev().step_by(16) {
+            ctx.update(&final1[..i.min(16)]);
         }
 
-        let mut i = password.len();
-        while i > 0 {
-            if i & 1 != 0 {
-                ctx.update(&[0]);
+        // Then, for every bit of the password length from low to high, add the
+        // low byte of the password when the bit is set, otherwise a NUL byte.
+        let mut px = Vec::new();
+        let mut bit = 0usize;
+        while (password.len() >> bit) != 0 {
+            if password.len() >> bit & 1 == 1 {
+                px.push(password[0]);
             } else {
-                ctx.update(&password[..1]);
+                px.push(0u8);
             }
-            i >>= 1;
+            bit += 1;
         }
+        ctx.update(&px);
 
         let mut final2 = ctx.finalize();
         let mut passwd = String::from("$1$");
@@ -179,25 +185,22 @@ impl Sha256Crypt {
         ctx1.update(password);
         let digest1 = ctx1.finalize();
 
-        let mut i = password.len() as u32;
-        while i > 0 {
-            if i > 32 {
-                ctx.update(&digest1[..32]);
-            } else {
-                ctx.update(&digest1[..i as usize]);
-            }
-            i = i.wrapping_sub(32);
+        // See `Md5Crypt::crypt_raw` for why the previous `wrapping_sub` loop
+        // never terminated for a key length that was not a multiple of the
+        // digest size.
+        for i in (1..=password.len()).rev().step_by(32) {
+            ctx.update(&digest1[..i.min(32)]);
         }
 
-        let mut i = password.len();
         let mut px = Vec::new();
-        while i > 0 {
-            if i & 1 != 0 {
-                px.push(0u8);
-            } else {
+        let mut bit = 0usize;
+        while (password.len() >> bit) != 0 {
+            if password.len() >> bit & 1 == 1 {
                 px.push(password[0]);
+            } else {
+                px.push(0u8);
             }
-            i >>= 1;
+            bit += 1;
         }
         ctx.update(&px);
 
@@ -341,25 +344,22 @@ impl Sha512Crypt {
         ctx1.update(password);
         let digest1 = ctx1.finalize();
 
-        let mut i = password.len() as u32;
-        while i > 0 {
-            if i > 64 {
-                ctx.update(&digest1[..64]);
-            } else {
-                ctx.update(&digest1[..i as usize]);
-            }
-            i = i.wrapping_sub(64);
+        // See `Md5Crypt::crypt_raw` for why the previous `wrapping_sub` loop
+        // never terminated for a key length that was not a multiple of the
+        // digest size.
+        for i in (1..=password.len()).rev().step_by(64) {
+            ctx.update(&digest1[..i.min(64)]);
         }
 
-        let mut i = password.len();
         let mut px = Vec::new();
-        while i > 0 {
-            if i & 1 != 0 {
-                px.push(0u8);
-            } else {
+        let mut bit = 0usize;
+        while (password.len() >> bit) != 0 {
+            if password.len() >> bit & 1 == 1 {
                 px.push(password[0]);
+            } else {
+                px.push(0u8);
             }
-            i >>= 1;
+            bit += 1;
         }
         ctx.update(&px);
 

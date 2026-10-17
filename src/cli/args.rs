@@ -111,7 +111,17 @@ pub struct Cli {
     #[arg(short = 'p', long, global = true, default_value = "pwdcrack.pot", help_heading = "Session & state", help = "Potfile path for save/load cracked hashes")]
     pub potfile: String,
 
-    #[arg(short = 'r', long, global = true, help_heading = "Session & state", help = "Global rules file for all applicable attacks")]
+    // Long form only, no short flag.
+    //
+    // `-r` is already taken by `Dictionary.rules` and by the `Rules` subcommand
+    // positional. Giving this global flag the same short form made clap abort
+    // at startup in debug builds with:
+    //   "Short option names must be unique for each argument,
+    //    but '-r' is in use by both 'rules' and 'rules_file'"
+    // which happens in `_build_self` before any subcommand is even reached.
+    // Removing the short form keeps every documented invocation working, since
+    // every documented form of this flag is `--rules-file`.
+    #[arg(long, global = true, help_heading = "Session & state", help = "Global rules file for all applicable attacks")]
     pub rules_file: Option<String>,
 
     #[arg(long, global = true, help_heading = "Session & state", help = "Skip hashes that are already present in the potfile")]

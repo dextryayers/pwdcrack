@@ -95,7 +95,7 @@ impl std::fmt::Display for TpuDeviceInfo {
 /// This never fabricates a device: a simulated entry is skipped, so `None`
 /// means the feature is compiled in but the hardware is absent.
 pub fn probe() -> Option<TpuDeviceInfo> {
-    Self::detect()
+    TpuDevice::detect()
         .into_iter()
         .find(|d| d.available)
         .map(|d| TpuDeviceInfo {

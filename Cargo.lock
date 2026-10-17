@@ -3090,6 +3090,7 @@ dependencies = [
  "streebog",
  "thiserror 1.0.69",
  "tiger",
+ "tokio",
  "whirlpool",
  "windows 0.58.0",
 ]
