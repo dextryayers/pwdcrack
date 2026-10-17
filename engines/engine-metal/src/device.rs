@@ -63,3 +63,41 @@ impl MetalDevice {
         devices
     }
 }
+
+/// Detected Metal device summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetalDeviceInfo {
+    pub name: String,
+    pub vendor: String,
+    pub compute_units: u32,
+    pub gpu_family: String,
+}
+
+impl std::fmt::Display for MetalDeviceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({}) units={} family={}",
+            self.name, self.vendor, self.compute_units, self.gpu_family
+        )
+    }
+}
+
+/// Probe the host for a Metal capable device.
+///
+/// Metal is an Apple platform API. On every other host this returns `None`
+/// rather than reporting a device that cannot exist.
+pub fn probe() -> Option<MetalDeviceInfo> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    Self::detect_all()
+        .into_iter()
+        .find(|d| !d.name.is_empty())
+        .map(|d| MetalDeviceInfo {
+            name: d.name,
+            vendor: d.vendor,
+            compute_units: d.compute_units,
+            gpu_family: d.gpu_family,
+        })
+}

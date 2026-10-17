@@ -118,7 +118,9 @@ pub fn run_combinator(
                     all.extend(local);
                 }
 
-                let _tested = w2_lines.len() as u64;
+                let tested = w2_lines.len() as u64;
+                #[cfg(not(feature = "progress-rich"))]
+                let _tested = tested;
                 line_count.fetch_add(1, Ordering::Relaxed);
 
                 #[cfg(feature = "progress-rich")]

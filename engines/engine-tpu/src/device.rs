@@ -70,3 +70,38 @@ impl TpuDevice {
         Ok(input.to_vec())
     }
 }
+
+/// Detected TPU device summary. `None` means no usable device was found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TpuDeviceInfo {
+    pub name: String,
+    pub model: String,
+    pub cores: u32,
+    pub memory_gb: u32,
+}
+
+impl std::fmt::Display for TpuDeviceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({}) cores={} memory={}GB",
+            self.name, self.model, self.cores, self.memory_gb
+        )
+    }
+}
+
+/// Probe the host for a usable TPU. Returns the first available device.
+///
+/// This never fabricates a device: a simulated entry is skipped, so `None`
+/// means the feature is compiled in but the hardware is absent.
+pub fn probe() -> Option<TpuDeviceInfo> {
+    Self::detect()
+        .into_iter()
+        .find(|d| d.available)
+        .map(|d| TpuDeviceInfo {
+            name: d.name,
+            model: d.model,
+            cores: d.cores,
+            memory_gb: d.memory_gb,
+        })
+}

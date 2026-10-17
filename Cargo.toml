@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     ".",
+    "engines/engine-bridge",
     "engines/engine-simd",
     "engines/engine-gpu",
     "engines/engine-fpga",

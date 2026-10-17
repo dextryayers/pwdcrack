@@ -9,7 +9,7 @@ use pwdcrack::potfile::Potfile;
 #[cfg(feature = "engine-power")]
 use std::sync::Arc;
 
-fn init_verbose_engines(_args: &Cli) {
+fn init_verbose_engines(args: &Cli) {
     #[cfg(feature = "engine-simd")]
     {
         engine_simd::init();
@@ -40,21 +40,21 @@ fn init_verbose_engines(_args: &Cli) {
     }
 
     #[cfg(feature = "engine-tpu")]
-    {
-        log::info!("TPU: engine available");
-        engine_tpu::device::probe();
+    match engine_tpu::device::probe() {
+        Some(dev) => log::info!("TPU: {}", dev),
+        None => log::warn!("TPU: feature enabled but no TPU device detected"),
     }
 
     #[cfg(feature = "engine-riscv")]
-    {
-        log::info!("RISC-V: vector extension detected");
-        engine_riscv::vector::probe();
+    match engine_riscv::vector::probe() {
+        Some(dev) => log::info!("RISC-V vector: {}", dev),
+        None => log::warn!("RISC-V vector: feature enabled but no RVV support detected"),
     }
 
     #[cfg(feature = "engine-metal")]
-    {
-        log::info!("Metal: GPU acceleration available");
-        engine_metal::device::probe();
+    match engine_metal::device::probe() {
+        Some(dev) => log::info!("Metal: {}", dev),
+        None => log::warn!("Metal: feature enabled but no Metal device detected"),
     }
 
     #[cfg(feature = "engine-hybrid")]
