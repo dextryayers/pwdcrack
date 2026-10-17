@@ -500,18 +500,32 @@ pub fn expand_lengths(
     custom: &[Option<Vec<u8>>],
 ) -> Result<Vec<Mask>, MaskError> {
     let base = Mask::parse(spec, custom)?;
-    // A literal token contributes exactly one position and one byte.
-    let base_len = base.len();
+    let natural = base.len();
 
-    let natural = base_len;
-    let hi = max_length.unwrap_or(natural);
+    // Semantics:
+    //   max_length = None  -> use the mask's natural length, whatever
+    //                         min_length says. An explicit mask is a complete
+    //                         statement of shape; quietly adding every shorter
+    //                         length would change which keyspace the user asked
+    //                         for, and would move every candidate index.
+    //   max_length = Some  -> expand across min_length..=max_length. This is the
+    //                         explicit opt in to a range.
+    //
+    // The `None` case returns immediately rather than falling through to the
+    // loop with `hi = natural`, because the loop would still iterate from
+    // `min_length` and produce the shorter masks this branch exists to avoid.
+    let hi = match max_length {
+        None => return Ok(vec![base]),
+        Some(hi) => hi,
+    };
+    let lo = min_length.max(1);
 
-    if min_length > hi {
+    if lo > hi {
         return Err(MaskError::Empty);
     }
 
     let mut out = Vec::new();
-    if min_length == natural && hi == natural {
+    if lo == natural && hi == natural {
         out.push(base);
         return Ok(out);
     }
@@ -519,7 +533,7 @@ pub fn expand_lengths(
     // The unit to repeat when growing or shrinking is the last class, since a
     // repeated mask position is what actually multiplies the keyspace.
     let grow_spec = spec.to_string();
-    for len in min_length..=hi {
+    for len in lo..=hi {
         if len == natural {
             out.push(Mask::parse(&grow_spec, custom)?);
         } else if len < natural {
@@ -724,3 +738,55 @@ mod tests {
 }
 
 
+
+#[cfg(test)]
+mod cli_semantics_tests {
+    use super::*;
+
+    fn none() -> Vec<Option<Vec<u8>>> { vec![None, None, None, None] }
+
+    #[test]
+    fn no_max_length_keeps_the_natural_length() {
+        // The CLI default is `--min-length 1` with no `--max-length`. That must
+        // NOT expand a 3 token mask down to lengths 1 and 2, because doing so
+        // moves every candidate index and silently changes the keyspace.
+        let c = none();
+        let masks = expand_lengths("?d?d?d", 1, None, &c).unwrap();
+        assert_eq!(masks.len(), 1, "natural length only");
+        assert_eq!(masks[0].keyspace(&c).unwrap(), 1000);
+    }
+
+    #[test]
+    fn candidate_index_is_stable_without_a_range() {
+        let c = none();
+        let masks = expand_lengths("?d?d?d", 1, None, &c).unwrap();
+        assert_eq!(masks[0].candidate_string(0, &c).unwrap(), "000");
+        assert_eq!(masks[0].candidate_string(500, &c).unwrap(), "500");
+    }
+
+    #[test]
+    fn explicit_range_does_expand() {
+        let c = none();
+        let masks = expand_lengths("?d?d?d", 4, Some(6), &c).unwrap();
+        assert_eq!(masks.len(), 3);
+        let total: u128 = masks.iter().map(|m| m.keyspace(&c).unwrap()).sum();
+        assert_eq!(total, 10_000 + 100_000 + 1_000_000);
+    }
+
+    #[test]
+    fn single_length_range_is_honoured() {
+        let c = none();
+        let masks = expand_lengths("?d?d?d", 4, Some(4), &c).unwrap();
+        assert_eq!(masks.len(), 1);
+        assert_eq!(masks[0].len(), 4);
+        assert_eq!(masks[0].keyspace(&c).unwrap(), 10_000);
+    }
+
+    #[test]
+    fn range_equal_to_natural_is_a_single_mask() {
+        let c = none();
+        let masks = expand_lengths("?d?d?d", 3, Some(3), &c).unwrap();
+        assert_eq!(masks.len(), 1);
+        assert_eq!(masks[0].keyspace(&c).unwrap(), 1000);
+    }
+}

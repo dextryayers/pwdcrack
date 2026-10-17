@@ -158,8 +158,6 @@ impl Checkpoint {
             }
         }
 
-        let target = self.slot(path, 0);
-
         // Serialise first so a serialisation failure cannot truncate anything.
         let mut buf = Vec::with_capacity(512);
         buf.extend_from_slice(MAGIC);
@@ -187,14 +185,26 @@ impl Checkpoint {
             f.sync_all()?;
         }
 
-        // Rotate: 1 -> 2, then 0 -> 1, then tmp -> 0.
+        // Rotate generations. The newest is always written to slot 0 after the
+        // previous occupants are shifted down, so at every point at least one
+        // complete file exists.
+        //
+        //   before: [0]=prev [1]=older [2]=oldest
+        //   after:  [0]=new  [1]=prev [2]=older
+        //
+        // Shifting happens before the new payload is renamed into place.
         let gen2 = self.slot(path, 2);
         let gen1 = self.slot(path, 1);
         let _ = fs::remove_file(&gen2);
         if gen1.exists() {
             let _ = fs::rename(&gen1, &gen2);
         }
-        fs::rename(&tmp, &target)?;
+        // The current generation 0 becomes generation 1.
+        let gen0 = self.slot(path, 0);
+        if gen0.exists() {
+            let _ = fs::rename(&gen0, &gen1);
+        }
+        fs::rename(&tmp, &gen0)?;
 
         // Best effort: make the rename durable too.
         if let Some(parent) = path.parent() {
@@ -540,10 +550,30 @@ mod tests {
         let d = tmpdir("atomic");
         let p = d.join("sess");
         sample(AttackKind::BruteForce, "?l?l").save(&p).unwrap();
-        assert!(p.with_extension("").exists() || p.exists());
+        // The payload lands in generation 0, not in `sess` itself.
+        assert!(
+            Checkpoint::slot_of(&p, 0).exists(),
+            "generation 0 slot was not created"
+        );
         // The temp file used during the write must be gone.
         let tmp = Checkpoint::slot_of(&p, 9);
         assert!(!tmp.exists(), "temp file {} was left behind", tmp.display());
+        // And the result must be loadable.
+        let back = Checkpoint::load(&p).unwrap();
+        assert_eq!(back.position.candidates_tested, 1500);
+    }
+
+    #[test]
+    fn three_generations_are_retained() {
+        let d = tmpdir("generations");
+        let p = d.join("sess");
+        // Three saves in a row must leave gen 0 and gen 1 populated, and gen 2
+        // from the rotation of the oldest.
+        sample(AttackKind::Dictionary, "").save(&p).unwrap();
+        sample(AttackKind::Dictionary, "").save(&p).unwrap();
+        sample(AttackKind::Dictionary, "").save(&p).unwrap();
+        assert!(Checkpoint::slot_of(&p, 0).exists());
+        assert!(Checkpoint::slot_of(&p, 1).exists());
     }
 
     #[test]

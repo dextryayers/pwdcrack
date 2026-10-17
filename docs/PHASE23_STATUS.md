@@ -1,7 +1,9 @@
 # Phase 2 and Phase 3 Status
 
-Status after the second pass. Everything listed as done was verified by running
-the test suite or the command, not by inspection alone.
+Status after the third pass. Everything marked done was verified by running the
+tests or the command, not by reading the code.
+
+Test suite: **97 tests, 0 failures.**
 
 ---
 
@@ -9,26 +11,57 @@ the test suite or the command, not by inspection alone.
 
 | Task | State | Evidence |
 |------|-------|----------|
-| P2.1 Mask single source of truth | **Done** | `src/attack/mask.rs`, 14 tests pass |
-| P2.1 Length range (`--min-length` / `--max-length`) | **Done** | Verified: finds `1234` at length 4, does not at length 5 |
-| P2.1 Keyspace overflow safety | **Done** | `u128` arithmetic, refused rather than wrapped |
-| P2.2 `--limit` honoured | **Done** for brute force | Verified: 1000 candidates on a 10^8 keyspace stops immediately |
-| P2.2 `--session` / `--resume` | **Not done** | Flags are still accepted and discarded |
-| P2.3 `ProgressStats::cracked()` | **Done** | Was hardcoded `0`, now a real counter. 8 tests |
-| P2.3 ETA and rate formatting | **Done** | `format_rate` and `format_duration` extracted and tested |
+| P2.1 Mask single source of truth | **Done** | `src/attack/mask.rs`, 19 tests |
+| P2.1 Length range semantics | **Done** | Verified: explicit range works, default does not expand |
+| P2.1 Keyspace overflow safety | **Done** | `u128`; verified `?b` x 10 does not overflow |
+| P2.2 Checkpoint format | **Done** | `src/attack/session.rs`, 12 tests |
+| P2.2 Atomic write with three generations | **Done** | Verified: temp file gone, gen 0 and 1 populated |
+| P2.2 `--limit` for brute force | **Done** | Verified: 100 candidates tested, not 10^6 |
+| P2.2 `--resume` for brute force | **Done** | `run_bruteforce_from` resumes at an exact index |
+| P2.2 `--session` wired to the CLI | **Partial** | Module ready; handler wiring outstanding |
+| P2.2 `--limit` for other attacks | **Not done** | dictionary, combinator, prince still ignore it |
+| P2.3 `ProgressStats::cracked()` | **Done** | Was hardcoded `0`, now a real counter |
+| P2.3 Hash vs candidate rate separation | **Done** | `record_hashed` added; rate prefers real hash work |
+| P2.3 ETA and duration formatting | **Done** | Extracted and unit tested |
 | P2.3 `--verbose` sets a log level | **Not done** | `env_logger::init()` still ignores it |
-| P2.4 Rule engine correctness | **Not done** | `--limit` and `--max-length` still ignored for rules |
+| P2.4 Rule engine correctness | **Not done** | `--limit` and output cap still ignored |
 | P2.5 `AttackContext` unification | **Not done** | Handlers still duplicate loading and emission |
 
-### What P2.1 changed for users
+### The mask length bug this pass found and fixed
 
-Before this pass, mask support was:
+This is the most important finding of the pass and it changed the meaning of a
+common command.
+
+`--min-length` has a CLI default of `1`. The first implementation of length
+expansion treated that default as a real request, so `?d?d?d` silently became
+three masks of length 1, 2, and 3. Consequences:
+
+- The keyspace grew from 1,000 to 1,110 candidates.
+- Every candidate index shifted, because the shorter masks were searched first.
+- A user asking for 6 digits searched 1, 2, 3, 4, 5, and 6 digit passwords and
+  had no way to know.
+
+Detected by testing the binary rather than only the library: the unit tests
+called `expand_lengths` directly with explicit ranges and never exercised the
+CLI default.
+
+The fix is a semantic rule, now pinned by five tests:
+
+| Input | Behaviour |
+|-------|-----------|
+| no `--max-length` | use the mask's natural length, ignore `--min-length` |
+| `--max-length` equal to natural | single mask |
+| explicit range | expand across the range |
+
+Verified after the fix:
 
 ```
-?l ?u ?d ?s ?a ?h ?H ?b ?1 ?2 ?3 ?4
+answer at index 500, --limit 600      -> found 000500
+answer at index 500, --limit 100      -> not found, 100 candidates tested
+4 digit answer, --min-length 4 --max-length 6 -> found, "Lengths: 4 to 6"
 ```
 
-Now it also covers:
+### Mask tokens added
 
 | Token | Meaning |
 |-------|---------|
@@ -37,79 +70,91 @@ Now it also covers:
 | `[?u?l]` | alternation over the union of classes |
 | `\%` | a literal percent sign |
 
-Two behaviours are deliberately different from the old code:
+Two behaviours intentionally differ from the old parser:
 
-1. **An unknown `?X` is an error, not a literal.** The old parser turned `?q`
-   into a literal `?q`, which produced a keyspace the user never asked for. In a
-   cracking tool a silently wrong keyspace means a silently incomplete run.
-2. **Keyspace is computed in `u128`.** A mask like `?b?b?b?b?b?b?b?b` is 2^64.
-   The old `u64` code saturated, so such a mask would have finished "successfully"
-   after testing almost nothing.
+1. An unknown `?X` is an **error**, not a literal. The old parser turned `?q`
+   into a literal `?q`, producing a keyspace the user never asked for.
+2. Keyspace is `u128`. A mask of `?b` ten times is 2^80, which the old `u64`
+   code saturated, so such a mask "succeeded" while testing almost nothing.
 
-### Tests added
+### Session checkpoint format
 
-`src/attack/mask.rs`, 14 tests:
+| Property | Implementation |
+|----------|----------------|
+| Versioned | `FORMAT_VERSION`, rejected on mismatch with a clear message |
+| Magic header | `PWDCSESS1`, so a wrong file is detected before field parsing |
+| Atomic | write to temp, `sync_all`, then `rename` |
+| Durable | parent directory synced after the rename |
+| Three generations | newest is gen 0, older survive a damaged newest file |
+| Input digests | FNV-1a over hash file, wordlist, rules, and mask |
+| Mismatch detection | resuming against different inputs is refused, not attempted |
 
-- parses classes and literals
-- unknown token is an error not a literal
-- keyspace of common masks
-- huge keyspace does not overflow
-- last position varies fastest
-- literals do not consume keyspace digits
-- preview respects keyspace bound
-- custom charsets are used
-- literal range expands
-- question mark inside a range is a literal byte
-- alternation unions classes
-- escaped percent is literal
-- length expansion grows the keyspace
-- preview of expanded range covers each length
-
-`src/attack/mod.rs`, 8 tests covering the counters, ETA, and both formatters.
-
-Full suite: 54 tests, 0 failures.
-
-### Defects found and fixed while writing P2.1
-
-The new mask code initially had three bugs that the tests caught, all in the
-candidate ordering and range parsing. They are listed here because they show the
-value of the tests rather than the code:
-
-1. Literals were emitted in reverse order, so `pw?d` produced `wp0`.
-2. The `(...)` range slice started one byte late, so `(?abc)` captured `a, c`
-   and skipped `b`.
-3. The `?`-prefix heuristic inside `(...)` assumed `?X` pairs and stepped two
-   bytes at a time, dropping every character at an odd offset.
+Candidates are stored as positions, never as text, so a checkpoint stays small
+regardless of how far the run got.
 
 ---
 
 ## Phase 3: Engine Abstraction
 
-| Task | State |
-|------|-------|
-| P3.1 `Engine` trait | **Not done** |
-| P3.1 `EngineInfo` and `Capability` | **Not done** |
-| P3.2 Planner and merger | **Not done** |
-| P3.3 Honest capability reporting | **Partially done in Phase 0** |
+| Task | State | Evidence |
+|------|-------|----------|
+| P3.1 `Engine` trait | **Done** | `src/engine/mod.rs`, 6 tests |
+| P3.1 `EngineInfo` with measured rate | **Done** | `measured` flag separates measured from unmeasured |
+| P3.1 `Capability` and `CapabilitySet` | **Done** | `src/engine/capability.rs`, 9 tests |
+| P3.1 CPU reference engine | **Done** | `CpuEngine`, benchmarked at construction |
+| P3.2 `BatchPlan` with engine clamping | **Done** | Clamped to batch size, never zero |
+| P3.2 Planner with rate proportional split | **Done** | `src/engine/planner.rs`, 11 tests |
+| P3.2 Deterministic result merge | **Done** | Deduplicated on (candidate, hash), sorted |
+| P3.3 Capability filtering in the planner | **Done** | Engine missing a capability gets no work |
+| P3.3 Conformance test for honest reporting | **Partial** | Truthfulness is enforced by construction, not yet by a test |
 
-Phase 3 depends on Phase 2 being complete enough that a single engine
-interface can serve every attack path. `--session`, `--resume`, and `--limit`
-for the dictionary, combinator, PRINCE, toggle-case, substitution, and rules
-paths are still outstanding, so Phase 3 has not been started.
+### How the abstraction prevents the previous lies
+
+The prior engines reported capability without measuring it. `engine-tensor` and
+`engine-warp` returned `is_available() == true` unconditionally and then ran a
+scalar CPU MD5 loop, so the scheduler believed in hardware that was not being
+used.
+
+Three mechanisms close that off:
+
+1. **`CapabilitySet`** must declare algorithm families. The planner drops any
+   engine that does not declare every required capability, so an engine that
+   cannot do the work is never given it.
+2. **`EngineInfo::measured`** distinguishes "measured and slow" from "never
+   measured". `is_usable()` returns false for an engine that has no measured
+   rate and no capabilities.
+3. **`summary()`** prints `unmeasured` rather than a fabricated number, which is
+   what `pwdcrack doctor` will display.
+
+`CapabilitySet::baseline()` deliberately **excludes** `UnixCrypt`, because the
+implementation in `src/hash/unix.rs` is not correct yet. Claiming it would be
+exactly the kind of lie this module exists to prevent.
+
+### Planning behaviour
+
+| Property | Guarantee |
+|----------|-----------|
+| Coverage | Chunks are contiguous with no gap and no overlap; tested for one and two engines |
+| Proportional split | Work is divided by measured rate; a 3:1 split gives roughly 25/75 |
+| Slow engines first | Engines sort by rate ascending, so the long pole starts immediately |
+| Batch sizing | Chunk size honours the engine's declared batch, defaulting to 65,536 |
+| Rounding | The last engine absorbs rounding drift so the total is exact |
+| No usable engine | `build` returns `None` so the caller can fall back rather than do nothing |
 
 ---
 
 ## Recommended Order for the Next Pass
 
-1. P2.2 session checkpoint and resume. This is the largest remaining user
-   visible gap: two CLI flags are documented and do nothing.
-2. P2.4 rule engine: implement `--limit`, add `docs/RULES.md`, add the
+1. Wire `--session` and `--resume` into the brute-force handler. The module and
+   `run_bruteforce_from` exist; only the handler is missing.
+2. P2.2 `--limit` for dictionary, combinator, prince, toggle-case, substitute.
+3. P2.4 rule engine: `--limit`, output length cap, `docs/RULES.md`, and the
    differential test against a Python reference.
-3. P2.5 `AttackContext`, which removes the duplicated loading and emission code
-   from the handlers in `src/main.rs`.
-4. P2.3 logging, so `--verbose` and `RUST_LOG` work.
-5. Only then Phase 3, because the engine trait should be introduced once the
-   attack paths have a single shape.
+4. P2.5 `AttackContext` to remove the duplicated loading and emission.
+5. P2.3 logging so `--verbose` and `RUST_LOG` work.
+6. P3.3 conformance test that walks every engine and fails on a fabricated rate.
+7. Adopt `Engine` inside the attack path so the planner is actually used rather
+   than merely present.
 
 ---
 

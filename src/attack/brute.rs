@@ -148,6 +148,8 @@ pub struct BruteForceOutcome {
     pub keyspace: u128,
     /// True when `--limit` cut the run short.
     pub limited: bool,
+    /// Candidate index a subsequent `--resume` should continue from.
+    pub resume_from: u64,
 }
 
 /// Formats a keyspace for humans.
@@ -183,6 +185,42 @@ pub fn run_bruteforce_ranged(
     max_length: Option<usize>,
     limit: Option<u64>,
 ) -> Result<BruteForceOutcome, String> {
+    run_bruteforce_from(
+        hashes,
+        cracker,
+        mask_str,
+        custom_charsets,
+        threads,
+        quiet,
+        low_mem,
+        min_length,
+        max_length,
+        limit,
+        0,
+    )
+}
+
+/// As [`run_bruteforce_ranged`], but resumes from `start_at`.
+///
+/// `start_at` is a candidate index into the combined keyspace of every expanded
+/// mask length. Resuming is therefore exact: the candidates before `start_at`
+/// have already been tested and are skipped, and the run continues with
+/// `start_at`. This is what makes a resumed run and an uninterrupted run
+/// produce identical result sets.
+#[allow(clippy::too_many_arguments)]
+pub fn run_bruteforce_from(
+    hashes: &[HashEntry],
+    cracker: &dyn HashCracker,
+    mask_str: &str,
+    custom_charsets: &[Option<String>],
+    threads: usize,
+    quiet: bool,
+    low_mem: bool,
+    min_length: usize,
+    max_length: Option<usize>,
+    limit: Option<u64>,
+    start_at: u64,
+) -> Result<BruteForceOutcome, String> {
     let custom: Vec<Option<Vec<u8>>> = custom_charsets
         .iter()
         .map(|o| o.as_ref().map(|s| s.as_bytes().to_vec()))
@@ -207,33 +245,37 @@ pub fn run_bruteforce_ranged(
     // An explicit limit bounds the work. Without one, a keyspace beyond u64
     // cannot be indexed by the u64 chunk counter, so it is refused rather than
     // wrapping to a small number and finishing early having covered nothing.
-    let ceiling: u128 = match limit {
-        Some(l) => std::cmp::min(total, l as u128),
-        None if total > u64::MAX as u128 => {
-            return Err(format!(
-                "Keyspace of {} exceeds the maximum of {} and no --limit was given. \
-                 Narrow the mask or pass --limit.",
-                format_keyspace(total),
-                u64::MAX
-            ));
-        }
+    // `--limit` bounds the number of candidates tested *in this invocation*,
+    // not the absolute index. A resumed run therefore tests `limit` more
+    // candidates starting from `start_at`, which is what a user expects when
+    // they say "do another million".
+    let limit_ceiling: u128 = match limit {
+        Some(l) => (start_at as u128).saturating_add(l as u128),
         None => total,
     };
-    let limited = match limit {
-        Some(l) => (l as u128) < total,
-        None => false,
-    };
+    let ceiling: u128 = std::cmp::min(limit_ceiling, total);
+    let limited = ceiling < total;
+
+    if !quiet && start_at > 0 {
+        eprintln!(
+            "[*] Resuming from candidate {} of {}",
+            start_at,
+            format_keyspace(total)
+        );
+    }
 
     let ceiling_u64 = ceiling.min(u64::MAX as u128) as u64;
-    let pb = setup_progress(ceiling_u64, quiet);
+    let pb = setup_progress(ceiling_u64.saturating_sub(start_at), quiet);
     #[cfg(feature = "progress-rich")]
-    let progress = ProgressStats::new(ceiling_u64);
+    let progress = ProgressStats::new(ceiling_u64.saturating_sub(start_at));
     #[cfg(not(feature = "progress-rich"))]
-    let _progress = ProgressStats::new(ceiling_u64);
+    let _progress = ProgressStats::new(ceiling_u64.saturating_sub(start_at));
 
-    let counter = AtomicU64::new(0);
+    // The shared counter is seeded with the resume point, so chunks are claimed
+    // from there rather than from zero.
+    let counter = AtomicU64::new(start_at);
     let base_chunk = if low_mem { 10_000u64 } else { 100_000u64 };
-    let chunk_size = base_chunk.max(ceiling_u64 / (threads.max(1) as u64 * 100).max(1));
+    let chunk_size = base_chunk.max(ceiling_u64.saturating_sub(start_at) / (threads.max(1) as u64 * 100).max(1));
 
     let masks_ref = &masks;
     let custom_ref = &custom;
@@ -306,9 +348,13 @@ pub fn run_bruteforce_ranged(
 
     Ok(BruteForceOutcome {
         results,
-        tested: counter.load(Ordering::Relaxed).min(ceiling_u64),
+        tested: counter.load(Ordering::Relaxed).saturating_sub(start_at).min(
+            ceiling_u64.saturating_sub(start_at),
+        ),
         keyspace: total,
         limited,
+        /// The index a subsequent `--resume` should continue from.
+        resume_from: ceiling_u64,
     })
 }
 

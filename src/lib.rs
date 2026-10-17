@@ -8,6 +8,7 @@
 
 pub mod hash;
 pub mod attack;
+pub mod engine;
 pub mod potfile;
 
 #[cfg(test)]

@@ -1,150 +1,75 @@
-SHELL := /bin/bash
-CARGO := cargo
-TARGET_DIR := target
+# pwdcrack
+#
+# Thin shortcuts over cargo. The build tool is Cargo, not make: every recipe
+# below is one cargo invocation, and the compilation itself is driven by
+# Cargo.toml and the workspace members.
+#
+# Why this file exists at all: to make the common commands short. Anything that
+# is not a shortcut belongs in scripts/, not here. Scripts are grouped by theme
+# and can be read top to bottom; a Makefile cannot be both.
+#
+#     make            release build
+#     make test       run the test suite
+#     make matrix     build every feature combination
+#     make help       list targets
 
-# ============================================================
-# BUILD ALL
-# ============================================================
+CARGO  := cargo
+PREFIX ?= /usr/local
 
-.PHONY: all build build-release test clean
+# Library artefact name comes from [lib] name in Cargo.toml, which is
+# "pwdcrack". An earlier version of this file referenced libcrack-core.so,
+# which never existed, so those copies silently did nothing.
+LIBNAME := libpwdcrack.so
 
-all: build-release
+.PHONY: all build release test bench clean install uninstall package matrix help
 
+all: release
+
+## build: debug build, fast iteration
 build:
 	$(CARGO) build
 
-build-release:
+## release: optimised build, the one you run
+release:
 	$(CARGO) build --release
 
-build-low:
-	RUSTFLAGS="-C target-cpu=pentium4" $(CARGO) build --release --features tier-low
-
-build-mid:
-	RUSTFLAGS="-C target-cpu=haswell" $(CARGO) build --release --features tier-mid
-
-build-high:
-	RUSTFLAGS="-C target-cpu=native" $(CARGO) build --release --features tier-high
-
-# Cross-compilation targets
-build-arm64:
-	rustup target add aarch64-unknown-linux-gnu
-	$(CARGO) build --release --target aarch64-unknown-linux-gnu --features tier-mid
-
-build-arm32:
-	rustup target add armv7-unknown-linux-gnueabihf
-	$(CARGO) build --release --target armv7-unknown-linux-gnueabihf --features tier-low
-
-build-x86-32:
-	rustup target add i686-unknown-linux-gnu
-	$(CARGO) build --release --target i686-unknown-linux-gnu --features tier-low
-
-build-android-arm64:
-	rustup target add aarch64-linux-android
-	CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang \
-		$(CARGO) build --release --target aarch64-linux-android --features tier-mid
-
-build-android-arm32:
-	rustup target add armv7-linux-androideabi
-	CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang \
-		$(CARGO) build --release --target armv7-linux-androideabi --features tier-low
-
-build-all: build build-release build-low build-mid build-high build-arm64 build-arm32 build-x86-32
-
-# ============================================================
-# TESTING
-# ============================================================
-
+## test: unit and integration tests
 test:
 	$(CARGO) test
 
-test-release:
-	$(CARGO) test --release
-
-test-all: test test-release
-	$(CARGO) test --features tier-low
-	$(CARGO) test --features tier-mid
-	$(CARGO) test --features tier-high
-
-# ============================================================
-# BENCHMARK
-# ============================================================
-
+## bench: criterion benchmarks
 bench:
 	$(CARGO) bench
 
-bench-md5:
-	./target/release/pwdcrack benchmark md5
+## matrix: build every feature combination
+# Catches feature-gated compile errors that a default build hides. This project
+# shipped three of those, which is why it exists.
+matrix:
+	./scripts/test-matrix.sh
 
-bench-all:
-	./target/release/pwdcrack benchmark all
-
-# ============================================================
-# CLEAN
-# ============================================================
-
+## clean: remove build artefacts
 clean:
 	$(CARGO) clean
-	rm -rf $(TARGET_DIR)
 
-distclean: clean
-	rm -rf engines/*/target
+## install: install the binary to $(PREFIX)/bin
+install: release
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 target/release/pwdcrack $(DESTDIR)$(PREFIX)/bin/
+	@if [ -f target/release/$(LIBNAME) ]; then \
+		install -d $(DESTDIR)$(PREFIX)/lib; \
+		install -m 0644 target/release/$(LIBNAME) $(DESTDIR)$(PREFIX)/lib/; \
+		echo "installed $(LIBNAME)"; \
+	fi
 
-# ============================================================
-# PACKAGE
-# ============================================================
-
-package: build-release
-	mkdir -p dist
-	cp target/release/pwdcrack dist/
-	cp target/release/libcrack-core.so dist/ 2>/dev/null || true
-	strip dist/pwdcrack
-	tar czf pwdcrack-$(shell git describe --tags 2>/dev/null || echo "dev")-x86_64-linux.tar.gz dist/
-	rm -rf dist
-
-# ============================================================
-# DOCKER
-# ============================================================
-
-docker-low:
-	docker build -f docker/Dockerfile.low -t pwdcrack:low .
-
-docker-mid:
-	docker build -f docker/Dockerfile.mid -t pwdcrack:mid .
-
-docker-high:
-	docker build -f docker/Dockerfile.high -t pwdcrack:high .
-
-docker-android:
-	docker build -f docker/Dockerfile.android -t pwdcrack:android .
-
-# ============================================================
-# INSTALL
-# ============================================================
-
-install: build-release
-	cp target/release/pwdcrack /usr/local/bin/
-	cp target/release/libcrack-core.so /usr/local/lib/ 2>/dev/null || true
-
+## uninstall: remove an installation
 uninstall:
-	rm -f /usr/local/bin/pwdcrack
-	rm -f /usr/local/lib/libcrack-core.so
+	rm -f $(DESTDIR)$(PREFIX)/bin/pwdcrack
+	rm -f $(DESTDIR)$(PREFIX)/lib/$(LIBNAME)
 
-# ============================================================
-# HELP
-# ============================================================
+## package: build a release tarball
+package:
+	./scripts/package.sh
 
+## help: list available targets
 help:
-	@echo "pwdcrack build targets:"
-	@echo "  make              Build release"
-	@echo "  make build        Debug build"
-	@echo "  make build-low    Low-end optimized"
-	@echo "  make build-mid    Mid-range optimized"
-	@echo "  make build-high   High-end optimized (native)"
-	@echo "  make build-arm64  Cross-compile for ARM64"
-	@echo "  make build-arm32  Cross-compile for ARM32"
-	@echo "  make test         Run all tests"
-	@echo "  make bench        Run benchmarks"
-	@echo "  make package      Create release tarball"
-	@echo "  make install      Install to /usr/local"
-	@echo "  make docker-mid   Build Docker image"
-	@echo "  make clean        Remove build artifacts"
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'
