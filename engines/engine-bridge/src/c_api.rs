@@ -187,16 +187,17 @@ pub extern "C" fn attack_dictionary(
         threads
     };
 
-    let mut hashes: Vec<HashEntry> = engine.hashes.iter().map(|(_, e)| e.clone()).collect();
+    let hashes: Vec<HashEntry> = engine.hashes.iter().map(|(_, e)| e.clone()).collect();
     let cracker = &engine.hashes[0].0;
 
     let results = pwdcrack::attack::dictionary::run_dictionary(
-        &mut hashes,
+        &hashes,
         cracker.as_ref(),
         wl_str,
         rules_str,
         threads as usize,
         true, // quiet
+        false, // low_mem
     );
 
     let count = results.len() as i32;
@@ -241,16 +242,17 @@ pub extern "C" fn attack_bruteforce(
     }
 
     let threads = if threads <= 0 { 4 } else { threads as usize };
-    let mut hashes: Vec<HashEntry> = engine.hashes.iter().map(|(_, e)| e.clone()).collect();
+    let hashes: Vec<HashEntry> = engine.hashes.iter().map(|(_, e)| e.clone()).collect();
     let cracker = &engine.hashes[0].0;
 
     let results = pwdcrack::attack::brute::run_bruteforce(
-        &mut hashes,
+        &hashes,
         cracker.as_ref(),
         mask_str,
         &[None, None, None, None],
         threads,
-        true,
+        true, // quiet
+        false, // low_mem
     );
 
     let count = results.len() as i32;
