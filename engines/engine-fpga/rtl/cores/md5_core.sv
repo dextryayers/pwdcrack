@@ -16,7 +16,19 @@ module md5_core (
 
     // MD5 K constants: floor(2^32 × abs(sin(i+1))) for i=0..63
     logic [31:0] K [0:63];
-    always_comb begin
+
+    // An `initial` block, not `always_comb`.
+    //
+    // Every assignment here is a constant, so the process has no sensitivities.
+    // Icarus Verilog reports "always_comb process has no sensitivities" and never
+    // runs it, leaving K entirely X, which makes every output X. Vivado accepts
+    // the construct but the values are then only correct if the tool elaborates
+    // it as a constant initializer, which is not something to depend on.
+    //
+    // `initial` is the portable way to express constant table initialisation, and
+    // it is synthesizable on FPGA: the values become the initial contents of the
+    // register bank.
+    initial begin
         K[ 0] = 32'hd76aa478; K[ 1] = 32'he8c7b756; K[ 2] = 32'h242070db; K[ 3] = 32'hc1bdceee;
         K[ 4] = 32'hf57c0faf; K[ 5] = 32'h4787c62a; K[ 6] = 32'ha8304613; K[ 7] = 32'hfd469501;
         K[ 8] = 32'h698098d8; K[ 9] = 32'h8b44f7af; K[10] = 32'hffff5bb1; K[11] = 32'h895cd7be;

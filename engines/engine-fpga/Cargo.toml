@@ -11,3 +11,9 @@ thiserror = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+
+# Only the simulated device in tests/scheduler.rs needs a real digest. It is not a
+# dependency of the library: a real FPGA computes the hash, and this crate never
+# does.
+[dev-dependencies]
+md5 = "0.7"

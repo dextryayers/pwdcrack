@@ -1386,6 +1386,7 @@ dependencies = [
  "hex",
  "libc",
  "log",
+ "md5",
  "thiserror 1.0.69",
 ]
 
