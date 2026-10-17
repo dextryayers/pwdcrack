@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 use tokio::time;
 
 use crate::verify;
+use crate::netpolicy::ClusterAuth;
 use crate::wordlist::WordlistPolicy;
 use crate::protocol::{
     self, Message, WorkerStats, Capabilities, CrackedEntry, WorkUnit, AttackType,
@@ -19,6 +20,11 @@ pub struct WorkerNode {
     /// Directories this worker will open wordlists from, chosen locally.
     /// A master cannot widen it.
     wordlists: WordlistPolicy,
+    /// Shared secret for authenticating to the master. `None` leaves the worker
+    /// unable to join a cluster that requires one.
+    token: Option<String>,
+    /// Nonce for this connection's authentication exchange.
+    nonce: Vec<u8>,
 }
 
 impl WorkerNode {
@@ -45,7 +51,15 @@ impl WorkerNode {
             tested: Arc::new(AtomicU64::new(0)),
             cracked: Arc::new(AtomicU64::new(0)),
             wordlists: WordlistPolicy::deny_all(),
+            token: None,
+            nonce: Vec::new(),
         }
+    }
+
+    /// Sets the shared token used to authenticate to the master.
+    pub fn with_token(mut self, token: String) -> Self {
+        self.token = Some(token);
+        self
     }
 
     /// Grants directories this worker may read wordlists from.
@@ -64,12 +78,27 @@ impl WorkerNode {
     pub async fn connect(&mut self) -> Result<(), String> {
         let stream = TcpStream::connect(&self.master_addr).await.map_err(|e| e.to_string())?;
         log::info!("Connected to master at {}", self.master_addr);
+        // Fresh per connection, so a response captured from one session cannot
+        // be replayed into another.
+        self.nonce = crate::netpolicy::make_nonce();
         self.stream = Some(stream);
         Ok(())
     }
 
     pub async fn send_handshake(&mut self) -> Result<(), String> {
         let stream = self.stream.as_mut().unwrap();
+
+        // Authenticate first when a token is configured. The master refuses any
+        // other frame before this one, so a worker that skipped it would be
+        // disconnected with "sent Handshake before authenticating".
+        if let Some(token) = &self.token {
+            let auth = ClusterAuth::with_token(token.clone());
+            let nonce = self.nonce.clone();
+            let frame = crate::admission::auth_frame(&auth, &nonce);
+            protocol::write_msg(stream, &frame).await?;
+            log::debug!("Authenticated to master");
+        }
+
         let handshake = Message::Handshake {
             node_name: self.node_name.clone(),
             tier: std::env::consts::ARCH.to_string(),

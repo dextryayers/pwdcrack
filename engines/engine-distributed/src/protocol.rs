@@ -8,6 +8,14 @@ pub enum Message {
     Pong,
 
     // Worker → Master
+    //
+    // The first frame a worker sends when the cluster has a token. Carrying
+    // `SHA-256(token || nonce)` where nonce is fresh per connection, so a
+    // captured response cannot be replayed into a later session.
+    Authenticate {
+        /// Lowercase hex of the 32 byte digest.
+        response: String,
+    },
     Handshake {
         node_name: String,
         tier: String,

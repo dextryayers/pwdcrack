@@ -153,6 +153,7 @@ fn main() {
         let mut cfg = engine_distributed::DistributedConfig {
             token,
             allow_exposed_bind: args.allow_exposed_bind,
+            wordlist_dirs: args.wordlist_dir.clone(),
             ..Default::default()
         };
 

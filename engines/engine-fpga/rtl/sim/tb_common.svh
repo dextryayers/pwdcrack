@@ -411,22 +411,26 @@ endfunction
         end \
     endtask
 
-// Defines `check_block(blk, iv, want, name, cycles)` for a core whose ports are
-// named `clk`, `msg_word`, `h_in`, `h_out`, `valid` and `done`.
+// Defines `check_core(blk, iv, want, name, cycles)` for any core in `rtl/cores`.
 //
-// `blk`, `iv` and `want` are packed with word i at `[32*i +: 32]`, so a digest
-// appears in its printed order and the port indices line up.
+// This is the only task a hash core testbench needs, because every core uses the
+// same port names and the same handshake: `clk`, `rst_n`, `valid`, `ready`,
+// `msg_blk`, `state_in`, `digest_out`, `done`. One task for all of them means a
+// new core is tested by writing a module and including a generated vector file,
+// with no new stimulus code to get wrong.
 //
-// The wait for `done` is bounded. A core that never completes and a core that
-// completes wrongly need different investigations, so the two are reported
-// separately.
-// Defines `check_block(blk, iv, want, name, cycles)` for a core whose ports are
-// named `clk`, `msg_word`, `h_in`, `h_out`, `valid` and `done`.
+// Arguments are sized by the macro parameters so the same task drives a 128 bit
+// MD5 state and a 512 bit SHA-512 state:
 //
-// `blk`, `iv` and `want` are packed with word i at `[32*i +: 32]`. Word 0 sits in
-// the low bits to match the port indices, which means a digest literal must have
-// each of its four byte groups reversed. `scripts/gen-rtl-vectors.py` does that
-// and self checks the result.
+//     `TB_CHECK_CORE(32, 16, 128, 128)     MD5, MD4, NTLM: 512 bit block
+//     `TB_CHECK_CORE(32, 16, 160, 160)     SHA-1, RIPEMD-160
+//     `TB_CHECK_CORE(32, 16, 256, 256)     SHA-256
+//     `TB_CHECK_CORE(64, 16, 512, 512)     SHA-512, BLAKE2b
+//     `TB_CHECK_CORE(64, 16, 512, 384)     SHA-384, 1024 bit block
+//
+// `blk`, `iv` and `want` are packed with word 0 in the least significant bits, so
+// a digest literal is written with its words reversed relative to the printed
+// digest. scripts/gen-rtl-vectors.py does that and re-reads what it wrote.
 //
 // # Why the wait polls on the falling edge
 //
@@ -440,24 +444,87 @@ endfunction
 // the loop runs one edge past the pulse and then finds `done` low. That reads as
 // a core that never fired. Polling on the falling edge puts both the flag and
 // the data in the same cycle, which is the only place they are in step.
-`define TB_CHECK_BLOCK(NWORDS) \
-    task automatic check_block( \
-        input [((NWORDS)*32)-1:0] blk, \
-        input [127:0] iv, \
-        input [127:0] want, \
+`define TB_CHECK_CORE(W, NW, IW, DW) \
+    task automatic check_core( \
+        input [(NW*W)-1:0] blk, \
+        input [IW-1:0] iv, \
+        input [DW-1:0] want, \
         input string name, \
         input integer cycles \
     ); \
         int waited; \
         int saw_done; \
-        logic [127:0] got; \
+        logic [DW-1:0] got; \
         begin \
-            @(posedge clk); \
-            msg_word <= blk; \
-            h_in     <= iv; \
-            @(posedge clk); \
+            /* Wait for the core to be ready. A core that is always ready */ \
+            /* passes immediately; an iterative one holds here while busy. */ \
+            waited = 0; \
+            while (ready !== 1'b1 && waited < cycles) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            if (ready !== 1'b1) begin \
+                `TB_FAIL_NOTE(name, "core never became ready"); \
+                return; \
+            end \
+            msg_blk   <= blk; \
+            state_in  <= iv; \
+            valid     <= 1'b1; \
+            @(negedge clk); \
+            valid     <= 1'b0; \
+            waited = 0; \
+            saw_done = 0; \
+            while (waited < cycles && saw_done == 0) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+                if (done === 1'b1) saw_done = 1; \
+            end \
+            /* Sample in the same cycle the flag was seen. Half a cycle */ \
+            /* later the core has moved on to the next transaction. */ \
+            got = digest_out; \
+            if (saw_done == 0) begin \
+                `TB_FAIL_NOTE(name, "no done signal"); \
+            end else if (got === want) begin \
+                `TB_PASS(name); \
+            end else begin \
+                $display("  FAIL [%0d]: %s", test_num, name); \
+                $display("        got      %h", got); \
+                $display("        expected %h", want); \
+                fail_count = fail_count + 1; \
+                test_num   = test_num + 1; \
+            end \
+        end \
+    endtask
+
+// Defines `check_ntlm(pw, want, name, cycles)` for `ntlm_core`.
+//
+// NTLM needs its own task only because it takes the ASCII password and a length
+// instead of a block: the UTF-16-LE encoding happens on the device, and building
+// it on the host would leave the device side of that conversion untested, which
+// is the part that can be wrong.
+//
+// A password that does not fit one UTF-16-LE block cannot be hashed by this
+// core. The vector file contains one such length on purpose and the core is
+// expected to refuse it with `done` and an error flag; see `check_ntlm_too_long`.
+`define TB_CHECK_NTLM(MAXCHARS) \
+    task automatic drive_ntlm( \
+        input string pw, \
+        input string name, \
+        input integer cycles \
+    ); \
+        int waited; \
+        int saw_done; \
+        begin \
+            while (ready !== 1'b1 && waited < cycles) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            pass_bytes = '0; \
+            for (int i = 0; i < pw.len() && i < 64; i = i + 1) \
+                pass_bytes[8*i +: 8] = pw[i]; \
+            pass_len = pw.len(); \
             valid <= 1'b1; \
-            @(posedge clk); \
+            @(negedge clk); \
             valid <= 1'b0; \
             waited = 0; \
             saw_done = 0; \
@@ -466,95 +533,153 @@ endfunction
                 waited = waited + 1; \
                 if (done === 1'b1) saw_done = 1; \
             end \
-            /* Sample in the same cycle the flag was seen. Half a cycle later */ \
-            /* the core has moved on to the next transaction. */ \
-            got = h_out; \
             if (saw_done == 0) begin \
                 `TB_FAIL_NOTE(name, "no done signal"); \
-            end else if (got === want) begin \
-                `TB_PASS(name); \
-            end else begin \
-                `TB_FAIL_DIGEST(name, got, want); \
             end \
         end \
-    endtask
-
-// Defines `check_block_start(blk, want, name, cycles)` for a core with a
-// start/ready handshake and a fixed initial value.
-//
-// Not a wrapper around `check_block`. A core in this shape has no `h_in` port
-// and no `done` output: it reports completion by dropping `ready`. Driving it
-// through `check_block` would fail to compile, since the ports it names do not
-// exist.
-//
-// `start` is pulsed for one cycle and the result is taken when `ready` returns
-// high, which is the only completion signal a core in this shape offers.
-//
-// The wait is for `ready` to go LOW then HIGH again, not for it to stay high.
-// Testing `ready === 1` in the loop condition exits immediately: right after the
-// start pulse `busy` is already set, so `ready` is already low and the loop body
-// never runs. The test then compares the untouched initial value against the
-// expected digest and reports a mismatch that looks like a core fault.
-`define TB_CHECK_BLOCK_START(NWORDS, DWORDS) \
-    task automatic check_block_start( \
-        input [((NWORDS)*32)-1:0] blk, \
-        input [((DWORDS)*32)-1:0] want, \
-        input string name, \
-        input integer cycles \
-    ); \
-        int waited; \
-        begin \
-            while (ready !== 1'b1) @(negedge clk); \
-            w <= blk; \
-            @(negedge clk); \
-            start <= 1'b1; \
-            @(negedge clk); \
-            start <= 1'b0; \
-            waited = 0; \
-            while (waited < cycles && ready !== 1'b1) begin \
-                @(negedge clk); \
-                waited = waited + 1; \
-            end \
-            if (ready !== 1'b1) begin \
-                `TB_FAIL_NOTE(name, "core never returned to ready"); \
-            end else if (digest === want) begin \
-                `TB_PASS(name); \
-            end else begin \
-                $display("  FAIL [%0d]: %s", test_num, name); \
-                $display("        got      %040x", digest); \
-                $display("        expected %040x", want); \
-                fail_count = fail_count + 1; \
-                test_num   = test_num + 1; \
-            end \
-        end \
-    endtask
-
-// Defines `check_message_start(msg, want, name, cycles)` for the same shape.
-`define TB_CHECK_MESSAGE_START(NWORDS, DWORDS) \
-    task automatic check_message_start( \
-        input string msg, \
-        input [((DWORDS)*32)-1:0] want, \
-        input string name, \
-        input integer cycles \
-    ); \
-        begin \
-            check_block_start(sha1_padded_block(msg), want, name, cycles); \
-        end \
-    endtask
-
-// Defines `check_message(msg, iv, want, name, cycles)`.
-//
-// Pads the message into one block, then delegates. The digest is the only
-// transcribed value, which is one number to get wrong rather than seventeen.
-`define TB_CHECK_MESSAGE(NWORDS) \
-    task automatic check_message( \
-        input string msg, \
-        input [127:0] iv, \
+    endtask \
+    task automatic check_ntlm( \
+        input string pw, \
         input [127:0] want, \
         input string name, \
         input integer cycles \
     ); \
         begin \
-            check_block(md5_padded_block(msg), iv, want, name, cycles); \
+            drive_ntlm(pw, name, cycles); \
+            if (done !== 1'b1) begin \
+                `TB_FAIL_NOTE(name, "no done signal"); \
+            end else if (digest_out === want) begin \
+                `TB_PASS(name); \
+            end else begin \
+                $display("  FAIL [%0d]: %s", test_num, name); \
+                $display("        got      %032x", digest_out); \
+                $display("        expected %032x", want); \
+                fail_count = fail_count + 1; \
+                test_num   = test_num + 1; \
+            end \
+        end \
+    endtask \
+    task automatic check_ntlm_too_long( \
+        input string pw, \
+        input string name, \
+        input integer cycles \
+    ); \
+        int waited; \
+        begin \
+            while (ready !== 1'b1 && waited < cycles) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            pass_bytes = '0; \
+            for (int i = 0; i < pw.len() && i < 64; i = i + 1) \
+                pass_bytes[8*i +: 8] = pw[i]; \
+            pass_len = pw.len(); \
+            valid <= 1'b1; \
+            @(negedge clk); \
+            valid <= 1'b0; \
+            waited = 0; \
+            while (waited < cycles && (done !== 1'b1 && overrun !== 1'b1)) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            if (overrun === 1'b1 && done !== 1'b1) begin \
+                `TB_PASS(name); \
+            end else begin \
+                `TB_FAIL_NOTE(name, \
+                    "an over long password must raise overrun, not done"); \
+            end \
+            overrun <= 1'b0; \
+        end \
+    endtask
+
+// Defines `check_crc(data, n, want, name, cycles)` and
+// `check_crc_empty(want, name, cycles)` for `crc32_accel`.
+//
+// The bytes arrive as one packed literal plus a count rather than as an array.
+// A subroutine port carrying an unpacked dimension is rejected outright by Icarus
+// Verilog 12, which is the whole reason no port in this file is an array; a
+// packed literal with an explicit length sidesteps that without reintroducing
+// hand transcription, because the generator emits it.
+//
+// A byte at a time, because that is the interface the protocol needs: the CRC
+// covers a packet whose length is not known until the last byte has been sent.
+// `byte_last` marks it and the core then applies the final XOR. `crc_init`
+// starts a fresh message, which is what makes a zero length message testable.
+`define TB_CHECK_CRC \
+    task automatic drive_crc_byte( \
+        input logic [7:0] b, \
+        input logic last \
+    ); \
+        begin \
+            data_in   <= b; \
+            valid     <= 1'b1; \
+            byte_last <= last; \
+            @(negedge clk); \
+            valid     <= 1'b0; \
+            byte_last <= 1'b0; \
+        end \
+    endtask \
+    task automatic check_crc( \
+        input [511:0] data, \
+        input integer n, \
+        input [31:0] want, \
+        input string name, \
+        input integer cycles \
+    ); \
+        int waited; \
+        int i; \
+        begin \
+            crc_init <= 1'b0; \
+            for (i = 0; i < n; i = i + 1) \
+                drive_crc_byte(data[8*i +: 8], i == n - 1); \
+            waited = 0; \
+            while (waited < cycles && done !== 1'b1) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            if (done !== 1'b1) begin \
+                `TB_FAIL_NOTE(name, "no done signal"); \
+            end else if (crc_out === want) begin \
+                `TB_PASS(name); \
+            end else begin \
+                $display("  FAIL [%0d]: %s", test_num, name); \
+                $display("        got      %08x", crc_out); \
+                $display("        expected %08x", want); \
+                fail_count = fail_count + 1; \
+                test_num   = test_num + 1; \
+            end \
+        end \
+    endtask \
+    task automatic check_crc_empty( \
+        input logic [31:0] want, \
+        input string name, \
+        input integer cycles \
+    ); \
+        int waited; \
+        begin \
+            crc_init <= 1'b1; \
+            data_in  <= 8'h00; \
+            valid    <= 1'b1; \
+            byte_last <= 1'b1; \
+            @(negedge clk); \
+            valid     <= 1'b0; \
+            byte_last <= 1'b0; \
+            crc_init  <= 1'b0; \
+            waited = 0; \
+            while (waited < cycles && done !== 1'b1) begin \
+                @(negedge clk); \
+                waited = waited + 1; \
+            end \
+            if (done !== 1'b1) begin \
+                `TB_FAIL_NOTE(name, "no done signal"); \
+            end else if (crc_out === want) begin \
+                `TB_PASS(name); \
+            end else begin \
+                $display("  FAIL [%0d]: %s", test_num, name); \
+                $display("        got      %08x", crc_out); \
+                $display("        expected %08x", want); \
+                fail_count = fail_count + 1; \
+                test_num   = test_num + 1; \
+            end \
         end \
     endtask

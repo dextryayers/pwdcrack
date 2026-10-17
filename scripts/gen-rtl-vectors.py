@@ -222,18 +222,21 @@ def pad_be64(message: bytes) -> bytes:
 
 
 def pad_blake2b(message: bytes) -> bytes:
-    """BLAKE2b padding: terminator, zeros, then the length in BITS, LE 64 bit.
+    """BLAKE2b padding for a message that fits one block.
 
-    The final block carries the last block flag, so this padding is only correct
-    for a message that fits one block. The generator refuses anything longer,
-    which is the limit of ``blake2b_core`` as well.
+    BLAKE2b does not use the Merkle-Damgard terminator. The last block ends with
+    the 128 bit message counter, t, and the byte immediately before it is f0,
+    which for the final block is 0x01 followed by the all ones block length.
+    Everything between the message and f0 is zero, and nothing is appended after
+    the counter.
+
+    The result is therefore exactly one 128 byte block for any message up to
+    111 bytes, which is the limit of ``blake2b_core`` as well.
     """
     out = bytearray(message)
-    bit_len = (len(message) * 8) & 0xFFFFFFFFFFFFFFFF
-    out.append(0x80)
-    while len(out) % 128 != 128 - 16:
-        out.append(0x00)
-    out += struct.pack("<Q", bit_len)
+    out += b"\x00" * (128 - 17 - len(out))
+    out.append(0x01)
+    out += struct.pack("<QQ", (len(message) * 8) & 0xFFFFFFFFFFFFFFFF, 0)
     return bytes(out)
 
 
@@ -263,13 +266,15 @@ def literal(words: list[bytes], word_bytes: int, word_bits: int) -> str:
     body = "".join(w.hex() for w in reversed(words))
     text = f"{n * word_bits}'h{body}"
 
-    # Round trip: strip the size, slice back into words, undo the reversal.
+    # Round trip: strip the size, slice back into words, undo the word order.
+    # The bytes inside a word are not touched: they arrive here already in
+    # whatever order the core reads them, which is exactly what must survive.
     parsed = bytes.fromhex(text.split("'h")[1])
     if len(parsed) != n * word_bytes:
         sys.exit(f"literal round trip failed: {len(parsed)} bytes from "
                  f"{text}, expected {n * word_bytes}")
     back = [parsed[i:i + word_bytes] for i in range(0, len(parsed), word_bytes)]
-    back = [b[::-1] for b in reversed(back)]
+    back = list(reversed(back))
     if back != words:
         sys.exit(f"literal round trip failed\n  want {words}\n  got  {back}")
     return text
@@ -291,7 +296,8 @@ def pack_digest(digest: bytes, word_bits: int, little_endian: bool) -> str:
 
 class Core:
     def __init__(self, name, title, digest_fn, pad_fn, word_bits, digest_words,
-                 block_words, little_endian, max_single, oracle, kind="core"):
+                 block_words, little_endian, max_single, oracle, iv_words,
+                 kind="core"):
         self.name = name                  # file stem, also the vector file stem
         self.title = title                # human readable, printed in the TB
         self.digest_fn = digest_fn        # bytes -> digest bytes
@@ -302,42 +308,64 @@ class Core:
         self.little_endian = little_endian
         self.max_single = max_single      # longest message that fits one block
         self.oracle = oracle              # what the digest came from
-        self.kind = kind                  # "core" or "ntlm" or "crc"
+        self.iv_words = iv_words          # initial state, in printed order
+        self.kind = kind                  # "core" or "ntlm"
+
+    def iv(self) -> str:
+        """The initial state as a packed literal, in this core's word order."""
+        raw = b"".join(struct.pack(">Q" if self.word_bits == 64 else ">I", w)
+                       for w in self.iv_words)
+        return pack_digest(raw, self.word_bits, self.little_endian)
 
 
-MD5_IV = "128'h10325476_98badcfe_efcdab89_67452301"
+IV_MD = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
+IV_SHA1 = IV_MD + [0xC3D2E1F0]
+IV_SHA256 = [
+    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
+    0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+]
+IV_SHA512 = [
+    0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B,
+    0xA54FF53A5F1D36F1, 0x510E527FADE682D1, 0x9B05688C2B3E6C1F,
+    0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
+]
+IV_SHA384 = [
+    0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17,
+    0x152FECD8F70E5939, 0x67332667FFC00B31, 0x8EB44A8768581511,
+    0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
+]
 
 CORES = [
     Core("md5", "MD5 (RFC 1321)",
          lambda m: hashlib.md5(m).digest(), pad_merkle_varint,
-         32, 4, 16, True, 55, "hashlib.md5"),
+         32, 4, 16, True, 55, "hashlib.md5", IV_MD),
     Core("md4", "MD4 (RFC 1320)",
          md4, pad_merkle_varint,
-         32, 4, 16, True, 55, "pure Python MD4, RFC 1320 test suite"),
+         32, 4, 16, True, 55, "pure Python MD4, held against OpenSSL", IV_MD),
     Core("sha1", "SHA-1 (FIPS 180-4)",
          lambda m: hashlib.sha1(m).digest(), pad_merkle_varint,
-         32, 5, 16, False, 55, "hashlib.sha1"),
+         32, 5, 16, False, 55, "hashlib.sha1", IV_SHA1),
     Core("sha256", "SHA-256 (FIPS 180-4)",
          lambda m: hashlib.sha256(m).digest(), pad_merkle_varint,
-         32, 8, 16, False, 55, "hashlib.sha256"),
+         32, 8, 16, False, 55, "hashlib.sha256", IV_SHA256),
     Core("sha512", "SHA-512 (FIPS 180-4)",
          lambda m: hashlib.sha512(m).digest(), pad_be64,
-         64, 8, 16, False, 111, "hashlib.sha512"),
+         64, 8, 16, False, 111, "hashlib.sha512", IV_SHA512),
     Core("sha384", "SHA-384 (FIPS 180-4)",
          lambda m: hashlib.sha384(m).digest(), pad_be64,
-         64, 6, 16, False, 111, "hashlib.sha384"),
+         64, 6, 16, False, 111, "hashlib.sha384", IV_SHA384),
     Core("ripemd160", "RIPEMD-160",
          lambda m: hashlib.new("ripemd160", m).digest(), pad_merkle_varint,
-         32, 5, 16, False, 55, "hashlib ripemd160"),
+         32, 5, 16, False, 55, "hashlib ripemd160", IV_SHA1),
     Core("blake2b", "BLAKE2b-512, unkeyed",
          blake2b512, pad_blake2b,
-         64, 8, 16, True, 111, "hashlib.blake2b, digest_size=64"),
+         64, 8, 16, True, 111, "hashlib.blake2b, digest_size=64", IV_SHA512),
 ]
 
 NTLM = Core("ntlm", "NTLMv1: MD4 over UTF-16-LE",
             ntlm, pad_merkle_varint,
-            32, 4, 16, True, 27, "MD4 over UTF-16-LE, RFC 1320 checked",
-            kind="ntlm")
+            32, 4, 16, True, 27, "MD4 over UTF-16-LE, MD4 held against OpenSSL",
+            IV_MD, kind="ntlm")
 
 CORPUS_FILE = {
     "md5": "md5.txt", "sha256": "sha256.txt", "ntlm": "ntlm.txt",
@@ -428,10 +456,29 @@ def sv_string(text: str) -> str:
 def label_for(core: Core, message: bytes) -> str:
     if message == b"":
         return "<empty>"
-    text = message.decode("utf-8", "replace")
-    if len(text) <= 24:
-        return text
-    return f"{len(message)} bytes"
+    if len(message) <= 24 and all(0x20 <= b <= 0x7E for b in message):
+        return message.decode("ascii")
+    return describe(message)
+
+
+def plural(count: int, unit: str) -> str:
+    return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
+
+
+def describe(data: bytes) -> str:
+    """A label that is always safe to put inside a SystemVerilog string.
+
+    Control characters are not escaped, they are avoided: a literal CR LF in a
+    vector file is read back as one line ending, so a file written with one
+    cannot be compared against a file generated with one and the drift check
+    reports a difference that does not exist in any meaningful sense. Binary
+    cases are therefore named by their extent, not by their content.
+    """
+    if not data:
+        return "<empty>"
+    if all(0x20 <= b <= 0x7E for b in data):
+        return data.decode("ascii")
+    return f"{len(data)} raw bytes, 0x{data[0]:02x}..0x{data[-1]:02x}"
 
 
 def emit_core(core: Core) -> str:
@@ -471,9 +518,9 @@ def emit_core(core: Core) -> str:
         blk = pack_block(padded, core.word_bits, core.little_endian)
         dig = pack_digest(digest, core.word_bits, core.little_endian)
         lines.append(f"        // {source}: {sv_string(label_for(core, message))}, "
-                     f"{len(message)} bytes")
+                     f"{plural(len(message), 'byte')}")
         lines.append(f"        check_core({blk},")
-        lines.append(f"                   {MD5_IV if core.word_bits == 32 else IV64(core)},")
+        lines.append(f"                   {core.iv()},")
         lines.append(f"                   {dig},")
         lines.append(f'                   "{core.name}({label_for(core, message)})", WAIT);')
         lines.append("")
@@ -481,34 +528,6 @@ def emit_core(core: Core) -> str:
 
     lines.append(f"        // {count} vectors, all generated.")
     return "\n".join(lines) + "\n"
-
-
-IV64_CORE = "512'h6a09e667f3bcc908_bb67ae8584caa73b_3c6ef372fe94f82b_a54ff53a5f1d36f1" \
-            "_510e527fade682d1_9b05688c2b3e6c1f_1f83d9abfb41bd6b_5be0cd19137e2179"
-
-
-def IV64(core: Core) -> str:
-    """The initial state for a 64 bit core, word 0 in the low bits."""
-    if core.name == "sha384":
-        words = [
-            0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17,
-            0x152FECD8F70E5939, 0x67332667FFC00B31, 0x8EB44A8768581511,
-            0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
-        ]
-    elif core.name == "blake2b":
-        words = [
-            0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B,
-            0xA54FF53A5F1D36F1, 0x510E527FADE682D1, 0x9B05688C2B3E6C1F,
-            0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
-        ]
-    else:
-        words = [
-            0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B,
-            0xA54FF53A5F1D36F1, 0x510E527FADE682D1, 0x9B05688C2B3E6C1F,
-            0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
-        ]
-    packed = b"".join(struct.pack(">Q", w) for w in words)
-    return pack_digest(packed, 64, False)
 
 
 def emit_ntlm() -> str:
@@ -530,7 +549,7 @@ def emit_ntlm() -> str:
         digest = ntlm(pw)
         dig = pack_digest(digest, 32, True)
         label = pw if pw else "<empty>"
-        lines.append(f"        // NTLM of {sv_string(label)}, {len(pw)} characters")
+        lines.append(f"        // NTLM of {sv_string(label)}, {plural(len(pw), 'character')}")
         lines.append(f'        check_ntlm({sv_string(pw)}, {dig}, '
                      f'"ntlm({label})", WAIT);')
         lines.append("")
@@ -544,7 +563,7 @@ def emit_crc() -> str:
         "// CRC-32, IEEE 802.3 reflected form: polynomial 0xEDB88320, initial",
         "// value 0xFFFFFFFF, final XOR 0xFFFFFFFF. The host computes the same",
         "// function in engines/engine-fpga/src/protocol.rs, and the two must",
-        "// agree exactly or every packet is rejected.",
+        "// agree exactly or every packet is rejected by the device.",
         "// Oracle: zlib.crc32.",
         "",
     ]
@@ -554,13 +573,20 @@ def emit_crc() -> str:
              bytes(range(0, 64)),
              bytes(range(255, 191, -1))]
     for data in cases:
-        want = crc32(data)
-        blob = "".join(f"8'h{b:02x}, " for b in data)
-        label = data.decode("ascii", "replace") if data else "<empty>"
-        lines.append(f"        // CRC-32 of {sv_string(label)}, {len(data)} bytes")
-        lines.append(f"        check_crc({{{blob}}}, {want[3]:02x}{want[2]:02x}"
-                     f"{want[1]:02x}{want[0]:02x}, "
-                     f'"crc32({label})", WAIT);')
+        want = zlib.crc32(data) & 0xFFFFFFFF
+        label = describe(data)
+        if not data:
+            lines.append("        // CRC-32 of " + sv_string(label) + ", 0 bytes")
+            lines.append(f'        check_crc_empty(32\'h{want:08x}, '
+                         f'"crc32({label})", WAIT);')
+            lines.append("")
+            continue
+        # Packed, byte 0 in the low bits, emitted rather than transcribed.
+        lines.append(f"        // CRC-32 of {sv_string(label)}, {plural(len(data), 'byte')}")
+        lines.append(f"        check_crc({pack_block(data, 8, False)},")
+        lines.append(f"                 {len(data)},")
+        lines.append(f"                 32'h{want:08x},")
+        lines.append(f'                 "crc32({label})", WAIT);')
         lines.append("")
     lines.append(f"        // {len(cases)} vectors, all generated.")
     return "\n".join(lines) + "\n"

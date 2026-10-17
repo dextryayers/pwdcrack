@@ -1,3 +1,4 @@
+pub mod admission;
 pub mod discovery;
 pub mod master;
 pub mod netpolicy;
@@ -98,14 +99,20 @@ impl DistributedConfig {
         let listen_addr = decision.addr;
 
         if self.is_master() {
-            let master =
-                master::MasterNode::new(&listen_addr.to_string(), &self.checkpoint_path);
+            let master = master::MasterNode::new(
+                &listen_addr.to_string(),
+                &self.checkpoint_path,
+                self.auth(),
+            );
             master.run().await
         } else {
             // The wordlist grant is part of the worker's own configuration. The
             // master picks which file inside it is opened; it cannot widen it.
             let mut worker =
                 worker::WorkerNode::new(&self.master_addr.unwrap().to_string());
+            if let Some(token) = &self.token {
+                worker = worker.with_token(token.clone());
+            }
             if !self.wordlist_dirs.is_empty() {
                 worker = worker
                     .with_wordlist_dirs(&self.wordlist_dirs)

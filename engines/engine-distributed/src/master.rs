@@ -4,6 +4,8 @@ use std::time::{Instant, Duration};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::time;
+use crate::admission::{Admission, AdmissionGate};
+use crate::netpolicy::ClusterAuth;
 
 use crate::protocol::{
     read_msg, write_msg, Message, WorkerStats, CrackedEntry, WorkUnit, Capabilities, AttackType,
@@ -31,6 +33,9 @@ pub struct MasterNode {
     completed: Arc<Mutex<Vec<CrackedEntry>>>,
     next_batch_id: Arc<std::sync::atomic::AtomicU64>,
     checkpoint_path: String,
+    /// Decides which connections may join. Shared so the accept loop and each
+    /// connection handler build gates from the same cluster authentication.
+    admission: Arc<AdmissionGate>,
 }
 
 pub struct WorkerInfo {
@@ -43,7 +48,13 @@ pub struct WorkerInfo {
 }
 
 impl MasterNode {
-    pub fn new(listen_addr: &str, checkpoint_path: &str) -> Self {
+    /// Builds a master.
+    ///
+    /// `auth` decides which connections may join. An unauthenticated cluster
+    /// admits anyone who connects, which is only acceptable on loopback, and
+    /// `crate::netpolicy::BindPolicy` is what enforces that.
+    pub fn new(listen_addr: &str, checkpoint_path: &str, auth: ClusterAuth) -> Self {
+        let gate = AdmissionGate::new(auth);
         MasterNode {
             listen_addr: listen_addr.to_string(),
             workers: Arc::new(Mutex::new(HashMap::new())),
@@ -52,7 +63,13 @@ impl MasterNode {
             completed: Arc::new(Mutex::new(Vec::new())),
             next_batch_id: Arc::new(std::sync::atomic::AtomicU64::new(1)),
             checkpoint_path: checkpoint_path.to_string(),
+            admission: Arc::new(gate),
         }
+    }
+
+    /// True when this master requires workers to prove a shared token.
+    pub fn requires_authentication(&self) -> bool {
+        !self.admission.is_admitted()
     }
 
     pub async fn enqueue_work(&self, work: WorkUnit) -> u64 {
@@ -254,9 +271,16 @@ impl MasterNode {
             let in_flight = Arc::clone(&self.in_flight);
             let completed = Arc::clone(&self.completed);
             let work_queue = Arc::clone(&self.work_queue);
+            // Each connection gets its own gate. Sharing one would let a peer
+            // that authenticated advance the state for everyone else.
+            let gate = AdmissionGate::new(ClusterAuth::from_optional(
+                self.admission.token().as_deref(),
+            ));
             tokio::spawn(async move {
-                if let Err(e) = handle_worker(socket, workers, work_queue, in_flight, completed).await {
-                    log::error!("Worker {} error: {}", addr, e);
+                if let Err(e) =
+                    handle_worker(socket, workers, work_queue, in_flight, completed, gate).await
+                {
+                    log::warn!("Connection from {} closed: {e}", addr);
                 }
             });
         }
@@ -279,16 +303,80 @@ impl MasterNode {
     }
 }
 
+/// Serves one connection, for tests that drive the gate over a real socket.
+///
+/// The integration tests in `tests/admission_over_socket.rs` need to exercise the
+/// same admission path the accept loop uses, without starting a whole master.
+/// Exposing the handler rather than duplicating the gate check in the test is the
+/// point: a test that reimplements the check proves nothing about the handler.
+///
+/// `work_queue` and `in_flight` are supplied by the caller so a test can observe
+/// whether any work was dispatched.
+#[doc(hidden)]
+pub async fn serve_connection_for_test(
+    socket: TcpStream,
+    work_queue: Arc<Mutex<VecDeque<PendingWork>>>,
+    in_flight: Arc<Mutex<HashMap<u64, InFlightWork>>>,
+    workers: Arc<Mutex<HashMap<String, WorkerInfo>>>,
+    gate: AdmissionGate,
+) -> Result<(), String> {
+    handle_worker(
+        socket,
+        workers,
+        work_queue,
+        in_flight,
+        Arc::new(Mutex::new(Vec::new())),
+        gate,
+    )
+    .await
+}
+
+/// A short name for a frame, for an error message about which one arrived too
+/// early. Naming the frame is the difference between a usable log line and
+/// "protocol error".
+fn frame_kind(msg: &Message) -> &'static str {
+    match msg {
+        Message::Ping => "Ping",
+        Message::Pong => "Pong",
+        Message::Authenticate { .. } => "Authenticate",
+        Message::Handshake { .. } => "Handshake",
+        Message::Heartbeat { .. } => "Heartbeat",
+        Message::WorkProgress { .. } => "WorkProgress",
+        Message::Result { .. } => "Result",
+        Message::AssignWork { .. } => "AssignWork",
+        Message::Shutdown { .. } => "Shutdown",
+    }
+}
+
 async fn handle_worker(
     mut socket: TcpStream,
     workers: Arc<Mutex<HashMap<String, WorkerInfo>>>,
     work_queue: Arc<Mutex<VecDeque<PendingWork>>>,
     in_flight: Arc<Mutex<HashMap<u64, InFlightWork>>>,
     completed: Arc<Mutex<Vec<CrackedEntry>>>,
+    mut gate: AdmissionGate,
 ) -> Result<(), String> {
     let mut worker_name = String::new();
+    // Fresh per connection, so a captured response cannot be replayed later.
+    let nonce = crate::netpolicy::make_nonce();
 
     while let Some(msg) = read_msg(&mut socket).await? {
+        // Every frame passes the gate before it is interpreted. This is the
+        // only place a peer can enter the design, and before this a peer that
+        // simply spoke first was entered.
+        match gate.on_message(&msg, &nonce) {
+            Admission::Rejected => {
+                return Err("authentication failed".to_string());
+            }
+            Admission::AwaitingAuthentication => {
+                return Err(format!(
+                    "sent {:?} before authenticating",
+                    frame_kind(&msg)
+                ));
+            }
+            _ => {}
+        }
+
         // Respond to Ping immediately
         if matches!(msg, Message::Ping) {
             write_msg(&mut socket, &Message::Pong).await?;

@@ -225,6 +225,14 @@ impl ClusterAuth {
         }
     }
 
+    /// The configured token, if any.
+    ///
+    /// Exposed so an admission gate can be rebuilt for a new connection from the
+    /// same cluster authentication.
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+
     /// True when this cluster authenticates its peers.
     pub fn is_configured(&self) -> bool {
         self.token.is_some()
@@ -334,6 +342,13 @@ fn hex_nibble(c: u8) -> Option<u8> {
         b'A'..=b'F' => Some(c - b'A' + 10),
         _ => None,
     }
+}
+
+/// Decodes lowercase hex. Malformed input yields an empty slice rather than an
+/// error, so a peer sending junk fails the comparison instead of crashing the
+/// verifier.
+pub fn hex_encode_decode(s: &str) -> Vec<u8> {
+    hex_decode(s)
 }
 
 /// Encodes bytes as lowercase hex.

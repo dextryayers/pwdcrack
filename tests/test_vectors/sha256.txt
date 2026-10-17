@@ -1,4 +1,13 @@
 # SHA-256 test vectors - hash:password
+# Format: <hex_sha256_hash>:<plaintext_password>
+#
+# Verified, not transcribed: see the note at the top of md5.txt.
+#
+# One entry was wrong when this file was first checked in. "abc" was stored as
+# 3e23e8160039594a33894f6564e1b1348bbd7a0088d42c733ac5c2ae8e2f23cf, which is not
+# the SHA-256 of "abc", of "abc" with a newline, or of any other obvious
+# transcription of it. Where it came from is not recoverable; that it was never
+# checked is the actual defect.
 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824:hello
 ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb:a
-3e23e8160039594a33894f6564e1b1348bbd7a0088d42c733ac5c2ae8e2f23cf:abc
+ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad:abc
