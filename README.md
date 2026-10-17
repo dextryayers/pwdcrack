@@ -156,6 +156,7 @@ Treat a hash file as sensitive: it contains password material.
 
 MIT, as declared in `Cargo.toml`. The `LICENSE` file has not been added to the
 repository yet; add it before publishing.
+Copyright AniipID
 
 ## Attribution
 
