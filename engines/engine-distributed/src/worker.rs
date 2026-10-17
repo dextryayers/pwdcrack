@@ -23,8 +23,6 @@ pub struct WorkerNode {
     /// Shared secret for authenticating to the master. `None` leaves the worker
     /// unable to join a cluster that requires one.
     token: Option<String>,
-    /// Nonce for this connection's authentication exchange.
-    nonce: Vec<u8>,
 }
 
 impl WorkerNode {
@@ -52,7 +50,6 @@ impl WorkerNode {
             cracked: Arc::new(AtomicU64::new(0)),
             wordlists: WordlistPolicy::deny_all(),
             token: None,
-            nonce: Vec::new(),
         }
     }
 
@@ -78,9 +75,6 @@ impl WorkerNode {
     pub async fn connect(&mut self) -> Result<(), String> {
         let stream = TcpStream::connect(&self.master_addr).await.map_err(|e| e.to_string())?;
         log::info!("Connected to master at {}", self.master_addr);
-        // Fresh per connection, so a response captured from one session cannot
-        // be replayed into another.
-        self.nonce = crate::netpolicy::make_nonce();
         self.stream = Some(stream);
         Ok(())
     }
@@ -88,15 +82,26 @@ impl WorkerNode {
     pub async fn send_handshake(&mut self) -> Result<(), String> {
         let stream = self.stream.as_mut().unwrap();
 
-        // Authenticate first when a token is configured. The master refuses any
-        // other frame before this one, so a worker that skipped it would be
-        // disconnected with "sent Handshake before authenticating".
+        // Answer the master's challenge when a token is configured. The nonce
+        // comes from the master, so the response is bound to this connection; a
+        // value invented here would not match what the master expects and the
+        // connection would be dropped as unauthenticated.
         if let Some(token) = &self.token {
+            let nonce = match protocol::read_msg(stream).await? {
+                Some(Message::Challenge { nonce }) => {
+                    crate::netpolicy::hex_encode_decode(&nonce)
+                }
+                other => {
+                    return Err(format!(
+                        "expected an authentication challenge, got {:?}",
+                        other.map(|m| format!("{m:?}").len())
+                    ))
+                }
+            };
             let auth = ClusterAuth::with_token(token.clone());
-            let nonce = self.nonce.clone();
             let frame = crate::admission::auth_frame(&auth, &nonce);
             protocol::write_msg(stream, &frame).await?;
-            log::debug!("Authenticated to master");
+            log::debug!("Answered the master challenge");
         }
 
         let handshake = Message::Handshake {

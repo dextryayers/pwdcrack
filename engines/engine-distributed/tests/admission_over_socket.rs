@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use engine_distributed::master::MasterNode;
-use engine_distributed::netpolicy::{make_nonce, ClusterAuth};
+use engine_distributed::netpolicy::{hex_encode_decode, ClusterAuth};
 use engine_distributed::protocol::{self, Capabilities, Message};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -30,6 +30,18 @@ async fn bind_master(auth: ClusterAuth) -> (u16, MasterNode) {
         auth,
     );
     (port, master)
+}
+
+/// Reads the master's challenge, which it sends first on every gated connection.
+async fn read_challenge(stream: &mut TcpStream) -> Vec<u8> {
+    for _ in 0..8 {
+        if let Ok(Ok(Some(Message::Challenge { nonce }))) =
+            tokio::time::timeout(Duration::from_millis(800), protocol::read_msg(stream)).await
+        {
+            return hex_encode_decode(&nonce);
+        }
+    }
+    panic!("the master did not issue a challenge");
 }
 
 /// Reads frames until the peer closes or the deadline passes.
@@ -91,6 +103,9 @@ async fn a_worker_without_the_token_is_disconnected_before_it_is_registered() {
         .await
         .unwrap();
 
+    // The challenge is ignored and a handshake sent instead, which is exactly
+    // what the old code accepted.
+    let _challenge = read_challenge(&mut stream).await;
     let frames = read_until_close(&mut stream).await;
 
     // The connection is closed and the peer is not entered into the worker table.
@@ -134,10 +149,15 @@ async fn a_worker_with_the_token_is_accepted() {
         .await
         .unwrap();
 
+    // Answer the challenge the master issued, not a nonce invented here.
+    let nonce = read_challenge(&mut stream).await;
     let auth = ClusterAuth::with_token("s3cret".into());
-    let nonce = make_nonce();
-    let frame = engine_distributed::admission::auth_frame(&auth, &nonce);
-    protocol::write_msg(&mut stream, &frame).await.unwrap();
+    protocol::write_msg(
+        &mut stream,
+        &engine_distributed::admission::auth_frame(&auth, &nonce),
+    )
+    .await
+    .unwrap();
     protocol::write_msg(&mut stream, &handshake()).await.unwrap();
 
     // Give the server a moment to process.
@@ -178,8 +198,8 @@ async fn a_worker_with_the_wrong_token_is_refused() {
     let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
         .await
         .unwrap();
+    let nonce = read_challenge(&mut stream).await;
     let auth = ClusterAuth::with_token("wrong".into());
-    let nonce = make_nonce();
     protocol::write_msg(
         &mut stream,
         &engine_distributed::admission::auth_frame(&auth, &nonce),
@@ -255,16 +275,21 @@ async fn a_replayed_response_from_another_nonce_is_refused() {
         }
     });
 
-    // Capture a response from one session.
+    // A response computed over some other nonce, as if captured earlier. The
+    // server issues a fresh challenge on this connection, so it must not match.
     let auth = ClusterAuth::with_token("s3cret".into());
-    let captured = engine_distributed::admission::auth_frame(&auth, &make_nonce());
+    let stale = engine_distributed::admission::auth_frame(&auth, b"a-nonce-from-long-ago");
 
-    // Replay it on a new connection, where the server's nonce differs.
     let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
         .await
         .unwrap();
+    let fresh = read_challenge(&mut stream).await;
+    assert_ne!(
+        fresh, b"a-nonce-from-long-ago".to_vec(),
+        "the server must not reuse a nonce"
+    );
     let _ = stream.write_all(b"").await;
-    protocol::write_msg(&mut stream, &captured).await.unwrap();
+    protocol::write_msg(&mut stream, &stale).await.unwrap();
     protocol::write_msg(&mut stream, &handshake()).await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(300)).await;

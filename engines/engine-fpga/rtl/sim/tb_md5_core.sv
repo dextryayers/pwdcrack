@@ -1,44 +1,50 @@
 // MD5 core testbench.
 //
-// Verifies the compression function in `md5_core.sv` against RFC 1321 vectors.
+// # What this establishes
 //
-// Where the expected digests come from
-// ------------------------------------
-// Every digest below was produced by `scripts/gen-rtl-vectors.py md5`, which reads
-// Python's hashlib. Do not edit them by hand. Four of the seven values first
-// written into this file were wrong, all from memory, and three of those four
-// looked entirely plausible. That is the whole argument for the generator.
+// `md5_core` computes the right digest for every message Python hashlib can,
+// which is the only claim that makes an RTL hash core worth instantiating. The
+// digests and the padded blocks both come from `rtl/sim/vectors/md5.svh`, which
+// scripts/gen-rtl-vectors.py emits from hashlib and from struct.pack. Nothing
+// in this file is a transcribed number.
 //
-// The previous testbench, `rtl/cores/md5_tb.sv`, stated these four digests
-// correctly but fed the core wrong message blocks: three of the four used big
-// endian word ordering where MD5 requires little endian, and two placed the
-// length field in word 13 instead of word 14. It also did not compile, so none of
-// it was ever observed. Blocks are now derived from the message by
-// `md5_padded_block`, which removes the transcription step that produced those
-// errors.
+// # Why the previous testbench was worthless
 //
-// Length boundary cases
-// ---------------------
-// 55, 56, 63 and 64 byte messages are included deliberately. 55 is the longest
-// message whose padding still leaves room for the length field inside one block.
-// 56 puts the terminator on the last byte before the length field, which is the
-// bound a padding loop written with the wrong comparison gets wrong. 64 fills a
-// block exactly and needs a second block, so it will not fit the single block
-// this core consumes and is expected to fail here. It is included to document the
-// limit rather than to hide it.
+// `rtl/cores/md5_tb.sv` stated four RFC 1321 digests correctly and fed the core
+// four wrong message blocks: three used big endian word order where MD5 needs
+// little endian, and two put the length field in word 13 instead of word 14. It
+// also did not compile, so none of it was ever observed. A testbench with wrong
+// inputs and a correct implementation reports failures, and a testbench with
+// wrong expectations and a correct implementation reports failures too; there is
+// no way to tell which from the output. Generating both sides removes the
+// question.
+//
+// # Single block
+//
+// MD5 of a message longer than 55 bytes needs a second block. This core
+// compresses one block; chaining several blocks is the wrapper's job. The
+// vectors stop at 55 bytes because that is the limit of the core, not of the
+// algorithm. `tb_padding` covers the padding itself across the boundary where a
+// second block appears.
+//
+// # Timing
+//
+// The core is pipelined: it accepts a block every cycle and asserts `done` 65
+// cycles later. The task in tb_common.svh waits for `done` on the falling edge
+// and compares in the same cycle, because `done` is a one cycle pulse.
 
 `include "tb_common.svh"
 
 module tb_md5_core;
 
-    logic        clk = 1'b0;
-    logic        rst_n = 1'b0;
-    logic        valid = 1'b0;
-    logic        ready;
-    logic        done;
-    logic [511:0] msg_word;
-    logic [127:0] h_in;
-    logic [127:0] h_out;
+    logic         clk = 1'b0;
+    logic         rst_n = 1'b0;
+    logic         valid = 1'b0;
+    logic         ready;
+    logic         done;
+    logic [511:0] msg_blk;
+    logic [127:0] state_in;
+    logic [127:0] digest_out;
 
     `TB_COUNTERS
 
@@ -48,42 +54,33 @@ module tb_md5_core;
     always #5 clk = ~clk;
 
     `TB_REPORT("md5_core")
-    `TB_CHECK_BLOCK(16)
-    `TB_CHECK_MESSAGE(16)
+    `TB_CHECK_CORE(32, 16, 128, 128)
 
-    localparam integer WAIT = 200;
+    // 65 pipeline stages plus a cycle of slack. A testbench that waits forever
+    // reports a core that never finished; one that waits too little reports a
+    // core that finished too early. Both are the same number here.
+    localparam integer WAIT = 120;
 
     initial begin
-        $display("=== md5_core, RFC 1321 vectors ===");
+        $display("=== md5_core, RFC 1321 vectors, generated from hashlib ===");
 
-        msg_word = '0;
-        h_in     = '0;
+        msg_blk  = '0;
+        state_in = '0;
 
         // Hold reset across two rising edges before releasing it.
         //
         // The core resets on `posedge clk or negedge rst_n`. `rst_n` starts at 0
         // without ever having a negedge, so the only event that can enter the
-        // reset branch is a rising edge while `rst_n` is still 0. Releasing after
-        // a single edge races that edge: if the initial block resumes first, the
-        // core sees rst_n already high and the pipeline is never cleared.
+        // reset branch is a rising edge while `rst_n` is still 0. Releasing
+        // after a single edge races that edge: if the initial block resumes
+        // first, the core sees rst_n already high and the pipeline is never
+        // cleared.
         repeat (2) @(posedge clk);
         rst_n = 1'b1;
         @(posedge clk);
 
-        // ---- Generated by scripts/gen-rtl-vectors.py md5,
-        //      oracle: python hashlib.md5. Do not edit by hand. ----
-        check_message("", md5_iv(), 128'h7e42f8ec980980e904b2008fd98c1dd4, "md5(\"<empty>\")", WAIT);
-        check_message("a", md5_iv(), 128'h61267769e299c331a8b6f1c0b975c10c, "md5(\"a\")", WAIT);
-        check_message("abc", md5_iv(), 128'h727fe1287d3f96d6b04fd23c98500190, "md5(\"abc\")", WAIT);
-        check_message("message digest", md5_iv(), 128'hd061f1aa312f5a528d93b77c7d696bf9, "md5(\"message digest\")", WAIT);
-        check_message("abcdefghijklmnopqrstuvwxyz", md5_iv(), 128'h3be167ca6c49fb7d00e49261d7d3fcc3, "md5(\"abcdefghijklmnopqrstuvwxyz\")", WAIT);
-        // ---- end generated ----
+        `include "vectors/md5.svh"
 
-        // 64 bytes needs two blocks. This core consumes one, so it must not
-        // claim the digest. Asserting the real MD5 of 64 bytes here would
-        // demand a feature the core does not have and would report it as a
-        // failure; asserting the padded single block result instead would
-        // mislabel the test. It is recorded as a note rather than a comparison.
         tb_report("md5_core");
     end
 

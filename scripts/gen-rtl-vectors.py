@@ -312,10 +312,27 @@ class Core:
         self.kind = kind                  # "core" or "ntlm"
 
     def iv(self) -> str:
-        """The initial state as a packed literal, in this core's word order."""
-        raw = b"".join(struct.pack(">Q" if self.word_bits == 64 else ">I", w)
-                       for w in self.iv_words)
-        return pack_digest(raw, self.word_bits, self.little_endian)
+        """The initial state as a packed literal, in this core's word order.
+
+        Packed differently from a digest, and the difference matters.
+
+        A digest is a byte string: hashlib emits the state words each stored
+        little endian, so the bytes have to be turned back into numbers before a
+        core can use them. `pack_digest` does that.
+
+        These IV words are already numbers: `0x67452301` is the value of A, not
+        four bytes spelling `67452301`. Applying the digest byte reversal to them
+        swaps bytes within each word and produces a state the core has never seen,
+        which fails every vector for a reason that looks like a broken core.
+
+        The literal therefore reverses only the word order, placing word 0 in the
+        low bits where the core reads it, and leaves each word's bytes alone.
+        Checked against the packed output: MD5 A must land at `[31:0]` as
+        0x67452301.
+        """
+        width = self.word_bits // 4
+        return (f"{self.word_bits}'h"
+                + "".join(f"{w:0{width}x}" for w in reversed(self.iv_words)))
 
 
 IV_MD = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
@@ -517,12 +534,18 @@ def emit_core(core: Core) -> str:
 
         blk = pack_block(padded, core.word_bits, core.little_endian)
         dig = pack_digest(digest, core.word_bits, core.little_endian)
+        # The label goes inside a SystemVerilog string literal, so it is escaped
+        # exactly like the message is. A message containing a quote or a
+        # backslash produces a block literal that is fine and a test name that
+        # does not parse, which is the kind of failure that looks like a
+        # simulator bug.
+        name = sv_string(f"{core.name}({label_for(core, message)})")
         lines.append(f"        // {source}: {sv_string(label_for(core, message))}, "
                      f"{plural(len(message), 'byte')}")
         lines.append(f"        check_core({blk},")
         lines.append(f"                   {core.iv()},")
         lines.append(f"                   {dig},")
-        lines.append(f'                   "{core.name}({label_for(core, message)})", WAIT);')
+        lines.append(f"                   {name}, WAIT);")
         lines.append("")
         count += 1
 
@@ -551,7 +574,7 @@ def emit_ntlm() -> str:
         label = pw if pw else "<empty>"
         lines.append(f"        // NTLM of {sv_string(label)}, {plural(len(pw), 'character')}")
         lines.append(f'        check_ntlm({sv_string(pw)}, {dig}, '
-                     f'"ntlm({label})", WAIT);')
+                     f'{sv_string("ntlm(" + label + ")")}, WAIT);')
         lines.append("")
     lines.append(f"        // {len(passwords)} vectors, all generated.")
     return "\n".join(lines) + "\n"
@@ -576,17 +599,24 @@ def emit_crc() -> str:
         want = zlib.crc32(data) & 0xFFFFFFFF
         label = describe(data)
         if not data:
+            # A zero length message is a real case: the core is pulsed with no
+            # bytes and only the final XOR runs. It gets its own task rather than
+            # a zero length literal, so the testbench can tell "no bytes" from
+            # "the byte array was not filled in".
             lines.append("        // CRC-32 of " + sv_string(label) + ", 0 bytes")
             lines.append(f'        check_crc_empty(32\'h{want:08x}, '
-                         f'"crc32({label})", WAIT);')
+                         f'{sv_string("crc32(" + label + ")")}, WAIT);')
             lines.append("")
             continue
-        # Packed, byte 0 in the low bits, emitted rather than transcribed.
+        # Padded to the full 512 bit port width so every vector looks the same.
+        # The count tells the task how many bytes are real; the rest are zero and
+        # are never read.
+        padded_data = data + b"\x00" * (64 - len(data))
         lines.append(f"        // CRC-32 of {sv_string(label)}, {plural(len(data), 'byte')}")
-        lines.append(f"        check_crc({pack_block(data, 8, False)},")
+        lines.append(f"        check_crc({pack_block(padded_data, 8, False)},")
         lines.append(f"                 {len(data)},")
         lines.append(f"                 32'h{want:08x},")
-        lines.append(f'                 "crc32({label})", WAIT);')
+        lines.append(f'                 {sv_string("crc32(" + label + ")")}, WAIT);')
         lines.append("")
     lines.append(f"        // {len(cases)} vectors, all generated.")
     return "\n".join(lines) + "\n"

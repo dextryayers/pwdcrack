@@ -465,33 +465,41 @@ endfunction
             end \
             if (ready !== 1'b1) begin \
                 `TB_FAIL_NOTE(name, "core never became ready"); \
-                return; \
-            end \
-            msg_blk   <= blk; \
-            state_in  <= iv; \
-            valid     <= 1'b1; \
-            @(negedge clk); \
-            valid     <= 1'b0; \
-            waited = 0; \
-            saw_done = 0; \
-            while (waited < cycles && saw_done == 0) begin \
-                @(negedge clk); \
-                waited = waited + 1; \
-                if (done === 1'b1) saw_done = 1; \
-            end \
-            /* Sample in the same cycle the flag was seen. Half a cycle */ \
-            /* later the core has moved on to the next transaction. */ \
-            got = digest_out; \
-            if (saw_done == 0) begin \
-                `TB_FAIL_NOTE(name, "no done signal"); \
-            end else if (got === want) begin \
-                `TB_PASS(name); \
             end else begin \
-                $display("  FAIL [%0d]: %s", test_num, name); \
-                $display("        got      %h", got); \
-                $display("        expected %h", want); \
-                fail_count = fail_count + 1; \
-                test_num   = test_num + 1; \
+                /* Drive from a falling edge. Values set immediately after a */ \
+                /* rising edge are visible for half a cycle, and the core's */ \
+                /* next sampling edge is a whole cycle away, so the block is */ \
+                /* never captured. `done` then never fires for that vector and */ \
+                /* every following vector compares against the previous */ \
+                /* block's digest: a silent off by one that looks like a core */ \
+                /* that computes MD5 slightly wrong. */ \
+                @(negedge clk); \
+                msg_blk   <= blk; \
+                state_in  <= iv; \
+                valid     <= 1'b1; \
+                @(negedge clk); \
+                valid     <= 1'b0; \
+                waited = 0; \
+                saw_done = 0; \
+                while (waited < cycles && saw_done == 0) begin \
+                    @(negedge clk); \
+                    waited = waited + 1; \
+                    if (done === 1'b1) saw_done = 1; \
+                end \
+                /* Sample in the same cycle the flag was seen. Half a cycle */ \
+                /* later the core has moved on to the next transaction. */ \
+                got = digest_out; \
+                if (saw_done == 0) begin \
+                    `TB_FAIL_NOTE(name, "no done signal"); \
+                end else if (got === want) begin \
+                    `TB_PASS(name); \
+                end else begin \
+                    $display("  FAIL [%0d]: %s", test_num, name); \
+                    $display("        got      %h", got); \
+                    $display("        expected %h", want); \
+                    fail_count = fail_count + 1; \
+                    test_num   = test_num + 1; \
+                end \
             end \
         end \
     endtask

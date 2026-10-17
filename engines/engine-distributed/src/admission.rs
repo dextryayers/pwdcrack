@@ -79,6 +79,10 @@ impl Admission {
 pub struct AdmissionGate {
     auth: ClusterAuth,
     authenticated: bool,
+    /// The nonce this gate issued in its `Challenge`. The peer's response is
+    /// checked against exactly this value, which is what binds a response to one
+    /// connection.
+    nonce: Vec<u8>,
 }
 
 impl AdmissionGate {
@@ -87,7 +91,13 @@ impl AdmissionGate {
         AdmissionGate {
             auth,
             authenticated,
+            nonce: crate::netpolicy::make_nonce(),
         }
+    }
+
+    /// The nonce this gate issued, for sending in the `Challenge` frame.
+    pub fn nonce(&self) -> &[u8] {
+        &self.nonce
     }
 
     /// The cluster authentication this gate enforces.
@@ -113,7 +123,7 @@ impl AdmissionGate {
     }
 
     /// Decides what to do with the next frame from this connection.
-    pub fn on_message(&mut self, msg: &Message, nonce: &[u8]) -> Admission {
+    pub fn on_message(&mut self, msg: &Message) -> Admission {
         match msg {
             Message::Authenticate { response } => {
                 if !self.auth.is_configured() {
@@ -122,7 +132,7 @@ impl AdmissionGate {
                     self.authenticated = true;
                     return Admission::AllowedUnauthenticated;
                 }
-                match self.auth.verify(nonce, &decode_hex(response)) {
+                match self.auth.verify(&self.nonce, &decode_hex(response)) {
                     AuthOutcome::Accepted => {
                         self.authenticated = true;
                         Admission::AllowedAuthenticated
@@ -133,6 +143,10 @@ impl AdmissionGate {
                     }
                 }
             }
+
+            // The challenge itself is the master talking to itself arriving on
+            // the read path. Never an admission event.
+            Message::Challenge { .. } => Admission::AwaitingAuthentication,
 
             // A ping is answered before admission so a worker can probe the
             // master without holding a token. It leaks nothing beyond liveness.
@@ -156,13 +170,20 @@ fn decode_hex(s: &str) -> Vec<u8> {
     crate::netpolicy::hex_encode_decode(s)
 }
 
-/// The frame a worker sends first when the cluster has a token.
-pub fn auth_frame(auth: &ClusterAuth, nonce: &[u8]) -> Message {
+/// The frame a worker sends in reply to a `Challenge`.
+pub fn auth_frame(auth: &ClusterAuth, challenge_nonce: &[u8]) -> Message {
     Message::Authenticate {
-        response: match auth.response_for(nonce) {
+        response: match auth.response_for(challenge_nonce) {
             Some(d) => crate::netpolicy::hex_encode(&d),
             None => String::new(),
         },
+    }
+}
+
+/// The frame a master sends first on every connection.
+pub fn challenge_frame(gate: &AdmissionGate) -> Message {
+    Message::Challenge {
+        nonce: crate::netpolicy::hex_encode(gate.nonce()),
     }
 }
 
@@ -194,7 +215,7 @@ mod tests {
     fn an_open_cluster_admits_without_a_credential() {
         let mut gate = AdmissionGate::new(ClusterAuth::open());
         assert!(gate.is_admitted());
-        assert!(gate.on_message(&handshake("n1"), &nonce()).is_admitted());
+        assert!(gate.on_message(&handshake("n1")).is_admitted());
     }
 
     /// The defect: a configured cluster must not admit a peer that never
@@ -203,7 +224,7 @@ mod tests {
     fn a_configured_cluster_refuses_a_bare_handshake() {
         let mut gate = AdmissionGate::new(ClusterAuth::with_token("s3cret".into()));
         assert!(!gate.is_admitted());
-        let decision = gate.on_message(&handshake("intruder"), &nonce());
+        let decision = gate.on_message(&handshake("intruder"));
         assert!(!decision.is_admitted());
         assert!(
             matches!(decision, Admission::AwaitingAuthentication),
@@ -215,13 +236,12 @@ mod tests {
     fn a_correct_credential_admits_the_peer() {
         let auth = ClusterAuth::with_token("s3cret".into());
         let mut gate = AdmissionGate::new(auth.clone());
-        let n = nonce();
-        let frame = auth_frame(&auth, &n);
-        let decision = gate.on_message(&frame, &n);
+        let frame = auth_frame(&auth, gate.nonce());
+        let decision = gate.on_message(&frame);
         assert!(decision.is_admitted());
         assert!(gate.is_authenticated());
         // And the handshake that follows is then accepted.
-        assert!(gate.on_message(&handshake("worker-1"), &n).is_admitted());
+        assert!(gate.on_message(&handshake("worker-1")).is_admitted());
     }
 
     #[test]
@@ -229,9 +249,8 @@ mod tests {
         let auth = ClusterAuth::with_token("s3cret".into());
         let other = ClusterAuth::with_token("wrong".into());
         let mut gate = AdmissionGate::new(auth);
-        let n = nonce();
-        let frame = auth_frame(&other, &n);
-        let decision = gate.on_message(&frame, &n);
+        let frame = auth_frame(&other, gate.nonce());
+        let decision = gate.on_message(&frame);
         assert_eq!(decision, Admission::Rejected);
         assert!(decision.must_close());
         assert!(!gate.is_admitted());
@@ -242,11 +261,13 @@ mod tests {
     fn a_response_from_another_nonce_does_not_admit() {
         let auth = ClusterAuth::with_token("s3cret".into());
         let mut gate = AdmissionGate::new(auth.clone());
-        let captured_nonce = nonce();
-        let frame = auth_frame(&auth, &captured_nonce);
-        // Replayed against a different, live nonce.
-        let live = nonce();
-        assert_eq!(gate.on_message(&frame, &live), Admission::Rejected);
+        // A response computed over some other nonce, as if captured from a
+        // previous connection.
+        let captured = nonce();
+        let frame = auth_frame(&auth, &captured);
+        // The gate issued a different nonce, so this response is worthless.
+        assert_eq!(gate.on_message(&frame), Admission::Rejected);
+        assert!(!gate.is_admitted());
     }
 
     #[test]
@@ -258,7 +279,7 @@ mod tests {
                 response: junk.to_string(),
             };
             assert_eq!(
-                gate.on_message(&msg, &n),
+                gate.on_message(&msg),
                 Admission::Rejected,
                 "{junk:?} must be rejected, not panic"
             );
@@ -277,7 +298,7 @@ mod tests {
     fn a_ping_is_answered_before_admission() {
         let mut gate = AdmissionGate::new(ClusterAuth::with_token("s3cret".into()));
         assert_eq!(
-            gate.on_message(&Message::Ping, &nonce()),
+            gate.on_message(&Message::Ping),
             Admission::AwaitingAuthentication
         );
     }
@@ -288,14 +309,13 @@ mod tests {
     fn no_work_reaches_an_unauthenticated_peer() {
         let auth = ClusterAuth::with_token("s3cret".into());
         let mut gate = AdmissionGate::new(auth.clone());
-        let n = nonce();
-        // The peer sends its handshake first, then authenticates.
-        assert!(!gate.on_message(&handshake("late"), &n).is_admitted());
-        // Until it authenticates, the peer is not admitted, so nothing is
-        // dispatched to it.
+        // The peer sends its handshake first, so it has not authenticated.
+        assert!(!gate.on_message(&handshake("late")).is_admitted());
         assert!(!gate.is_admitted());
-        let frame = auth_frame(&auth, &n);
-        assert!(gate.on_message(&frame, &n).is_admitted());
+        // It then answers the challenge the gate issued, which is the only nonce
+        // the gate will accept a response against.
+        let frame = auth_frame(&auth, gate.nonce());
+        assert!(gate.on_message(&frame).is_admitted());
         assert!(gate.is_admitted());
     }
 
@@ -305,7 +325,7 @@ mod tests {
         let mut gate = AdmissionGate::new(auth.clone());
         let n = nonce();
         assert!(!gate.on_disconnect());
-        gate.on_message(&auth_frame(&auth, &n), &n);
+        gate.on_message(&auth_frame(&auth, gate.nonce()));
         assert!(gate.on_disconnect());
     }
 }

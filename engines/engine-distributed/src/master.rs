@@ -336,6 +336,7 @@ pub async fn serve_connection_for_test(
 /// "protocol error".
 fn frame_kind(msg: &Message) -> &'static str {
     match msg {
+        Message::Challenge { .. } => "Challenge",
         Message::Ping => "Ping",
         Message::Pong => "Pong",
         Message::Authenticate { .. } => "Authenticate",
@@ -357,14 +358,21 @@ async fn handle_worker(
     mut gate: AdmissionGate,
 ) -> Result<(), String> {
     let mut worker_name = String::new();
-    // Fresh per connection, so a captured response cannot be replayed later.
-    let nonce = crate::netpolicy::make_nonce();
+
+    // Issue the challenge before reading anything. The nonce lives in the gate,
+    // so the response is checked against exactly the value that was sent, which
+    // is what binds a response to this connection rather than to the token alone.
+    if !gate.is_admitted() {
+        let challenge = crate::admission::challenge_frame(&gate);
+        write_msg(&mut socket, &challenge).await?;
+        log::debug!("Issued authentication challenge");
+    }
 
     while let Some(msg) = read_msg(&mut socket).await? {
         // Every frame passes the gate before it is interpreted. This is the
         // only place a peer can enter the design, and before this a peer that
         // simply spoke first was entered.
-        match gate.on_message(&msg, &nonce) {
+        match gate.on_message(&msg) {
             Admission::Rejected => {
                 return Err("authentication failed".to_string());
             }
