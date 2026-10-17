@@ -16,3 +16,27 @@ md-5 = "0.10"
 sha1 = "0.10"
 sha2 = "0.10"
 md4 = "0.10"
+
+# P9.1.04. Binary framing with an explicit version byte in the header. The
+# `serde` feature is what lets bincode 2 encode the existing serde derived
+# `Message` types without replacing every derive with bincode's own; the same
+# combination is already used for the session checkpoint format in the root
+# crate, so there is one serialisation convention in the repository rather
+# than two.
+bincode = { version = "2", features = ["serde"] }
+
+# Frame integrity. The header carries a CRC of the payload so a truncated or
+# corrupted frame is reported as corruption instead of being handed to the
+# deserialiser as if it were merely malformed.
+crc32fast = "1"
+
+# P9.1.02. The ring provider rather than the default aws-lc-rs, because
+# aws-lc-sys needs cmake at build time and the repository policy is pure Rust
+# dependencies. See docs/PHASE9_STATUS.md.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls-pemfile = "2"
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+
+[dev-dependencies]
+tempfile = "3"

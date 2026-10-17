@@ -11,5 +11,8 @@ pub mod attack;
 pub mod engine;
 pub mod potfile;
 
+#[cfg(feature = "engine-web")]
+pub mod webexec;
+
 #[cfg(test)]
 mod tests;
