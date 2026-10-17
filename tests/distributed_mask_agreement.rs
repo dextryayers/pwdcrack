@@ -11,6 +11,13 @@
 //! malformed ones, and asserts that the keyspace and every candidate match.
 //!
 //! Run with: cargo test --features engine-distributed --test distributed_mask_agreement
+//!
+//! The whole file is behind the feature gate. `engine_distributed` is an optional
+//! dependency, so without this a plain `cargo test` fails to compile this target
+//! with "use of undeclared crate or module `engine_distributed`" before running a
+//! single test. The crate's own doc comment said which command to run and the
+//! build never noticed that nobody could run the default one.
+#![cfg(feature = "engine-distributed")]
 
 use engine_distributed::mask::{Mask as DistMask, MAX_KEYSPACE as DIST_MAX};
 use pwdcrack::attack::mask::{Mask as RootMask, MAX_KEYSPACE as ROOT_MAX};

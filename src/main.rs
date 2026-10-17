@@ -9,7 +9,15 @@ use pwdcrack::potfile::Potfile;
 #[cfg(feature = "engine-power")]
 use std::sync::Arc;
 
+/// Brings up whichever engines the build has, and logs what each one reported.
+///
+/// `args` is only read by the engine-gpu and engine-power branches below, so with
+/// neither feature enabled it is an unused parameter. The alias keeps the
+/// signature honest without sprinkling underscores at call sites.
 fn init_verbose_engines(args: &Cli) {
+    #[allow(unused_variables)]
+    let _ = args;
+
     #[cfg(feature = "engine-simd")]
     {
         engine_simd::init();
@@ -229,27 +237,82 @@ fn main() {
             }
         );
 
+        // A master that only listens has nothing to give a worker, so the
+        // requested attack is queued for the cluster. The wordlist travels as
+        // contents plus a digest rather than as a path, which means a worker needs
+        // no --wordlist-dir to take part in a dictionary run.
+        //
+        // The local attack still runs as well. It goes through the same scheduler
+        // as the attached workers, so the two share one keyspace rather than
+        // each searching all of it.
+        if cfg.is_master() {
+            match cluster_job_from_args(&detector, &args) {
+                Ok(Some(job)) => {
+                    let keyspace = match job.keyspace() {
+                        Ok(k) => k,
+                        Err(e) => {
+                            eprintln!("[!] distributed: {e}");
+                            std::process::exit(1);
+                        }
+                    };
+                    eprintln!(
+                        "[*] Distributed: queued {} target(s) over {} candidates; the \
+                         master works them too, and any worker that attaches shares \
+                         the same keyspace",
+                        job.targets.len(),
+                        keyspace
+                    );
+                    cfg.job = Some(job);
+                }
+                Ok(None) => {
+                    log::info!(
+                        "Distributed: master with no job queued, so it will serve the \
+                         protocol but hand out no work"
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[!] distributed: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
         // `DistributedConfig::run` is async. The engine owns its runtime, so the
         // task is spawned rather than blocking the synchronous CLI path.
+        //
+        // The runtime is returned rather than dropped. Dropping it stops every
+        // cluster task, which is what used to happen: the cluster died the moment
+        // the local command finished, so a master that had queued work simply
+        // stopped part way through it.
         let cfg_for_task = cfg.clone();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut cfg_for_task = cfg_for_task;
+        cfg_for_task.results_tx = Some(tx);
         Some(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .map_err(|e| format!("distributed runtime: {e}"))
-                .and_then(|rt| {
-                    rt.spawn(async move { cfg_for_task.run().await });
-                    Ok(rt)
-                }),
+            (
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(4)
+                    .enable_all()
+                    .build()
+                    .map_err(|e| format!("distributed runtime: {e}"))
+                    .and_then(|rt| {
+                        rt.spawn(async move {
+                            if let Err(e) = cfg_for_task.run().await {
+                                log::error!("Distributed: {e}");
+                            }
+                        });
+                        Ok(rt)
+                    }),
+                rx,
+            )
         )
     } else {
         None
     };
+    // With `--distributed` the cluster runs the attack, so the local engine does
+    // not also run it.
     #[cfg(feature = "engine-distributed")]
-    if let Some(Err(e)) = &_dist_handle {
-        log::error!("Distributed: {}", e);
-    }
+    let cluster_only = _dist_handle.is_some();
 
     #[cfg(feature = "engine-android")]
     let mut _android_engine = {
@@ -257,6 +320,17 @@ fn main() {
         ae.init();
         ae
     };
+
+    // With `--distributed` the cluster runs the attack, so the local engine does
+    // not also run it. Running both would search the whole keyspace twice: the
+    // master works its own share of the cluster's queue, and a separate local run
+    // would overlap every chunk the cluster assigns.
+    if cluster_only {
+        run_cluster_and_report(&detector, &args, _dist_handle);
+        #[cfg(feature = "engine-android")]
+        _android_engine.shutdown();
+        return;
+    }
 
     let _cmd_result = match &args.command {
         Commands::Identify { hash_file, verbose } => cmd_identify(&detector, hash_file, *verbose),
@@ -384,6 +458,209 @@ fn cmd_web(
         eprintln!("[!] dashboard stopped: {e}");
         std::process::exit(1);
     }
+}
+
+/// Builds a cluster job from the command the user gave.
+///
+/// `Ok(None)` means the subcommand has no cluster equivalent yet, which is not an
+/// error: a master with no job still speaks the protocol and still accepts
+/// workers, and `docs/PHASE9_STATUS.md` says which subcommands are wired.
+///
+/// Hash types the distributed worker cannot verify are refused rather than
+/// queued. A queued type the worker does not implement returns zero cracks, which
+/// the user cannot tell from a correct negative result, and `engine_distributed`
+/// supports far fewer types than the main binary. This is the check that keeps
+/// that from happening silently.
+/// Whether the hash type should be shown alongside each crack.
+///
+/// The same answer `cmd_show` gives, reused so the cluster's output and the local
+/// output cannot disagree about whether types are printed.
+#[cfg(feature = "engine-distributed")]
+fn detector_enabled_verbose(args: &Cli) -> bool {
+    args.verbose
+}
+
+/// Waits for the cluster to finish and prints its answer in the usual format.
+///
+/// A worker node has no job of its own, so it waits until the master shuts it
+/// down or the operator stops it.
+#[cfg(feature = "engine-distributed")]
+fn run_cluster_and_report(
+    detector: &Detector,
+    args: &Cli,
+    handle: Option<(
+        Result<tokio::runtime::Runtime, String>,
+        tokio::sync::mpsc::UnboundedReceiver<engine_distributed::ClusterReport>,
+    )>,
+) {
+    // The runtime is built before the cluster task is spawned, so a build failure
+    // surfaces as an error string rather than as a panic here.
+    let Some((built, mut rx)) = handle else {
+        log::error!("Distributed: no runtime, so the cluster cannot run");
+        return;
+    };
+    let rt = match built {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("[!] distributed: {e}");
+            return;
+        }
+    };
+
+    let is_master = args.master.is_none();
+    if !is_master {
+        eprintln!(
+            "[*] distributed: worker node. The subcommand is not run here; this \
+             process serves the master until it shuts it down."
+        );
+    }
+
+    let report = rt.block_on(async { rx.recv().await });
+    let Some(report) = report else {
+        eprintln!(
+            "[!] distributed: the cluster stopped without reporting. The master log \
+             has the reason."
+        );
+        return;
+    };
+
+    // The runtime is dropped here, which stops the cluster. Reporting first means
+    // the answer is on the screen regardless.
+    drop(rt);
+
+    let total = report.cracked.len();
+    if report.cracked.is_empty() {
+        eprintln!("[*] Cracked 0 hashes. No password in the keyspace matched.");
+        return;
+    }
+    eprintln!("[*] Cracked {total} hashes");
+    println!();
+    for e in &report.cracked {
+        let name = if detector_enabled_verbose(args) {
+            detector
+                .detect(&e.hash)
+                .map(|(c, _)| c.name().to_string())
+                .unwrap_or_else(|| e.algorithm.clone())
+        } else {
+            e.algorithm.clone()
+        };
+        println!("  {}  ->  {}  [{}]", e.hash, e.password, name);
+    }
+    if report.candidates_unsearched > 0 {
+        eprintln!(
+            "[*] {} candidate(s) were never assigned because every target was              already solved. That is the run finishing early, not work lost.",
+            report.candidates_unsearched
+        );
+    }
+    let _ = &report.jobs_finished;
+}
+
+#[cfg(feature = "engine-distributed")]
+fn cluster_job_from_args(
+    detector: &Detector,
+    args: &Cli,
+) -> Result<Option<engine_distributed::ClusterJob>, String> {
+    use engine_distributed::protocol::AttackType;
+
+    let (hash_file, attack) = match &args.command {
+        Commands::Dictionary {
+            hash_file,
+            wordlist,
+            rules,
+            ..
+        } => {
+            let mut rule_list: Vec<String> = Vec::new();
+            if let Some(r) = rules {
+                let body = std::fs::read_to_string(r)
+                    .map_err(|e| format!("cannot read the rule file {r}: {e}"))?;
+                for line in body.lines() {
+                    let l = line.trim();
+                    if !l.is_empty() && !l.starts_with('#') {
+                        rule_list.push(l.to_string());
+                    }
+                }
+            }
+            return Ok(Some(
+                engine_distributed::ClusterJob::dictionary(
+                    wordlist,
+                    rule_list,
+                    verifiable_targets(detector, hash_file)?,
+                )?,
+            ));
+        }
+        Commands::BruteForce { hash_file, mask, .. } => (hash_file, AttackType::BruteForce {
+            mask: mask.clone(),
+        }),
+        _ => return Ok(None),
+    };
+
+    let targets = verifiable_targets(detector, hash_file)?;
+    Ok(Some(engine_distributed::ClusterJob {
+        targets,
+        attack,
+        wordlist: None,
+    }))
+}
+
+/// Loads the hashes a cluster worker could actually verify.
+///
+/// Returns an error naming the types that were dropped, so the reason a run found
+/// nothing is on the screen rather than in a log the user may not be reading.
+#[cfg(feature = "engine-distributed")]
+fn verifiable_targets(
+    detector: &Detector,
+    hash_file: &str,
+) -> Result<Vec<TargetHashAlias>, String> {
+    let loaded = load_hashes(detector, hash_file);
+    let mut targets = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for (cracker, entry) in &loaded {
+        let name = cracker.name().to_string();
+        // Asked before the hash is queued, so an unverifiable type never reaches
+        // a worker. Asking afterwards would mean a run that reports zero cracks,
+        // which is exactly the failure this avoids.
+        match canonical_name(&name) {
+            Some(canonical) if supports(&name) => {
+                targets.push(TargetHashAlias::new(canonical, hash_bytes_to_hex(&entry.hash_bytes)));
+            }
+            _ => skipped.push(name),
+        }
+    }
+    if targets.is_empty() {
+        return Err(format!(
+            "no hash in {hash_file} is of a type the distributed worker can verify \
+             ({} present). A cluster run would report zero cracks and look like a \
+             correct negative result.",
+            skipped.join(", ")
+        ));
+    }
+    if !skipped.is_empty() {
+        eprintln!(
+            "[!] distributed: skipping hash types a worker cannot verify: {}",
+            skipped.join(", ")
+        );
+    }
+    Ok(targets)
+}
+
+#[cfg(feature = "engine-distributed")]
+use engine_distributed::protocol::TargetHash as TargetHashAlias;
+#[cfg(feature = "engine-distributed")]
+use engine_distributed::verify::{canonical_name, supports};
+
+/// The hex form of the digest part of a detected hash entry.
+///
+/// Only the digest bytes are used: a salted or prefixed format needs the salt
+/// carried per candidate, which the cluster protocol does not do, so those types
+/// are not representable as a `TargetHash` and are dropped by the capability
+/// probe above.
+#[cfg(feature = "engine-distributed")]
+fn hash_bytes_to_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
 
 fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, HashEntry)> {

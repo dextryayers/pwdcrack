@@ -265,7 +265,7 @@ pub fn describe_all(engines: &[SharedEngine]) -> Vec<EngineInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{CpuEngine, EngineInfo, CapabilitySet};
+    use crate::engine::{CapabilitySet, EngineInfo};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     // A fake engine so planning can be tested without real hardware.

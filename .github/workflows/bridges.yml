@@ -53,14 +53,26 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # The Rust side, including the FFI round trip. Every attack in these runs
-      # on a worker thread with a deadline, so a lock that is taken twice fails
-      # as a test rather than hanging the job.
+      # Per package, not `--workspace`.
+      #
+      # `cargo test --workspace` builds every member, including the wasm engine,
+      # which pulls in cranelift. Cranelift's current releases require a newer
+      # rustc than the one this repository is developed against, so the
+      # workspace build fails before any of these tests run. Naming the packages
+      # that matter keeps the gate meaningful instead of red for an unrelated
+      # reason.
+      #
+      # Every attack in these runs on a worker thread with a deadline, so a lock
+      # that is taken twice fails as a test rather than hanging the job.
       - name: Rust tests
         run: |
-          cargo test --workspace
+          cargo test
+          cargo test -p engine-bridge
           cargo test -p engine-bridge --features python
           cargo test -p engine-bridge --features node
+          cargo test -p engine-web
+          cargo test -p engine-distributed
+          cargo test -p engine-fpga
 
       - name: The C suite
         run: ./scripts/test-c-bridge.sh

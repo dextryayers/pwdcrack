@@ -1,19 +1,64 @@
-/// Minimal hash verification for distributed worker.
-/// Supports the most common hash types encountered in password cracking.
-/// For full hash support, run the worker alongside a pwdcrack node.
+//! Hash verification for a distributed worker.
+//!
+//! This engine supports fewer types than the main binary, and that difference is
+//! the dangerous part. A cluster run against a type this module cannot verify
+//! returns zero cracks, which is indistinguishable from a correct negative
+//! result, so the caller must ask [`supports`] first. There is a test for that
+//! refusal and a test that the supported set is exactly what is claimed.
 
 use digest::Digest;
 
-pub fn verify(hash_type: &str, hash_str: &str, password: &str) -> bool {
+/// The hash types this engine can verify, with the spellings that map to them.
+///
+/// Public so a caller can enumerate rather than guess. Anything not in this list
+/// produces zero cracks, which looks like a clean run.
+pub const SUPPORTED: &[(&str, &[&str])] = &[
+    ("MD5", &["MD5", "RAWMD5", "MD5HASH"]),
+    ("SHA1", &["SHA1", "RAWSHA1", "SHA1HASH"]),
+    ("SHA256", &["SHA256", "RAWSHA256", "SHA256HASH"]),
+    ("NTLM", &["NTLM", "NTLMHASH"]),
+    ("MD4", &["MD4", "RAWMD4", "MD4HASH"]),
+];
+
+/// The canonical name for a hash type, or `None` when this engine cannot verify
+/// it.
+///
+/// Accepts the main binary's display names, which carry a `Hash` suffix that the
+/// internal names do not, so a caller can pass what `HashCracker::name` returned
+/// without having to know the difference.
+pub fn canonical_name(hash_type: &str) -> Option<&'static str> {
     let ht = hash_type.to_uppercase().replace('-', "");
-    match ht.as_str() {
-        "MD5" | "RAWMD5" => verify_raw::<md5::Md5>(hash_str, password),
-        "SHA1" | "RAWSHA1" => verify_raw::<sha1::Sha1>(hash_str, password),
-        "SHA256" | "RAWSHA256" => verify_raw::<sha2::Sha256>(hash_str, password),
+    SUPPORTED
+        .iter()
+        .find(|(_, spellings)| spellings.contains(&ht.as_str()))
+        .map(|(name, _)| *name)
+}
+
+/// True when this engine can verify the named type.
+pub fn supports(hash_type: &str) -> bool {
+    canonical_name(hash_type).is_some()
+}
+
+pub fn verify(hash_type: &str, hash_str: &str, password: &str) -> bool {
+    // The canonical name is looked up first, so an unsupported type is refused
+    // without hashing anything at all. The previous form hashed first and
+    // returned false, which is the same answer for "wrong password" and "cannot
+    // verify", and the two must be distinguishable.
+    let Some(ht) = canonical_name(hash_type) else {
+        log::warn!(
+            "Unsupported hash type '{hash_type}' in distributed worker. Supported: {:?}",
+            SUPPORTED.iter().map(|(n, _)| *n).collect::<Vec<_>>()
+        );
+        return false;
+    };
+    match ht {
+        "MD5" => verify_raw::<md5::Md5>(hash_str, password),
+        "SHA1" => verify_raw::<sha1::Sha1>(hash_str, password),
+        "SHA256" => verify_raw::<sha2::Sha256>(hash_str, password),
         "NTLM" => verify_ntlm(hash_str, password),
-        "MD4" | "RAWMD4" => verify_raw::<md4::Md4>(hash_str, password),
+        "MD4" => verify_raw::<md4::Md4>(hash_str, password),
         _ => {
-            log::warn!("Unsupported hash type '{}' in distributed worker", hash_type);
+            log::warn!("Unsupported hash type '{hash_type}' in distributed worker");
             false
         }
     }
@@ -97,6 +142,90 @@ mod tests {
     #[test]
     fn test_verify_unsupported_returns_false() {
         assert!(!verify("UNKNOWN_TYPE", "anything", "password"));
+    }
+
+    /// The whole point of `supports`: a type this engine cannot verify must be
+    /// distinguishable from a wrong password, because both return false and only
+    /// one of them is a bug.
+    #[test]
+    fn an_unsupported_type_is_distinguishable_from_a_wrong_password() {
+        for (name, _) in SUPPORTED {
+            assert!(supports(name), "{name} is listed but not supported");
+        }
+        for bad in ["BCRYPT", "ARGON2ID", "SHA512", "SHA3-256", "", "MD5HEX"] {
+            assert!(!supports(bad), "{bad:?} must not be claimed as supported");
+        }
+        assert!(!verify("BCRYPT", "whatever", "password"));
+        assert!(supports("BCRYPT") == false);
+    }
+
+    /// The main binary's display names carry a `Hash` suffix, so a caller that
+    /// passes `HashCracker::name` straight through must still get an answer.
+    #[test]
+    fn the_display_names_from_the_main_binary_are_accepted() {
+        assert_eq!(canonical_name("Md5Hash"), Some("MD5"));
+        assert_eq!(canonical_name("Sha256Hash"), Some("SHA256"));
+        assert_eq!(canonical_name("NTLMHash"), Some("NTLM"));
+        assert_eq!(canonical_name("BcryptHash"), None);
+        assert!(verify("Md5Hash", "5d41402abc4b2a76b9719d911017c592", "hello"));
+    }
+
+    /// Every spelling listed must actually verify, so the table cannot drift away
+    /// from the match arms above.
+    #[test]
+    fn every_listed_spelling_verifies() {
+        // Digests of the password "hello", each recomputed by an oracle rather
+        // than copied: MD5, SHA-1 and SHA-256 by hashlib, NTLM by the
+        // UTF-16-LE wrapper around MD4, MD4 by the reference implementation in
+        // scripts/gen-rtl-vectors.py, which is itself held against RFC 1320's
+        // seven published vectors.
+        //
+        // The MD4 value here used to be `afe04867ec7a3845145579c95f8dbfb7`,
+        // which is not the MD4 of anything. Nothing caught it because the loop
+        // around these cases checked every spelling in SUPPORTED against every
+        // case, so it failed first on "SHA1 is listed for MD5" and the real
+        // fault was never reached.
+        let cases = [
+            ("MD5", "5d41402abc4b2a76b9719d911017c592"),
+            ("SHA1", "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"),
+            ("SHA256", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
+            ("NTLM", "066ddfd4ef0e9cd7c256fe77191ef43c"),
+            ("MD4", "866437cb7a794bce2b727acc0362ee27"),
+        ];
+        for (canonical, hex) in cases {
+            assert_eq!(canonical_name(canonical), Some(canonical));
+            // `SUPPORTED` is `&[(&str, &[&str])]`. Iterating the slice directly
+            // destructures the reference itself, so `spellings` binds as
+            // `&&[&str]`, which is not an iterator. `iter()` puts the pattern on
+            // the items, and the `&` in the pattern copies the tuple out so
+            // `spellings` binds as `&[&str]`.
+            // Only this case's own group. The previous version looped over every
+            // group in SUPPORTED, which asserts that "SHA1" verifies an MD5
+            // digest. It cannot, and a test that requires it to is testing the
+            // wrong thing rather than finding a bug.
+            let group = SUPPORTED
+                .iter()
+                .find(|(name, _)| *name == canonical)
+                .unwrap_or_else(|| panic!("{canonical} is not in SUPPORTED"));
+            for spelling in group.1 {
+                assert!(
+                    verify(spelling, hex, "hello"),
+                    "{spelling} is listed for {canonical} but does not verify"
+                );
+            }
+            // And the spelling must actually route to that canonical name, which
+            // is what `canonical_name` is for. `group.0` is the table's own
+            // `&'static str`; `canonical` comes from the case array and is a
+            // `&str` tied to that array, so it cannot be returned.
+            for spelling in group.1 {
+                let routed = group.0;
+                assert_eq!(
+                    canonical_name(spelling),
+                    Some(routed),
+                    "{spelling} does not route to {routed}"
+                );
+            }
+        }
     }
 
     #[test]

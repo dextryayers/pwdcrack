@@ -39,5 +39,8 @@ napi-sys = { version = "2.4", optional = true }
 python = ["dep:pyo3"]
 perl = []
 node = ["dep:napi", "dep:napi-derive", "dep:napi-sys"]
-ruby = []
+# No `ruby` feature. It was declared with no module behind it, so
+# `--features ruby` built exactly the same library as no features at all and
+# appeared to offer a bridge that could not be used. Phase 11 does not list one;
+# adding it means adding src/ruby.rs and a test suite, not a manifest line.
 default = []

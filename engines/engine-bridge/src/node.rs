@@ -511,9 +511,24 @@ mod tests {
     use super::*;
     use pwdcrack::engine::Engine as _;
 
+    /// The engine is process wide, so tests that touch it cannot run in
+    /// parallel: one test's `reset` clears the hashes another is attacking.
+    ///
+    /// Cargo runs them on separate threads on purpose, so the serialisation has
+    /// to be explicit. Taking the lock is the first line of every test that
+    /// touches the engine, which is harder to forget than a comment.
+    static ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Takes the engine lock, recovering from poisoning rather than cascading a
+    /// first failure into every other test as a second misleading one.
+    fn engine_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENGINE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// The function that previously returned "ok" for anything.
     #[test]
     fn detection_is_real_rather_than_a_literal() {
+        let _guard = engine_guard();
         let md5 = "900150983cd24fb0d6963f7d28e17f72";
         let found = detect(md5.to_string());
         assert!(found.recognised, "an MD5 must be recognised");
@@ -526,6 +541,7 @@ mod tests {
 
     #[test]
     fn verification_has_three_answers() {
+        let _guard = engine_guard();
         let md5 = "900150983cd24fb0d6963f7d28e17f72"; // MD5("abc")
         assert!(verify(md5.to_string(), "abc".to_string()).expect("checked"));
         assert!(!verify(md5.to_string(), "abd".to_string()).expect("checked"));
@@ -539,6 +555,7 @@ mod tests {
     /// cracker means answering about a different password.
     #[test]
     fn a_long_password_is_not_truncated() {
+        let _guard = engine_guard();
         let long: String = "abcdefghij".repeat(100); // 1000 bytes
         let target = {
             use md5::{Digest, Md5};
@@ -554,6 +571,7 @@ mod tests {
 
     #[test]
     fn a_dictionary_attack_cracks() {
+        let _guard = engine_guard();
         let dir = std::env::temp_dir().join(format!("pwdcrack-node-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir");
@@ -577,12 +595,14 @@ mod tests {
 
     #[test]
     fn an_attack_with_nothing_loaded_is_refused() {
+        let _guard = engine_guard();
         reset();
         assert!(attack_dictionary_sync("/tmp/nothing.txt".to_string(), Some(1)).is_err());
     }
 
     #[test]
     fn the_engine_rate_is_none_when_unmeasured_and_some_when_measured() {
+        let _guard = engine_guard();
         // CpuEngine::new runs a benchmark, so this build has a real number.
         assert!(
             hashes_per_second().is_some(),

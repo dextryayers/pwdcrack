@@ -353,7 +353,9 @@ pub fn run_bruteforce_from(
         ),
         keyspace: total,
         limited,
-        /// The index a subsequent `--resume` should continue from.
+        // Not a doc comment: this is a struct expression, and rustdoc drops a
+        // doc comment on one without saying so. The field is documented in the
+        // struct definition above.
         resume_from: ceiling_u64,
     })
 }

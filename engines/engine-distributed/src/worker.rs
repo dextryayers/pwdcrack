@@ -61,15 +61,11 @@ pub struct WorkerNode {
     pub master_addr: String,
     pub node_name: String,
     stream: Option<Link>,
-    tested: Arc<AtomicU64>,
-    cracked: Arc<AtomicU64>,
-    /// Directories this worker will open wordlists from, chosen locally.
-    /// A master cannot widen it.
-    wordlists: WordlistPolicy,
+    /// Runs the attack. Shared with the master's own local worker so a cluster
+    /// and a single node take exactly the same code path.
+    engine: CandidateEngine,
     /// Shared secret for authenticating to the master.
     token: Option<String>,
-    /// Wordlists the master has pushed, keyed by content digest.
-    inline: HashMap<String, Arc<Vec<String>>>,
     /// Reconnect attempts made in the current run.
     attempts: u32,
     /// Seconds to wait before the next reconnect, doubling each failure.
@@ -81,12 +77,17 @@ pub struct WorkerNode {
 impl WorkerNode {
     /// The directories this worker will open wordlists from.
     pub fn roots(&self) -> &[std::path::PathBuf] {
-        self.wordlists.roots()
+        self.engine.roots()
     }
 
     /// True when this worker will refuse every dictionary unit.
     pub fn refuses_all_wordlists(&self) -> bool {
-        self.wordlists.is_deny_all()
+        self.engine.refuses_all_wordlists()
+    }
+
+    /// The attack engine, so a caller can see what it has tested.
+    pub fn engine(&mut self) -> &mut CandidateEngine {
+        &mut self.engine
     }
 
     /// Builds a worker with no granted wordlist directories.
@@ -99,11 +100,8 @@ impl WorkerNode {
             master_addr: master_addr.to_string(),
             node_name: crate::hostname(),
             stream: None,
-            tested: Arc::new(AtomicU64::new(0)),
-            cracked: Arc::new(AtomicU64::new(0)),
-            wordlists: WordlistPolicy::deny_all(),
+            engine: CandidateEngine::new(),
             token: None,
-            inline: HashMap::new(),
             attempts: 0,
             backoff: Duration::from_secs(1),
             tls: None,
@@ -131,7 +129,7 @@ impl WorkerNode {
         I: IntoIterator<Item = P>,
         P: AsRef<std::path::Path>,
     {
-        self.wordlists = WordlistPolicy::new(dirs)?;
+        self.engine = self.engine.with_wordlist_dirs(dirs)?;
         Ok(self)
     }
 
@@ -203,31 +201,6 @@ impl WorkerNode {
         Ok(())
     }
 
-    /// Accepts a wordlist the master pushed, after checking the manifest.
-    ///
-    /// The digest is the cache key, so a worker cannot end up using one wordlist
-    /// where another was meant: a later bundle with a different digest is a
-    /// different entry, and a bundle whose bytes do not match its manifest is
-    /// refused rather than used.
-    fn accept_wordlist(&mut self, manifest: WordlistManifest, words: Vec<String>) -> Result<(), String> {
-        let joined = words.join("\n");
-        manifest.verify(joined.as_bytes()).map_err(|e| {
-            format!(
-                "refusing a wordlist named '{}': {e}. The master sent bytes that do \
-                 not match the manifest it sent with them.",
-                manifest.name
-            )
-        })?;
-        log::info!(
-            "Accepted wordlist '{}' from the master: {} entries, sha256 {}",
-            manifest.name,
-            words.len(),
-            manifest.sha256
-        );
-        self.inline.insert(manifest.sha256, Arc::new(words));
-        Ok(())
-    }
-
     /// Runs until the master shuts the worker down or the connection dies and
     /// cannot be re-established.
     pub async fn run_worker_loop(&mut self) -> Result<(), String> {
@@ -276,7 +249,7 @@ impl WorkerNode {
                 }
             }
             // A successful handshake means the master is reachable again.
-            self.inline.clear();
+            self.engine.forget_wordlists();
         }
     }
 
@@ -287,8 +260,6 @@ impl WorkerNode {
 
         let mut link = self.stream.take().ok_or("connect did not store a link")?;
         let node_name = self.node_name.clone();
-        let cracked = Arc::clone(&self.cracked);
-        let tested = Arc::clone(&self.tested);
 
         // The master names the real period in its first `HeartbeatAck`, which
         // it sends as soon as the peer is admitted. Until that arrives this is a
@@ -307,7 +278,7 @@ impl WorkerNode {
                         node_name: node_name.clone(),
                         stats: crate::protocol::WorkerStats {
                             hashes_sec: 0.0,
-                            total_cracked: cracked.load(Ordering::SeqCst),
+                            total_cracked: self.engine.cracked(),
                             power_watts: 0.0,
                             temperature_c: 0.0,
                         },
@@ -336,7 +307,7 @@ impl WorkerNode {
                         work.keyspace_start,
                         work.keyspace_end
                     );
-                    let (found, solved) = self.crack_work_unit(&batch_id, &work).await;
+                    let (found, solved) = self.engine.crack(&node_name, &batch_id, &work);
                     let result = Message::Result {
                         node_name: node_name.clone(),
                         batch_id,
@@ -364,7 +335,7 @@ impl WorkerNode {
                     }
                 }
                 Message::Wordlist { manifest, words } => {
-                    if let Err(e) = self.accept_wordlist(manifest, words) {
+                    if let Err(e) = self.engine.accept_wordlist(manifest, words) {
                         log::error!("{e}");
                         let _ = codec::write_msg(
                             &mut link,
@@ -409,18 +380,127 @@ impl WorkerNode {
         };
 
         self.stream = None;
-        let _ = &tested;
         Ok(outcome)
     }
+}
 
-    /// Works one chunk.
+/// Executes work units.
+///
+/// Separated from [`WorkerNode`] so the master's own local worker can run the
+/// same code over the same scheduler. Before this the attack logic lived on
+/// `WorkerNode`, so a master could not take part in its own cluster: it sat idle
+/// while every chunk went to a remote peer, and the only way to use the master
+/// for its own attack was to also run it locally, which duplicated the entire
+/// keyspace. Going through one scheduler means the local worker and the remote
+/// ones draw from the same queue and no candidate is searched twice.
+pub struct CandidateEngine {
+    /// Directories this worker will open wordlists from, chosen locally.
+    /// A master cannot widen it.
+    wordlists: WordlistPolicy,
+    /// Wordlists the master has pushed, keyed by content digest.
+    inline: HashMap<String, Arc<Vec<String>>>,
+    tested: Arc<AtomicU64>,
+    cracked: Arc<AtomicU64>,
+}
+
+impl Default for CandidateEngine {
+    fn default() -> Self {
+        CandidateEngine::new()
+    }
+}
+
+impl CandidateEngine {
+    pub fn new() -> Self {
+        CandidateEngine {
+            wordlists: WordlistPolicy::deny_all(),
+            inline: HashMap::new(),
+            tested: Arc::new(AtomicU64::new(0)),
+            cracked: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// The directories this engine will open wordlists from.
+    pub fn roots(&self) -> &[std::path::PathBuf] {
+        self.wordlists.roots()
+    }
+
+    /// True when every dictionary unit will be refused.
+    pub fn refuses_all_wordlists(&self) -> bool {
+        self.wordlists.is_deny_all()
+    }
+
+    /// Grants directories this engine may read wordlists from.
+    pub fn with_wordlist_dirs<I, P>(mut self, dirs: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<std::path::Path>,
+    {
+        self.wordlists = WordlistPolicy::new(dirs)?;
+        Ok(self)
+    }
+
+    pub fn tested(&self) -> u64 {
+        self.tested.load(Ordering::SeqCst)
+    }
+
+    pub fn cracked(&self) -> u64 {
+        self.cracked.load(Ordering::SeqCst)
+    }
+
+    /// Offers a wordlist the master pushed, after checking the manifest.
     ///
-    /// Returns the cracked entries and every target that is now solved. The
-    /// second list is what lets the master stop building chunks around a hash that
-    /// is already found, and it is idempotent, so a requeued batch that runs
-    /// twice cannot double count.
-    pub async fn crack_work_unit(
+    /// The digest is the cache key, so a worker cannot end up using one wordlist
+    /// where another was meant: a later bundle with a different digest is a
+    /// different entry, and a bundle whose bytes do not match its manifest is
+    /// refused rather than used.
+    pub fn accept_wordlist(
         &mut self,
+        manifest: WordlistManifest,
+        words: Vec<String>,
+    ) -> Result<(), String> {
+        let joined = words.join("\n");
+        manifest.verify(joined.as_bytes()).map_err(|e| {
+            format!(
+                "refusing a wordlist named '{}': {e}. The master sent bytes that do \
+                 not match the manifest it sent with them.",
+                manifest.name
+            )
+        })?;
+        log::info!(
+            "Accepted wordlist '{}': {} entries, sha256 {}",
+            manifest.name,
+            words.len(),
+            manifest.sha256
+        );
+        self.inline.insert(manifest.sha256, Arc::new(words));
+        Ok(())
+    }
+
+    /// Makes an already registered digest available locally, for the master's own
+    /// worker, which reads the file itself rather than receiving it over the wire.
+    pub fn share_wordlist(&mut self, digest: &str, words: Vec<String>) {
+        self.inline.insert(digest.to_string(), Arc::new(words));
+    }
+
+    /// Drops every pushed wordlist.
+    ///
+    /// Called when a worker reconnects: the new connection has its own master
+    /// handshake and will be sent whatever it needs again, so keeping the old
+    /// copies would mean using a wordlist from a previous master.
+    pub fn forget_wordlists(&mut self) {
+        self.inline.clear();
+    }
+
+    /// Works one chunk, returning what it cracked and what is now solved.
+    ///
+    /// `worker` is only used for log lines, so the same function serves a remote
+    /// worker and the master's local one. Returns the cracked entries and every
+    /// target this batch found; the second list is what lets the master stop
+    /// building chunks around a hash that is already known, and it is idempotent,
+    /// so a requeued batch that runs twice cannot double count.
+    pub fn crack(
+        &mut self,
+        worker: &str,
         batch_id: &u64,
         work: &WorkUnit,
     ) -> (Vec<CrackedEntry>, Vec<TargetHash>) {
@@ -499,7 +579,8 @@ impl WorkerNode {
         let elapsed = begin.elapsed().as_secs_f64().max(0.000_001);
         let hps = tested as f64 / elapsed;
         log::info!(
-            "batch {batch_id}: {tested} tested in {:.2}s ({:.0} H/s), {} cracked, {} targets open",
+            "{worker} batch {batch_id}: {tested} tested in {:.2}s ({:.0} H/s), {} cracked, \
+             {} targets open",
             elapsed,
             hps,
             found.len(),

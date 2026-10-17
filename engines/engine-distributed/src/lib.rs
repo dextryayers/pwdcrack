@@ -18,10 +18,14 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use tokio::time;
+
 use checkpoint::CheckpointStore;
 use netpolicy::{BindPolicy, ClusterAuth};
+use protocol::{AttackType, TargetHash};
 use scheduler::ChunkPolicy;
 use tls::{ClusterTls, TlsPaths};
+use wordlist::WordlistManifest;
 
 /// Port the cluster uses when none is given.
 const DEFAULT_PORT: u16 = 5555;
@@ -57,6 +61,86 @@ impl Default for TlsMode {
     }
 }
 
+/// A job for the cluster master to schedule.
+///
+/// Built from the command line so `--distributed dictionary hashes.txt words.txt`
+/// actually distributes the attack instead of only listening for peers that have
+/// nothing to do. A master without one still accepts workers and still serves the
+/// protocol; it simply has no work to hand out until something queues a job.
+#[derive(Debug, Clone)]
+pub struct ClusterJob {
+    /// The hashes to try.
+    pub targets: Vec<TargetHash>,
+    /// How to turn a candidate index into a candidate.
+    pub attack: AttackType,
+    /// The wordlist to ship to workers, when the attack needs one.
+    ///
+    /// Sent as contents plus a digest rather than as a path, so a worker needs no
+    /// local grant and the master cannot make a worker open a file it chose.
+    pub wordlist: Option<(WordlistManifest, Vec<String>)>,
+}
+
+impl ClusterJob {
+    /// Builds a dictionary job, reading the wordlist to get its line count and
+    /// its contents.
+    ///
+    /// Refuses a wordlist it cannot read. An estimate here, which is what the
+    /// old code used with a hardcoded ten million, both invents candidates that do
+    /// not exist and leaves the tail of a real wordlist unscheduled.
+    pub fn dictionary(
+        path: impl AsRef<std::path::Path>,
+        rules: Vec<String>,
+        targets: Vec<TargetHash>,
+    ) -> Result<Self, String> {
+        let path = path.as_ref();
+        let body = std::fs::read(path)
+            .map_err(|e| format!("cannot read the wordlist {}: {e}", path.display()))?;
+        let text = String::from_utf8_lossy(&body);
+        let words: Vec<String> = text
+            .lines()
+            .map(|l| l.trim_end_matches('\r').to_string())
+            .collect();
+        if words.is_empty() {
+            return Err(format!("{} has no lines", path.display()));
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "wordlist".to_string());
+        let manifest = WordlistManifest::from_bytes(name, text.as_bytes());
+        let digest = manifest.sha256.clone();
+        Ok(ClusterJob {
+            targets,
+            attack: AttackType::Inline { sha256: digest, rules },
+            wordlist: Some((manifest, words)),
+        })
+    }
+
+    /// Candidates in this job, computed rather than guessed.
+    pub fn keyspace(&self) -> Result<u64, String> {
+        let lines = self
+            .wordlist
+            .as_ref()
+            .map(|(_, words)| words.len() as u64);
+        crate::scheduler::keyspace_for(&self.attack, lines)
+    }
+
+    /// Registers the job with a master and returns its id.
+    pub async fn submit(&self, shared: &master::Shared) -> Result<u64, String> {
+        if let Some((manifest, words)) = &self.wordlist {
+            shared
+                .register_wordlist(manifest.clone(), words.clone())
+                .await?;
+        }
+        let keyspace = self.keyspace()?;
+        shared
+            .scheduler
+            .lock()
+            .await
+            .add_job(self.attack.clone(), self.targets.clone(), keyspace)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DistributedConfig {
     /// Address the master listens on.
@@ -89,6 +173,28 @@ pub struct DistributedConfig {
     /// How many seconds of work a chunk should take at the receiving worker's own
     /// rate. The knob behind P9.2.01.
     pub chunk_seconds: f64,
+    /// A job for this node's cluster to schedule, when it is the master.
+    pub job: Option<ClusterJob>,
+    /// Where to send the cluster's answer when the job finishes.
+    ///
+    /// The CLI needs the results, and it cannot get them by polling: the cluster
+    /// lives on a runtime this crate owns and the caller only holds a handle.
+    pub results_tx: Option<tokio::sync::mpsc::UnboundedSender<ClusterReport>>,
+    /// How long to keep serving after the job finishes, so a worker that was
+    /// mid chunk gets a clean answer rather than a reset connection.
+    pub shutdown_grace: Duration,
+}
+
+/// What the cluster found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClusterReport {
+    /// One entry per cracked hash, sorted by hash value.
+    pub cracked: Vec<protocol::CrackedEntry>,
+    /// Candidates never assigned, which is non-zero only when the job stopped
+    /// early because every target was solved.
+    pub candidates_unsearched: u64,
+    /// Jobs with no work left.
+    pub jobs_finished: usize,
 }
 
 impl Default for DistributedConfig {
@@ -121,6 +227,9 @@ impl Default for DistributedConfig {
             handshake_rate: ratelimit::DEFAULT_RATE_PER_SEC,
             handshake_burst: ratelimit::DEFAULT_BURST,
             chunk_seconds: 2.0,
+            job: None,
+            results_tx: None,
+            shutdown_grace: Duration::from_secs(5),
         }
     }
 }
@@ -217,21 +326,60 @@ impl DistributedConfig {
         let transport = self.transport()?;
 
         if self.is_master() {
-            let master = master::MasterNode::with_policy(
+            let built = master::MasterNode::with_policy(
                 &listen_addr.to_string(),
                 CheckpointStore::new(&self.checkpoint_path),
                 self.policy(),
                 self.auth(),
             );
-            let master = match transport {
-                Some(t) => master.with_tls(t),
-                None => master,
-            };
+            let master = std::sync::Arc::new(match transport {
+                Some(t) => built.with_tls(t),
+                None => built,
+            });
             match master.resume_from_store().await {
                 Ok(true) => log::info!("resumed from the checkpoint at {}", self.checkpoint_path),
                 Ok(false) => {}
                 Err(e) => log::error!("{e}. Starting a fresh run instead."),
             }
+
+            // The job goes in before the accept loop starts, so a worker that
+            // connects in the first instant is not told there is nothing to do.
+            if let Some(job) = &self.job {
+                let id = job.submit(&master.shared).await?;
+                log::info!(
+                    "Cluster master: queued job {id}: {} target(s), {} candidates",
+                    job.targets.len(),
+                    job.keyspace()?
+                );
+                let local = std::sync::Arc::clone(&master);
+                let name = format!("local-{}", std::process::id());
+                let results_tx = self.results_tx.clone();
+                let grace = self.shutdown_grace;
+                let job_count = master.shared.scheduler.lock().await.job_count();
+                let accept = tokio::spawn({
+                    let running = std::sync::Arc::clone(&master);
+                    async move { running.run().await }
+                });
+
+                if let Err(e) = local.run_local_worker(&name).await {
+                    log::error!("Cluster master local worker '{name}' stopped: {e}");
+                }
+                let cracked = master.cracked().await;
+                let unsearched = master.free_total().await;
+                if let Some(tx) = results_tx {
+                    let _ = tx.send(ClusterReport {
+                        cracked,
+                        candidates_unsearched: unsearched,
+                        jobs_finished: job_count,
+                    });
+                }
+                // Keep serving briefly so a worker still working on a chunk gets
+                // told the job is over rather than seeing the socket close.
+                time::sleep(grace).await;
+                accept.abort();
+                return Ok(());
+            }
+
             master.run().await
         } else {
             // The wordlist grant is part of the worker's own configuration. The
@@ -394,6 +542,61 @@ mod tests {
         assert_eq!(p.heartbeat, Duration::from_secs(1));
         assert_eq!(p.checkpoint_interval, Duration::from_secs(1));
         assert!(p.chunk.target_seconds > 0.0);
+    }
+
+    /// A job must carry its real keyspace. The old code used a hardcoded ten
+    /// million for every dictionary attack.
+    #[test]
+    fn a_dictionary_job_measures_its_wordlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("w.txt");
+        std::fs::write(&p, b"a\nb\nc\nd\n").unwrap();
+        let job = ClusterJob::dictionary(&p, vec![], vec![]).unwrap();
+        assert_eq!(job.keyspace().unwrap(), 4);
+        assert_eq!(job.wordlist.as_ref().unwrap().1.len(), 4);
+        assert!(matches!(job.attack, AttackType::Inline { .. }));
+    }
+
+    #[test]
+    fn a_missing_wordlist_is_an_error_rather_than_an_estimate() {
+        let err = ClusterJob::dictionary("/nonexistent/w.txt", vec![], vec![])
+            .unwrap_err();
+        assert!(err.contains("cannot read"), "unhelpful error: {err}");
+    }
+
+    #[tokio::test]
+    async fn a_job_without_targets_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("w.txt");
+        std::fs::write(&p, b"a\nb\n").unwrap();
+        let job = ClusterJob::dictionary(&p, vec![], vec![]).unwrap();
+        let store = CheckpointStore::new(dir.path().join("cp.pwck"));
+        let shared = master::Shared::new(store, master::ClusterPolicy::default(), None);
+        let err = job.submit(&shared).await.unwrap_err();
+        assert!(err.contains("no target hashes"), "unhelpful error: {err}");
+    }
+
+    #[tokio::test]
+    async fn a_submitted_job_reaches_the_scheduler_and_the_wordlist_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("w.txt");
+        std::fs::write(&p, b"alpha\nbravo\ncharlie\n").unwrap();
+        let job = ClusterJob::dictionary(
+            &p,
+            vec![],
+            vec![TargetHash::new("MD5", "5d41402abc4b2a76b9719d911017c592")],
+        )
+        .unwrap();
+        let store = CheckpointStore::new(dir.path().join("cp.pwck"));
+        let shared = master::Shared::new(store, master::ClusterPolicy::default(), None);
+        let id = job.submit(&shared).await.unwrap();
+        assert_eq!(id, 1);
+        assert_eq!(shared.scheduler.lock().await.free_total(), 3);
+        assert_eq!(
+            shared.wordlists.lock().await.len(),
+            1,
+            "the wordlist was not made available to workers"
+        );
     }
 
     #[test]

@@ -652,13 +652,13 @@ The central technique: process N independent messages in parallel lanes so instr
 
 | Task | Action |
 |------|--------|
-| P10.1.01 | Bind to `127.0.0.1` by default. Document `--web-host` and require an explicit flag to bind to `0.0.0.0`. |
-| P10.1.02 | Require a token. Generate one on first run, print it once, store it with mode 0600, and require `Authorization: Bearer` on every mutating route. |
-| P10.1.03 | Add CSRF protection: same site cookies plus a custom header requirement on state changing requests. |
-| P10.1.04 | Implement real attack execution: the `start` route must enqueue work into the engine planner, and `stop`, `pause`, and `resume` must act on a real handle rather than a state enum. |
-| P10.1.05 | Rate limit and log every mutating request. |
-| P10.1.06 | Serve a `Content-Security-Policy` that forbids inline script. |
-| P10.1.07 | Gate: `cargo test --features engine-web` includes a test asserting that an unauthenticated `POST /api/start` returns 401. |
+| P10.1.01 | Bind to `127.0.0.1` by default. Document `--web-host` and require an explicit flag to bind to `0.0.0.0`. **done, verified.** See `docs/PHASE10_STATUS.md`. |
+| P10.1.02 | Require a token. Generate one on first run, print it once, store it with mode 0600, and require `Authorization: Bearer` on every mutating route. **done, verified.** |
+| P10.1.03 | Add CSRF protection: same site cookies plus a custom header requirement on state changing requests. **done, verified.** |
+| P10.1.04 | Implement real attack execution: the `start` route must enqueue work into the engine planner, and `stop`, `pause`, and `resume` must act on a real handle rather than a state enum. **done, verified.** A dictionary attack through the HTTP API recovered a real MD5. |
+| P10.1.05 | Rate limit and log every mutating request. **done, verified.** Refusals are logged, not only successes. |
+| P10.1.06 | Serve a `Content-Security-Policy` that forbids inline script. **done, verified.** The pages were rewritten to comply rather than left violating their own policy. |
+| P10.1.07 | Gate: `cargo test --features engine-web` includes a test asserting that an unauthenticated `POST /api/start` returns 401. **done, verified**, over a real socket. |
 
 ---
 
@@ -666,13 +666,13 @@ The central technique: process N independent messages in parallel lanes so instr
 
 | Task | Action |
 |------|--------|
-| P11.1.01 | Complete `engines/engine-bridge/src/python.rs` with PyO3 types mirroring the Rust API, plus a `py.typed` marker and a `maturin` build. |
-| P11.1.02 | Complete the Node N-API binding in `engines/engine-bridge/src/node.rs` with a promise based asynchronous API. |
-| P11.1.03 | Write `pwdcrack.xs` for Perl, or remove the Perl bridge. |
-| P11.1.04 | In `c_api.rs`, make every function null safe, check every pointer, and document the thread safety of each entry point. |
-| P11.1.05 | Resolve `panic = "abort"` against `cdylib` (B-36). Either remove `panic = "abort"` from the release profile, or wrap every FFI boundary in `catch_unwind` under a dedicated profile. Recommended: remove `panic = "abort"` and document why. |
-| P11.1.06 | Implement `crack_detect_tier` and `crack_hashes_per_second` against real values. |
-| P11.1.07 | Add a C test suite compiled in CI that exercises every exported symbol and verifies the memory contract for `crack_get_result`. |
+| P11.1.01 | Complete `engines/engine-bridge/src/python.rs` with PyO3 types mirroring the Rust API, plus a `py.typed` marker and a `maturin` build. **done, verified.** `Cracker`, `CrackedHash`, `Target`, `EngineInfo`; wheel built by maturin, installed, 22 tests against the installed package. |
+| P11.1.02 | Complete the Node N-API binding in `engines/engine-bridge/src/node.rs` with a promise based asynchronous API. **done, verified.** `AsyncTask` so attacks return a Promise; 16 tests in a real Node process. |
+| P11.1.03 | Write `pwdcrack.xs` for Perl, or remove the Perl bridge. **done.** The XS existed but had never been compiled and declared six wrong function names, a wrong arity, a wrong return type and one function that did not exist. Rewritten against the real ABI; 31 tests pass. |
+| P11.1.04 | In `c_api.rs`, make every function null safe, check every pointer, and document the thread safety of each entry point. **done, verified.** Found two attacks deadlocking on a non reentrant mutex taken twice. |
+| P11.1.05 | Resolve `panic = "abort"` against `cdylib` (B-36). Either remove `panic = "abort"` from the release profile, or wrap every FFI boundary in `catch_unwind` under a dedicated profile. Recommended: remove `panic = "abort"` and document why. **done.** Removed, with the reasoning in `Cargo.toml`; `crack_panics_abort()` reports the strategy in force. |
+| P11.1.06 | Implement `crack_detect_tier` and `crack_hashes_per_second` against real values. **done, verified.** Both were constants: `0.0` with a comment saying "static for now", and the literal `"Auto"`. |
+| P11.1.07 | Add a C test suite compiled in CI that exercises every exported symbol and verifies the memory contract for `crack_get_result`. **done, verified.** 41 checks in `tests/c/test_bridge.c`, run by `.github/workflows/bridges.yml`. |
 
 ---
 

@@ -153,9 +153,14 @@ impl Shared {
         manifest: WordlistManifest,
         words: Vec<String>,
     ) -> Result<(), String> {
-        let joined = words.join("\n");
+        // Rebuilt through the manifest rather than with a bare `join("\n")`.
+        // A bare join drops the file's trailing newline, so a wordlist that came
+        // from a file ending in one could never verify against a manifest built
+        // from that file's bytes: the lengths differ by exactly one and every
+        // submission failed with "expected 20 bytes, got 19".
+        let rendered = manifest.render(&words);
         manifest
-            .verify(joined.as_bytes())
+            .verify(&rendered)
             .map_err(|e| format!("wordlist {} does not match its manifest: {e}", manifest.name))?;
         self.wordlists
             .lock()
@@ -397,6 +402,92 @@ impl MasterNode {
             jobs.iter().map(|j| j.free.total()).sum::<u64>()
         );
         Ok(())
+    }
+
+    /// Works the queued jobs on this machine as well, alongside any attached
+    /// workers.
+    ///
+    /// The master joins as just another worker, drawing from the same scheduler
+    /// and reporting through the same path. Two alternatives were worse: doing
+    /// nothing leaves the master idle while remote peers do all the work, and
+    /// running the attack separately duplicates the entire keyspace. This way the
+    /// union of everything searched is the keyspace, exactly once.
+    ///
+    /// Blocks until every job is finished, which is also when the master has no
+    /// more work to give a late arriving worker.
+    pub async fn run_local_worker(&self, name: &str) -> Result<(), String> {
+        let mut engine = crate::worker::CandidateEngine::new();
+        {
+            let wordlists = self.shared.wordlists.lock().await;
+            for bundle in wordlists.values() {
+                engine.share_wordlist(&bundle.manifest.sha256, bundle.words.clone());
+            }
+        }
+
+        loop {
+            // Any job left?
+            let open = self.shared.scheduler.lock().await.open_jobs();
+            if open.is_empty() {
+                let running = self.shared.in_flight.lock().await.len();
+                if running == 0 {
+                    let cracked = engine.cracked();
+                    let free = self.shared.scheduler.lock().await.free_total();
+                    if cracked > 0 || free == 0 {
+                        log::info!(
+                            "Cluster master: no work remains, {cracked} cracked locally"
+                        );
+                        return Ok(());
+                    }
+                }
+                // Work may still arrive from a resumed checkpoint or a later
+                // job, so wait rather than exiting.
+                time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+
+            let rate = self
+                .shared
+                .scheduler
+                .lock()
+                .await
+                .estimate_total_remaining();
+            let chunk = {
+                let mut sched = self.shared.scheduler.lock().await;
+                sched.next_chunk(name, rate)
+            };
+            let Some(chunk) = chunk else {
+                time::sleep(Duration::from_millis(50)).await;
+                continue;
+            };
+
+            log::debug!(
+                "Cluster master: {name} took batch {} span [{}, {})",
+                chunk.batch_id,
+                chunk.span.start,
+                chunk.span.end
+            );
+            self.shared.in_flight.lock().await.insert(
+                chunk.batch_id,
+                InFlightWork {
+                    batch_id: chunk.batch_id,
+                    job_id: chunk.job_id,
+                    worker_name: name.to_string(),
+                    work: chunk.work.clone(),
+                    span: chunk.span,
+                    assigned_at: Instant::now(),
+                },
+            );
+
+            let (found, solved) = engine.crack(name, &chunk.batch_id, &chunk.work);
+            handle_result(
+                &self.shared,
+                name,
+                chunk.batch_id,
+                found,
+                solved,
+            )
+            .await;
+        }
     }
 
     /// Serves one already accepted connection through the same path the accept

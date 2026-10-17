@@ -20,7 +20,9 @@
 //!    against digest values produced by an independent digest implementation.
 
 use crate::hash::detector::Detector;
-use crate::hash::HashCracker;
+// `HashCracker` is not imported: the audit calls concrete methods on the
+// registered crackers rather than going through the trait, so naming it here
+// was a leftover from an earlier version that did go through it.
 
 /// Digest of "hello" computed here, separately from the cracker under test.
 fn md5_hex(s: &str) -> String {

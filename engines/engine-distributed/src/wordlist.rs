@@ -279,6 +279,15 @@ pub struct WordlistManifest {
     pub name: String,
     pub byte_len: u64,
     pub sha256: String,
+    /// Whether the source ended with a newline.
+    ///
+    /// A wordlist travels from the master to a worker as a `Vec<String>` of
+    /// lines, and `lines()` plus `join("\n")` does not round trip: a file
+    /// ending in a newline loses it. Rebuilding the content from the words and
+    /// comparing that against a manifest built from the file's bytes could never
+    /// match, because the lengths differ by one. The trailing newline is the
+    /// whole difference, so it is carried rather than inferred from a length.
+    pub trailing_newline: bool,
 }
 
 impl WordlistManifest {
@@ -288,7 +297,21 @@ impl WordlistManifest {
             name: name.into(),
             byte_len: bytes.len() as u64,
             sha256: content_digest(bytes),
+            trailing_newline: bytes.last() == Some(&b'\n'),
         }
+    }
+
+    /// Rebuilds the exact byte content this manifest describes.
+    ///
+    /// Used where the words have to be turned back into a file: the master sends
+    /// lines, and a worker writing them out has to produce the same bytes the
+    /// manifest was built from or every verification fails.
+    pub fn render(&self, words: &[String]) -> Vec<u8> {
+        let mut out = words.join("\n").into_bytes();
+        if self.trailing_newline && !out.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        out
     }
 
     /// Checks received bytes against this manifest.

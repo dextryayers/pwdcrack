@@ -213,12 +213,46 @@ shared machine and lost on reboot. Neither is claimed as complete.
 
 ---
 
+## Defects found after the first pass, while Phase 10 and 11 were being done
+
+Three, all in code this phase had introduced, all found by tests that had been
+green before.
+
+**The wordlist manifest could never verify.** `WordlistManifest` was built from
+the file's bytes and checked against `words.join("\n")`, where `words` came from
+`lines()`. Splitting a file that ends in a newline and joining it with `\n` loses
+that newline, so the reconstructed content was exactly one byte shorter and every
+submission failed with "expected 20 bytes, got 19". The manifest now carries a
+`trailing_newline` flag and `WordlistManifest::render` rebuilds the content
+faithfully. Nothing in the suite had registered a wordlist through a master, which
+is why this survived.
+
+**A test asserted something false.** `every_listed_spelling_verifies` looped over
+every entry in `SUPPORTED` for every case, so it required "SHA1" to verify an MD5
+digest. It failed on that, which hid the real fault underneath: the MD4 constant
+in the same test was `afe04867ec7a3845145579c95f8dbfb7`, which is not the MD4 of
+anything. Recomputing all five digests against oracles gave
+`866437cb7a794bce2b727acc0362ee27` for MD4 of "hello"; the other four were right.
+
+**A test did not compile.** `every_listed_spelling_verifies` iterated
+`SUPPORTED: &[(&str, &[&str])]` directly, so the pattern destructured the slice
+reference and `spellings` bound as `&&[&str]`. Plain `cargo test -p
+engine-distributed` failed to build with "`&&[&str]` is not an iterator". The file
+had been correct at some point and was not being compiled, because nothing ran it.
+
+The pattern is the same in all three: a value that nobody checked against
+anything, behind a test that could not fail for the right reason.
+
+---
+
 ## Reproducing what is claimed
 
 ```
 cargo test -p engine-distributed
-    68 unit tests: bind policy, cluster authentication, admission gate, wordlist policy
-     5 socket tests: the gate over a real TCP connection
+    206 unit tests: bind policy, cluster authentication, admission gate,
+                    wordlist policy, protocol, scheduler
+     12 socket tests: the gate over a real TCP connection
+     6 more integration tests
 
 pwdcrack --distributed dictionary h.txt w.txt
 pwdcrack --distributed --bind 0.0.0.0:5555 dictionary h.txt w.txt   # must refuse

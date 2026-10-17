@@ -24,7 +24,7 @@ scripts/test-c-bridge.sh        C bridge suite: 41 checks, 0 failures
 scripts/test-perl-bridge.sh     Files=1, Tests=31, Result: PASS
 scripts/test-python-bridge.sh   Ran 22 tests ... OK
 scripts/test-node-bridge.sh     # tests 16, # pass 16, # fail 0
-cargo test -p engine-bridge     24 passed (c_api unit tests)
+cargo test -p engine-bridge     24 passed (c_api unit tests) + 11 (ffi_roundtrip)
 cargo test -p engine-bridge --features node
                                31 passed (24 c_api + 7 node)
 ```
@@ -80,6 +80,17 @@ means an earlier attack panicked while holding the lock; unwrapping it panics
 again, and with `panic = "abort"` that aborts the caller's process. A C library
 that can be permanently bricked by one failed call is not a library. The lock is
 now recovered through `into_inner` and carried on.
+
+**One cracker for every hash.** Both attack entry points passed
+`hashes[0].0.as_ref()`, so a load containing MD5 and SHA-256 together checked
+the SHA-256 hashes with the MD5 cracker and reported them as not matching. That
+is a wrong answer rather than a missing feature. Both now group by type, the way
+the Python and Node surfaces already did.
+
+**The brute force range was accepted and ignored.** `attack_bruteforce` took
+`start_idx` and `end_idx` and then called `run_bruteforce`, which always runs the
+whole keyspace. It now calls `run_bruteforce_from` with both bounds. `end_idx`
+of 0 means the whole keyspace, which is what the doc comment says.
 
 **Thread safety was asserted, not documented.** The module header claimed a
 "thread-safe API" while two functions held the lock for the length of an attack
@@ -158,10 +169,11 @@ which is the only place two attacks overlap. Both now group by borrowing, and
 
 ## Not done, stated plainly
 
-**No Ruby bridge.** `Cargo.toml` declares a `ruby` feature and there is no
-`ruby.rs`. Phase 11 does not list one, so the feature is a lie in the manifest.
-It should either be implemented or removed; it is noted here rather than
-silently left.
+**No Ruby bridge.** Phase 11 does not list one. The `ruby` feature used to be
+declared with no module behind it, so `--features ruby` built the same library as
+no features at all and appeared to offer something that could not be used. The
+feature is removed rather than left as a promise. Adding a Ruby binding means
+adding the module and a suite for it.
 
 **`c_api.rs` has no generated header.** The C suite declares the prototypes by
 hand, and the XS file declares them by hand again. Three hand written copies of
@@ -172,13 +184,6 @@ copy checkable instead of trusted. Not done.
 **The websocket is unauthenticated.** It streams status, counters and cracked
 hashes to anything that connects. Consistent with the read-only HTTP routes and
 with the same reasoning; see `docs/PHASE10_STATUS.md`.
-
-**Mixed hash types use the first cracker for a dictionary attack.**
-`attack_dictionary` and `attack_bruteforce` in `c_api.rs` pass
-`hashes[0].0.as_ref()` as the cracker for every hash, so a load containing MD5
-and SHA-256 together verifies both with the MD5 cracker. The C, Python and Node
-surfaces all group by type and are correct; the C API's two attack entry points
-are not. Not fixed, and it is a real wrong answer rather than a missing feature.
 
 **Release profiles are not exercised.** The bridge suites default to the debug
 profile because `target/release` is not writable here. The C suite prints which

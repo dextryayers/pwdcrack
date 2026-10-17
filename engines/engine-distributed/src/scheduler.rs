@@ -615,6 +615,45 @@ impl Scheduler {
         self.jobs.values().map(|j| j.free.total()).sum()
     }
 
+    /// A candidate rate for a node that has reported nothing yet.
+    ///
+    /// The master's own local worker has no heartbeat and no `WorkProgress`, so
+    /// without this it would always receive the floor sized chunk and measure
+    /// slowly. The arithmetic mean of every target's cost per candidate over the
+    /// remaining keyspace is the best available estimate of what this machine can
+    /// do, and it is only ever an estimate: the scheduler's job is to make a
+    /// guess cheap to correct, not to be right first time.
+    pub fn estimate_total_remaining(&self) -> Option<f64> {
+        let total: u64 = self.jobs.values().map(|j| j.free.total()).sum();
+        if total == 0 {
+            return None;
+        }
+        let cost: f64 = self
+            .jobs
+            .values()
+            .map(|j| {
+                let per = match &j.attack {
+                    AttackType::BruteForce { mask } => {
+                        // Counting the keyspace is cheap; parsing the mask is
+                        // cheaper still and gives the real cardinality.
+                        crate::mask::keyspace_size(mask).unwrap_or(0) as f64
+                    }
+                    AttackType::Combinator { left_words, right_words } => {
+                        (left_words.len() as f64) * (right_words.len() as f64)
+                    }
+                    AttackType::Dictionary { .. } | AttackType::Inline { .. } => 1.0,
+                };
+                per * (j.free.total() as f64)
+            })
+            .sum();
+        let mean = cost / total as f64;
+        if mean > 0.0 && mean.is_finite() {
+            Some(1.0 / mean)
+        } else {
+            None
+        }
+    }
+
     /// Every job that can still yield work, in id order.
     pub fn open_jobs(&self) -> Vec<u64> {
         self.jobs

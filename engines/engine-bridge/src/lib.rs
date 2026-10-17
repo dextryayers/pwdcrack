@@ -4,7 +4,10 @@
 //! - Python bindings: PyO3 (feature "python")
 //! - Perl bindings: XS (feature "perl")
 //! - Node.js N-API (feature "node")
-//! - Ruby FFI (feature "ruby")
+//!
+//! There is no Ruby binding. One used to be promised by a `ruby` feature that
+//! had no module behind it, so `--features ruby` built the same library as no
+//! features at all.
 
 pub mod c_api;
 
