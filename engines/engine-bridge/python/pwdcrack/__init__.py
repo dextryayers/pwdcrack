@@ -1,28 +1,66 @@
+"""Password hash cracking from Python.
+
+Backed by the same Rust engine the CLI uses, so a result here means what the
+same hash would mean on the command line.
+
+Two interfaces are exported:
+
+* The `Cracker` class, which owns its own hashes and results. Use this.
+* The free functions, which share one process wide engine. They predate the
+  class and are kept because scripts use them.
+
+They hold different state. A hash loaded through the free functions is not
+visible to a `Cracker`, and the reverse is also true.
 """
-pwdcrack - high-performance hash cracker with GPU/FPGA/CLI support.
 
-Python API providing full access to pwdcrack's hash detection,
-verification, and cracking capabilities.
+from __future__ import annotations
 
-Usage:
-    import pwdcrack
-    info = pwdcrack.detect()
-    results = pwdcrack.attack_dictionary("hashes.txt", "wordlist.txt")
-    for r in results:
-        print(f"{r['hash']}:{r['password']}")
-"""
-
-from pwdcrack._native import (
-    detect, load_file, load_buffer, identify,
-    attack_dictionary, attack_bruteforce, attack_combinator,
-    verify_one, verify_batch, found_count, get_result, get_all_results,
-    benchmark, version, suggest_attack, rule_apply,
+from ._native import (
+    CrackedHash,
+    Cracker,
+    EngineInfo,
+    Target,
+    __version__,
+    attack_bruteforce,
+    attack_combinator,
+    attack_dictionary,
+    benchmark,
+    detect,
+    found_count,
+    get_all_results,
+    get_result,
+    identify,
+    load_buffer,
+    load_file,
+    rule_apply,
+    suggest_attack,
+    verify_batch,
+    verify_one,
+    version,
 )
 
 __all__ = [
-    'detect', 'load_file', 'load_buffer', 'identify',
-    'attack_dictionary', 'attack_bruteforce', 'attack_combinator',
-    'verify_one', 'verify_batch',
-    'found_count', 'get_result', 'get_all_results',
-    'benchmark', 'version', 'suggest_attack', 'rule_apply',
+    # Classes
+    "Cracker",
+    "CrackedHash",
+    "Target",
+    "EngineInfo",
+    # Free functions
+    "detect",
+    "load_file",
+    "load_buffer",
+    "identify",
+    "verify_one",
+    "verify_batch",
+    "attack_dictionary",
+    "attack_bruteforce",
+    "attack_combinator",
+    "found_count",
+    "get_result",
+    "get_all_results",
+    "benchmark",
+    "suggest_attack",
+    "rule_apply",
+    "version",
+    "__version__",
 ]

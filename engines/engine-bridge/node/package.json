@@ -1,0 +1,27 @@
+{
+  "name": "pwdcrack",
+  "version": "1.2.0",
+  "description": "Password hash cracker: CPU, GPU, FPGA and distributed engines",
+  "main": "pwdcrack.node",
+  "types": "pwdcrack.d.ts",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "pwdcrack.node",
+    "pwdcrack.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bash ../../scripts/test-node-bridge.sh",
+    "test": "node --test test_bridge.js"
+  },
+  "keywords": [
+    "security",
+    "password",
+    "hash",
+    "cracking",
+    "napi"
+  ]
+}

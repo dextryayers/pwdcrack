@@ -489,9 +489,14 @@ pub struct RateLimiter {
     /// Tokens, in thousandths. u64 because a burst in the thousands times a
     /// thousand does not fit in 32 bits.
     capacity: u64,
-    /// Refill per second, also in thousandths, so a rate of 0.5 per second is
-    /// expressible and two limiters with the same setting behave identically.
-    refill_per_milli: u64,
+    /// Thousandths of a request refilled per millisecond.
+    ///
+    /// `per_second * 1000` would be a thousand times too fast: at 10 per second
+    /// it would hand back ten thousand tokens every millisecond, and the limiter
+    /// would never refuse anything. Level is in thousandths and time is in
+    /// milliseconds, so the rate that produces `per_second` requests per second
+    /// is just `per_second`.
+    refill_per_ms: u64,
     buckets: Mutex<HashMap<String, Bucket>>,
     /// Overridden in tests so a limiter can be exercised without sleeping.
     now: Mutex<Option<Instant>>,
@@ -521,7 +526,7 @@ impl RateLimiter {
     pub fn new(per_second: u32, burst: u32) -> Self {
         RateLimiter {
             capacity: (burst.max(1) as u64) * 1000,
-            refill_per_milli: (per_second.max(1) as u64) * 1000,
+            refill_per_ms: per_second.max(1) as u64,
             buckets: Mutex::new(HashMap::new()),
             now: Mutex::new(None),
         }
@@ -551,7 +556,7 @@ impl RateLimiter {
     /// Charges one request against `source`.
     pub fn check(&self, source: &str) -> RateOutcome {
         let now = self.timestamp();
-        let refill = self.refill_per_milli;
+        let refill = self.refill_per_ms;
         let capacity = self.capacity;
 
         let mut buckets = self.buckets.lock().expect("rate limiter buckets");

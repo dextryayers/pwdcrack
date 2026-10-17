@@ -103,6 +103,12 @@ pub enum MaskError {
     EmptyRange { position: usize },
     /// The mask expanded to an empty set of positions.
     Empty,
+    /// The keyspace does not fit in a `u64`, so it cannot be split into
+    /// addressable work units.
+    ///
+    /// `?b` nine times is 2^72, a legitimate mask. Truncating it to a `u64`
+    /// would scan a different range of candidates entirely, so it is an error.
+    KeyspaceTooLarge { keyspace: u128 },
 }
 
 impl fmt::Display for MaskError {
@@ -125,9 +131,18 @@ impl fmt::Display for MaskError {
                 "empty character range at position {position}"
             ),
             MaskError::Empty => write!(f, "mask produced no candidate positions"),
+            MaskError::KeyspaceTooLarge { keyspace } => write!(
+                f,
+                "mask keyspace {keyspace} exceeds the {MAX_KEYSPACE} a work unit can address"
+            ),
         }
     }
 }
+
+/// The largest keyspace a `u64` addressed work unit can describe.
+///
+/// Named so the refusal can name the real ceiling rather than saying "too big".
+pub const MAX_KEYSPACE: u128 = u64::MAX as u128;
 
 impl std::error::Error for MaskError {}
 
@@ -229,8 +244,14 @@ impl Mask {
                     };
                     let inner = &bytes[i + 1..end];
                     // Every byte inside `(...)` is literal, which is the
-                    // hashcat convention. `(?abc)` is the three characters
-                    // `a`, `b`, `c`.
+                    // hashcat convention. Note that the `?` is literal too: the
+                    // bytes between the parentheses are copied verbatim, so
+                    // `(?abc)` is one position drawn from the four byte set
+                    // `?`, `a`, `b`, `c` and not the three character string
+                    // `abc`. An earlier comment here said it was three
+                    // characters; the code never did that, and the distributed
+                    // copy of this module was written to match the code rather
+                    // than the comment. See `tests/distributed_mask_agreement.rs`.
                     //
                     // An earlier version tried to detect a leading `?` and
                     // expand class names, stepping two bytes at a time. That
@@ -408,6 +429,18 @@ impl Mask {
             }
         }
         Ok(total)
+    }
+
+    /// Keyspace as a `u64`, refusing a mask that does not fit.
+    ///
+    /// The same accessor exists in `engine-distributed::mask`; the two are held
+    /// in step by `tests/distributed_mask_agreement.rs`.
+    pub fn keyspace_u64(&self, custom: &[Option<Vec<u8>>]) -> Result<u64, MaskError> {
+        let k = self.keyspace(custom)?;
+        if k > MAX_KEYSPACE {
+            return Err(MaskError::KeyspaceTooLarge { keyspace: k });
+        }
+        Ok(k as u64)
     }
 
     /// Human readable keyspace, used in the run banner.

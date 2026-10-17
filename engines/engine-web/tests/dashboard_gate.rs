@@ -254,7 +254,7 @@ impl Raw {
 // ---------------------------------------------------------------------------
 
 /// The assertion the plan names.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_unauthenticated_post_to_start_returns_401() {
     let h = Harness::start("gate", 100, 10).await;
     let response = h.send(&format!(
@@ -279,7 +279,7 @@ async fn an_unauthenticated_post_to_start_returns_401() {
 
 /// A refusal test alone would pass for a server that refuses everything, so the
 /// accepted path is checked too.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_authorised_post_to_start_is_accepted() {
     let h = Harness::start("accept", 100, 10).await;
     let response = h.send(&h.authorised("/api/start", &h.start_body()));
@@ -292,7 +292,7 @@ async fn an_authorised_post_to_start_is_accepted() {
 }
 
 /// P10.1.04: the accepted path must actually run the executor.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_accepted_start_really_hands_candidates_to_the_executor() {
     let h = Harness::start("real", 400, 20).await;
     let response = h.send(&h.authorised("/api/start", &h.start_body()));
@@ -316,7 +316,7 @@ async fn an_accepted_start_really_hands_candidates_to_the_executor() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn stop_ends_the_run_before_the_keyspace_is_exhausted() {
     let h = Harness::start("stop", 5_000_000, 50).await;
     assert_eq!(h.send(&h.authorised("/api/start", &h.start_body())).status, 200);
@@ -339,7 +339,7 @@ async fn stop_ends_the_run_before_the_keyspace_is_exhausted() {
     assert!(later < 5_000_000, "the keyspace should not have been exhausted");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pause_freezes_progress_and_resume_restarts_it() {
     let h = Harness::start("pause", 5_000_000, 50).await;
     assert_eq!(h.send(&h.authorised("/api/start", &h.start_body())).status, 200);
@@ -364,7 +364,7 @@ async fn pause_freezes_progress_and_resume_restarts_it() {
 // P10.1.02: the token
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_wrong_token_is_refused() {
     let h = Harness::start("badtoken", 10, 10).await;
     let mut request = h.authorised("/api/start", &h.start_body());
@@ -376,7 +376,7 @@ async fn a_wrong_token_is_refused() {
 
 /// Every mutating route is guarded, not just start. A guard on one route and not
 /// the others is the shape of the bug this phase is about.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn every_mutating_route_is_guarded() {
     let h = Harness::start("allroutes", 10, 10).await;
     for path in ["/api/start", "/api/stop", "/api/pause", "/api/resume", "/api/config"] {
@@ -395,7 +395,7 @@ async fn every_mutating_route_is_guarded() {
 
 /// A valid token without the custom header is refused. A browser will not send a
 /// custom header cross site, so this is what stops another page spending it.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_token_without_the_csrf_header_is_refused() {
     let h = Harness::start("csrf", 10, 10).await;
     let body = h.start_body();
@@ -419,7 +419,7 @@ async fn a_token_without_the_csrf_header_is_refused() {
 // P10.1.05: rate limit
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_flood_is_throttled_and_recorded() {
     let h = Harness::start("flood", 10, 10).await;
     let mut refused = 0;
@@ -441,7 +441,7 @@ async fn a_flood_is_throttled_and_recorded() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_unauthenticated_flood_is_recorded_too() {
     let h = Harness::start("anonflood", 10, 10).await;
     for _ in 0..5 {
@@ -463,7 +463,7 @@ async fn an_unauthenticated_flood_is_recorded_too() {
 // P10.1.06: CSP
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn every_response_carries_a_policy_forbidding_inline_script() {
     let h = Harness::start("csp", 10, 10).await;
     for (name, request) in [
@@ -497,7 +497,7 @@ async fn every_response_carries_a_policy_forbidding_inline_script() {
 }
 
 /// A policy the page violates is an outage, so the served page has to comply.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn the_served_pages_do_not_use_what_the_policy_forbids() {
     let h = Harness::start("comply", 10, 10).await;
     for path in ["/", "/dashboard/"] {
@@ -518,7 +518,7 @@ async fn the_served_pages_do_not_use_what_the_policy_forbids() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn the_static_assets_are_served_with_the_right_content_types() {
     let h = Harness::start("assets", 10, 10).await;
     let css = h.send("GET /style.css HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
@@ -539,7 +539,7 @@ async fn the_static_assets_are_served_with_the_right_content_types() {
 // P10.1.01: bind policy
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn the_default_listens_on_loopback_and_says_so() {
     let config = WebConfig::default();
     assert_eq!(config.host, "127.0.0.1", "the default bind must be loopback");
@@ -555,7 +555,7 @@ async fn the_default_listens_on_loopback_and_says_so() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_wildcard_bind_is_refused_before_a_socket_exists() {
     let dir = std::env::temp_dir().join(format!("pwdcrack-bind-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -573,7 +573,7 @@ async fn a_wildcard_bind_is_refused_before_a_socket_exists() {
 }
 
 /// A policy that is accepted only when both the flag and a token are present.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_exposed_bind_needs_the_flag_and_a_token() {
     let mut policy = WebBindPolicy::new("0.0.0.0", 8080);
     assert!(policy.check().is_err(), "no flag");
@@ -587,7 +587,7 @@ async fn an_exposed_bind_needs_the_flag_and_a_token() {
 // Refusals with reasons
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_invalid_request_is_a_400_with_a_reason() {
     let h = Harness::start("invalid", 10, 10).await;
     let body = "attack_type=bruteforce&hash_type=MD5";
@@ -605,7 +605,43 @@ async fn an_invalid_request_is_a_400_with_a_reason() {
     );
 }
 
-#[tokio::test]
+/// A run that has exhausted its keyspace is over. Pausing or resuming it would
+/// report a state change that cannot happen, so both must be a conflict.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_finished_attack_refuses_pause_and_resume() {
+    // A one candidate keyspace, so the run completes immediately.
+    let h = Harness::start("finished", 1, 1).await;
+    assert_eq!(h.send(&h.authorised("/api/start", &h.start_body())).status, 200);
+
+    // Wait for it to finish rather than assuming it has.
+    let mut status = String::new();
+    for _ in 0..200 {
+        status = h
+            .send("GET /api/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .body;
+        if status.contains("Finished") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(status.contains("Finished"), "a one candidate run must finish: {status}");
+
+    for route in ["/api/pause", "/api/resume"] {
+        let response = h.send(&h.authorised(route, ""));
+        assert_eq!(
+            response.status, 409,
+            "{route} answered {} on a finished attack",
+            response.status
+        );
+    }
+    // The counters survive the finish, which is what makes the report useful.
+    assert!(
+        status.contains("\"total_tested\":1"),
+        "the work stays counted after the run ends: {status}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn stopping_with_nothing_running_is_a_conflict() {
     let h = Harness::start("conflict", 10, 10).await;
     let response = h.send(&h.authorised("/api/stop", ""));
@@ -614,7 +650,7 @@ async fn stopping_with_nothing_running_is_a_conflict() {
 
 /// No executor wired means no attack, and the route says so rather than
 /// reporting a run that cannot happen.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_unwired_dashboard_refuses_to_start() {
     let dir = std::env::temp_dir().join(format!("pwdcrack-null-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -668,7 +704,7 @@ async fn an_unwired_dashboard_refuses_to_start() {
 
 /// The crate's own spawn, over HTTP, with a body that is actually hashed. This
 /// is the end to end path: request to handle to executor to counters.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn the_attack_handle_can_be_driven_outside_the_server() {
     // Included because the server tests use the stub through HTTP and this one
     // uses the same handle directly, so a break in either is visible.

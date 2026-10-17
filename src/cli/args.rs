@@ -113,6 +113,38 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "DIR", help_heading = "Engines", help = "Directory a worker may read wordlists from. Repeatable. Without it a worker refuses all dictionary work rather than opening any path the master names")]
     pub wordlist_dir: Vec<String>,
 
+    /// Encrypts the cluster transport with TLS.
+    ///
+    /// A master generates its own certificate authority and server certificate
+    /// on first run, under `$PWDCRACK_TLS_DIR`, `$XDG_STATE_HOME/pwdcrack/tls`,
+    /// or `~/.local/state/pwdcrack/tls`, and prints where. A worker needs
+    /// `--master-ca` to verify it, because trusting a certificate it was handed
+    /// over the same channel is not trust.
+    #[arg(long, global = true, help_heading = "Engines", help = "Encrypt the cluster with TLS. A master generates its certificate on first run; a worker needs --master-ca to verify it")]
+    pub tls: bool,
+
+    /// The master's certificate authority, for a worker.
+    #[arg(long, global = true, value_name = "FILE", help_heading = "Engines", help = "CA certificate a worker uses to verify the master's TLS certificate. Copy it from the master; a worker without one is refused when --tls is on")]
+    pub master_ca: Option<String>,
+
+    /// Trust the master's certificate the first time it is seen.
+    ///
+    /// Refused unless the master is on loopback, because the first certificate to
+    /// arrive wins and an attacker who can be first on the wire wins the cluster.
+    #[arg(long, global = true, help_heading = "Engines", help = "Pin the master's TLS certificate on first use instead of being given a CA. Refused for a master that is not on loopback")]
+    pub tls_tofu: bool,
+
+    /// Sustained handshake attempts accepted from one source address.
+    #[arg(long, global = true, default_value_t = 2.0, value_name = "RATE", help_heading = "Engines", help = "Cluster handshake attempts accepted per second from one source address before it is throttled")]
+    pub handshake_rate: f64,
+
+    /// Seconds of work a chunk should take at the receiving worker's own rate.
+    ///
+    /// The knob behind throughput weighted scheduling. Smaller means a worker
+    /// reports its rate more often and a requeued chunk costs less.
+    #[arg(long, global = true, default_value_t = 2.0, value_name = "SECONDS", help_heading = "Engines", help = "Seconds of work each cluster chunk should take at the receiving worker's measured rate. Smaller chunks measure faster and lose less on a worker failure")]
+    pub chunk_seconds: f64,
+
     // ---- Power & monitoring ----
 
     #[arg(long, global = true, default_value = "0", help_heading = "Power & monitoring", help = "Power budget in watts (0 = unlimited; requires engine-power feature)")]
@@ -531,5 +563,27 @@ pub enum Commands {
         verbose: bool,
         #[arg(long, help = "Remove invalid hashes and write cleaned file")]
         clean: bool,
+    },
+
+    /// Serve the web dashboard.
+    ///
+    /// Binds to 127.0.0.1 unless `--web-host` says otherwise, and a routable
+    /// address needs both `--allow-exposed-web-bind` and an authentication
+    /// token. Mutating routes additionally require the
+    /// `X-Pwdcrack-Request: dashboard` header, which a browser will not attach
+    /// to a cross site request.
+    #[cfg(feature = "engine-web")]
+    Web {
+        #[arg(long, default_value = "127.0.0.1", help = "Listener address; loopback unless changed")]
+        web_host: String,
+        #[arg(long, default_value_t = 8080, help = "Listener port; 0 is refused")]
+        web_port: u16,
+        #[arg(long, help = "Token file; created with mode 0600 if absent")]
+        web_token_file: Option<std::path::PathBuf>,
+        #[arg(
+            long,
+            help = "Permit a listener reachable from other machines. Requires a token."
+        )]
+        allow_exposed_web_bind: bool,
     },
 }

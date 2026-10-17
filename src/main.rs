@@ -154,8 +154,27 @@ fn main() {
             token,
             allow_exposed_bind: args.allow_exposed_bind,
             wordlist_dirs: args.wordlist_dir.clone(),
+            handshake_rate: args.handshake_rate,
+            chunk_seconds: args.chunk_seconds,
             ..Default::default()
         };
+
+        if args.tls {
+            cfg.tls = engine_distributed::TlsMode::Enabled {
+                master_ca: args.master_ca.as_ref().map(std::path::PathBuf::from),
+                trust_on_first_use: args.tls_tofu,
+            };
+        } else if args.master_ca.is_some() || args.tls_tofu {
+            // Silently ignoring the trust flags would leave a worker with no way
+            // to verify the master while the operator believes it is verifying
+            // one. Refusing is the only answer that is not a lie.
+            eprintln!(
+                "[!] --master-ca and --tls-tofu only mean something with --tls. \
+                 A worker that has no way to verify the master is refused rather \
+                 than silently trusting it, so pass --tls as well."
+            );
+            std::process::exit(1);
+        }
 
         if let Some(b) = &args.bind {
             match b.parse() {
@@ -290,6 +309,19 @@ fn main() {
         Commands::Check { hash_file, verbose, clean } => {
             cmd_check(&detector, hash_file, *verbose, *clean)
         }
+
+        #[cfg(feature = "engine-web")]
+        Commands::Web {
+            web_host,
+            web_port,
+            web_token_file,
+            allow_exposed_web_bind,
+        } => cmd_web(
+            web_host.clone(),
+            *web_port,
+            web_token_file.clone(),
+            *allow_exposed_web_bind,
+        ),
     };
 
     #[cfg(feature = "engine-android")]
@@ -297,6 +329,62 @@ fn main() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/// Serves the dashboard.
+///
+/// The bind policy is checked inside `engine_web::server::serve`, before a
+/// socket exists, so a refused configuration never listens even briefly. This
+/// function only builds the configuration and supplies the real executor, which
+/// is the whole reason the dashboard can start an attack rather than report
+/// that it did.
+#[cfg(feature = "engine-web")]
+fn cmd_web(
+    host: String,
+    port: u16,
+    token_file: Option<std::path::PathBuf>,
+    allow_exposed: bool,
+) {
+    use engine_web::WebConfig;
+
+    let mut config = WebConfig {
+        host,
+        port,
+        allow_exposed_bind: allow_exposed,
+        ..Default::default()
+    };
+    if let Some(path) = token_file {
+        config.token_path = path;
+    }
+
+    let executor = std::sync::Arc::new(pwdcrack::webexec::EngineExecutor::cpu());
+
+    println!("Starting pwdcrack dashboard");
+    println!("  address   {}", config.host);
+    println!("  port      {}", config.port);
+    // Whether the listener is reachable from another machine. This is not the
+    // same as whether the operator passed the flag: binding 0.0.0.0 is exposed
+    // whether or not it was allowed, and printing the flag would hide the fact.
+    let exposed = !engine_web::auth::is_loopback(&config.host);
+    println!("  exposed   {exposed}");
+    if exposed {
+        println!(
+            "  WARNING    reachable from other machines; mutating routes need the token"
+        );
+    }
+
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[!] cannot start the async runtime: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = runtime.block_on(engine_web::server::serve(config, executor)) {
+        eprintln!("[!] dashboard stopped: {e}");
+        std::process::exit(1);
+    }
+}
 
 fn load_hashes(detector: &Detector, path: &str) -> Vec<(Box<dyn HashCracker>, HashEntry)> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {

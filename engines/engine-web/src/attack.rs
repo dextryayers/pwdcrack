@@ -109,12 +109,24 @@ pub struct AttackProgress {
 }
 
 /// Why an attack stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StopReason {
     /// The run finished its candidate space.
     Completed,
     /// Someone called stop.
     Stopped,
+    /// The executor refused. The message is what it refused with.
+    Failed(String),
+}
+
+impl std::fmt::Display for StopReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StopReason::Completed => write!(f, "the candidate space was exhausted"),
+            StopReason::Stopped => write!(f, "stopped"),
+            StopReason::Failed(why) => write!(f, "the executor failed: {why}"),
+        }
+    }
 }
 
 /// The seam between the dashboard and the engine.
@@ -168,17 +180,29 @@ pub struct Control {
     /// Raised by stop. Separate from the state so a stop during a pause takes
     /// effect immediately rather than waiting for a resume that may never come.
     stop: AtomicBool,
+    /// Why the runner ended, when it ended badly.
+    ///
+    /// Without this the runner could return and the control would still say
+    /// Running, so a dashboard would report an attack in progress forever with
+    /// counters stuck at whatever they were. An executor that refuses is not a
+    /// silent event.
+    failure: std::sync::Mutex<Option<String>>,
+    /// Set when the candidate space was exhausted on its own.
+    completed: AtomicBool,
 }
 
 const STATE_RUNNING: u8 = 0;
 const STATE_PAUSED: u8 = 1;
 const STATE_STOPPED: u8 = 2;
+const STATE_FINISHED: u8 = 3;
 
 impl Default for Control {
     fn default() -> Self {
         Control {
             state: AtomicU8::new(STATE_RUNNING),
             stop: AtomicBool::new(false),
+            failure: std::sync::Mutex::new(None),
+            completed: AtomicBool::new(false),
         }
     }
 }
@@ -218,8 +242,37 @@ impl Control {
         self.stop.load(Ordering::SeqCst) || self.state.load(Ordering::SeqCst) == STATE_STOPPED
     }
 
+    /// Whether the runner reached the end of the candidate space by itself.
+    pub fn is_complete(&self) -> bool {
+        self.completed.load(Ordering::SeqCst)
+    }
+
+    /// Whether the runner ended because the executor refused.
+    pub fn failure(&self) -> Option<String> {
+        self.failure.lock().expect("control failure").clone()
+    }
+
     pub fn is_paused(&self) -> bool {
         !self.is_stopped() && self.state.load(Ordering::SeqCst) == STATE_PAUSED
+    }
+
+    /// Records why the runner ended, so the status cannot disagree with it.
+    ///
+    /// Every exit from the runner goes through here. An exit that does not set
+    /// the state leaves a handle whose control still claims Running.
+    fn conclude(&self, reason: &StopReason) {
+        match reason {
+            StopReason::Completed => {
+                self.completed.store(true, Ordering::SeqCst);
+            }
+            StopReason::Failed(why) => {
+                *self.failure.lock().expect("control failure") = Some(why.clone());
+            }
+            StopReason::Stopped => {}
+        }
+        // A stop also has to clear any pause, or a paused runner that finished
+        // would still answer "paused" to the next query.
+        self.state.store(STATE_FINISHED, Ordering::SeqCst);
     }
 
     /// Blocks while paused, waking periodically so a stop is noticed promptly.
@@ -286,6 +339,14 @@ impl AttackHandle {
         self.control.stop();
     }
 
+    /// Whether the run has already ended, by completion or by stop.
+    ///
+    /// Pausing or resuming a concluded run would report a state change that
+    /// cannot happen, so callers use this to refuse instead.
+    pub fn is_concluded(&self) -> bool {
+        self.control.is_complete() || self.control.is_stopped()
+    }
+
     pub fn elapsed_secs(&self) -> u64 {
         self.started.elapsed().as_secs()
     }
@@ -342,56 +403,15 @@ pub fn spawn(
     let k = Arc::clone(&counters);
     let h = Arc::clone(&hits);
 
+    // Every exit goes through `conclude`, so the control always reflects what
+    // actually happened. The previous version returned directly from each arm,
+    // which meant an executor error left the control saying Running with
+    // counters stuck at zero: a dashboard reporting an attack in progress that
+    // was never running.
     let task = tokio::spawn(async move {
-        let batch_size = executor.batch_size().max(1);
-        let total = executor.keyspace_size(&request);
-        let mut offset: u64 = 0;
-        let mut pending: u64 = 0;
-
-        loop {
-            if c.is_stopped() {
-                return StopReason::Stopped;
-            }
-            c.wait_while_paused().await;
-            if c.is_stopped() {
-                return StopReason::Stopped;
-            }
-
-            // The end of the keyspace is an empty candidate list, which is how
-            // the runner learns it is done without the dashboard tracking the
-            // keyspace size itself.
-            if let Some(limit) = total {
-                if offset >= limit {
-                    return StopReason::Completed;
-                }
-            }
-
-            let candidates = match executor.candidates(&request, offset, batch_size) {
-                Ok(v) => v,
-                Err(_) => return StopReason::Stopped,
-            };
-            if candidates.is_empty() {
-                return StopReason::Completed;
-            }
-            pending = candidates.len() as u64;
-            offset += pending;
-
-            let outcome = match executor.test_batch(&request, &candidates) {
-                Ok(o) => o,
-                Err(_) => return StopReason::Stopped,
-            };
-
-            k.add_tested(outcome.tested);
-            if !outcome.cracked.is_empty() {
-                k.add_cracked(outcome.cracked.len() as u64);
-                let mut list = h.lock().await;
-                list.extend(outcome.cracked);
-            }
-
-            // Yield so a fast executor cannot starve the runtime, and so pause
-            // and stop are observed between batches rather than never.
-            tokio::task::yield_now().await;
-        }
+        let reason = run(&executor, &request, &c, &k, &h).await;
+        c.conclude(&reason);
+        reason
     });
 
     Ok(AttackHandle {
@@ -401,6 +421,63 @@ pub fn spawn(
         started,
         abort: task.abort_handle(),
     })
+}
+
+/// The batch loop, returning why it ended.
+async fn run(
+    executor: &Arc<dyn AttackExecutor>,
+    request: &AttackRequest,
+    control: &Arc<Control>,
+    counters: &Arc<Counters>,
+    hits: &Arc<tokio::sync::Mutex<Vec<CrackedHit>>>,
+) -> StopReason {
+    let batch_size = executor.batch_size().max(1);
+    let total = executor.keyspace_size(request);
+    let mut offset: u64 = 0;
+
+    loop {
+        if control.is_stopped() {
+            return StopReason::Stopped;
+        }
+        control.wait_while_paused().await;
+        if control.is_stopped() {
+            return StopReason::Stopped;
+        }
+
+        // The end of the keyspace is an empty candidate list, which is how the
+        // runner learns it is done without the dashboard tracking the keyspace
+        // size itself.
+        if let Some(limit) = total {
+            if offset >= limit {
+                return StopReason::Completed;
+            }
+        }
+
+        let candidates = match executor.candidates(request, offset, batch_size) {
+            Ok(v) => v,
+            Err(why) => return StopReason::Failed(why),
+        };
+        if candidates.is_empty() {
+            return StopReason::Completed;
+        }
+        offset += candidates.len() as u64;
+
+        let outcome = match executor.test_batch(request, &candidates) {
+            Ok(o) => o,
+            Err(why) => return StopReason::Failed(why),
+        };
+
+        counters.add_tested(outcome.tested);
+        if !outcome.cracked.is_empty() {
+            counters.add_cracked(outcome.cracked.len() as u64);
+            let mut list = hits.lock().await;
+            list.extend(outcome.cracked);
+        }
+
+        // Yield so a fast executor cannot starve the runtime, and so pause and
+        // stop are observed between batches rather than never.
+        tokio::task::yield_now().await;
+    }
 }
 
 /// The executor this crate falls back to when no engine is wired.
@@ -706,6 +783,57 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(30)).await;
             assert_eq!(handle.counters().tested(), 0, "a null executor must test nothing");
         }
+    }
+
+    /// A run that reaches the end of its keyspace is finished, not running.
+    /// The old loop returned Completed without touching the control, so the
+    /// dashboard reported Running forever with its counters frozen.
+    #[tokio::test]
+    async fn a_finished_run_says_it_is_finished() {
+        let ex = Arc::new(CountingExecutor::new(20, 0));
+        let handle = spawn(ex, request("bruteforce")).expect("starts");
+        for _ in 0..200 {
+            if handle.control().is_complete() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(
+            handle.control().is_complete(),
+            "20 candidates over 10 at a time must reach the end of the keyspace"
+        );
+        assert_eq!(handle.counters().tested(), 20);
+        assert!(
+            !handle.control().is_stopped(),
+            "running out of candidates is not a stop"
+        );
+    }
+
+    /// An executor that refuses is recorded, not swallowed. Before this, a
+    /// failed batch returned StopReason::Stopped and nothing else, so the
+    /// control kept saying Running with tested at zero.
+    #[tokio::test]
+    async fn an_executor_failure_is_recorded_with_its_reason() {
+        let ex = Arc::new(CountingExecutor::failing_first(1000, 0, 1));
+        let handle = spawn(ex, request("bruteforce")).expect("starts");
+        for _ in 0..200 {
+            if handle.control().failure().is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let failure = handle
+            .control()
+            .failure()
+            .expect("the refusal must be recorded");
+        assert!(
+            failure.contains("simulated executor failure"),
+            "the operator needs the executor's own words: {failure}"
+        );
+        assert!(
+            !handle.control().is_complete(),
+            "a failure is not a completed run"
+        );
     }
 
     #[test]

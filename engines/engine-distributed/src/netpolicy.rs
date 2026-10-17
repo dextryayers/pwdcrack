@@ -101,6 +101,12 @@ pub struct BindPolicy {
     allow_exposed: bool,
     /// Set once a token is configured.
     require_auth: bool,
+    /// Set once the transport is encrypted.
+    ///
+    /// Changes the warning, not the refusal. A routable address still needs both
+    /// an explicit request and a credential; TLS changes what the credential is
+    /// protecting rather than whether it is needed.
+    encrypted: bool,
 }
 
 impl Default for BindPolicy {
@@ -108,6 +114,7 @@ impl Default for BindPolicy {
         BindPolicy {
             allow_exposed: false,
             require_auth: false,
+            encrypted: false,
         }
     }
 }
@@ -126,6 +133,12 @@ impl BindPolicy {
     /// Records whether a token is configured.
     pub fn with_auth(mut self, require_auth: bool) -> Self {
         self.require_auth = require_auth;
+        self
+    }
+
+    /// Records whether the transport is encrypted.
+    pub fn with_encryption(mut self, encrypted: bool) -> Self {
+        self.encrypted = encrypted;
         self
     }
 
@@ -157,15 +170,24 @@ impl BindPolicy {
             return Err(BindError::ExposedWithoutAuth { addr });
         }
 
+        let protection = if self.encrypted {
+            "The transport is encrypted with TLS and the master's certificate is \
+             verified against a CA the operator supplied. Anyone who can reach this \
+             port can still read the token hash and attempt to join, so the shared \
+             secret remains the only thing keeping an outsider out. Give it a \
+             password, not a word, and rotate it if the network is shared."
+        } else {
+            "The cluster is protected only by the shared token, sent in the clear. \
+             Anyone who can reach this port, or who can read the traffic, can join it \
+             and receive work units naming wordlist paths. Use --tls before exposing \
+             this beyond a trusted network."
+        };
+
         Ok(BindDecision {
             addr,
             exposure: Exposure::Exposed,
             warning: Some(format!(
-                "listening on {addr}, reachable from the network.\n\
-                 The cluster is protected only by the shared token. Anyone who \
-                 can reach this port can join it and receive work units.\n\
-                 Use TLS, as in P9.1.02, before exposing this beyond a trusted \
-                 network."
+                "listening on {addr}, reachable from the network.\n{protection}"
             )),
         })
     }

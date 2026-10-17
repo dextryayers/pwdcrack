@@ -184,6 +184,7 @@ pub fn auth_frame(auth: &ClusterAuth, challenge_nonce: &[u8]) -> Message {
 pub fn challenge_frame(gate: &AdmissionGate) -> Message {
     Message::Challenge {
         nonce: crate::netpolicy::hex_encode(gate.nonce()),
+        protocol_version: crate::protocol::SCHEMA_VERSION,
     }
 }
 
@@ -193,6 +194,7 @@ mod tests {
 
     fn handshake(name: &str) -> Message {
         Message::Handshake {
+            protocol_version: crate::protocol::SCHEMA_VERSION,
             node_name: name.to_string(),
             tier: "x86_64".to_string(),
             caps: crate::protocol::Capabilities {
@@ -273,7 +275,6 @@ mod tests {
     #[test]
     fn a_malformed_credential_is_rejected_without_panicking() {
         let mut gate = AdmissionGate::new(ClusterAuth::with_token("s3cret".into()));
-        let n = nonce();
         for junk in ["", "zz", "nothexatall", "00"] {
             let msg = Message::Authenticate {
                 response: junk.to_string(),
@@ -323,7 +324,6 @@ mod tests {
     fn an_ended_connection_reports_whether_it_had_been_admitted() {
         let auth = ClusterAuth::with_token("s3cret".into());
         let mut gate = AdmissionGate::new(auth.clone());
-        let n = nonce();
         assert!(!gate.on_disconnect());
         gate.on_message(&auth_frame(&auth, gate.nonce()));
         assert!(gate.on_disconnect());

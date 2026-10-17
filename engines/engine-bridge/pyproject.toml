@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pwdcrack"
+version = "1.2.0"
+description = "Password hash cracker: CPU, GPU, FPGA and distributed engines"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README-python.md"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Security",
+]
+
+[tool.maturin]
+# The Rust module is `_native` in src/python.rs, and python/pwdcrack/__init__.py
+# re-exports it under the package name. Keeping the compiled module private means
+# a name can be added to the Python layer without rebuilding the extension.
+#
+# maturin requires this file to sit next to Cargo.toml, so the pure Python parts
+# live under python/ and are pointed at here rather than living beside this file.
+python-source = "python"
+module-name = "pwdcrack._native"
+# The `python` feature gates the PyO3 module in src/lib.rs.
+features = ["python"]
+# The extension is a cdylib built by cargo, which is what PyO3 needs. It is
+# built with unwind rather than abort, because a panic inside the extension would
+# otherwise take the interpreter down; see the note on `panic` in the root
+# Cargo.toml.

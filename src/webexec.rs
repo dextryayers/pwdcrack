@@ -118,6 +118,10 @@ fn prepare_key(request: &AttackRequest) -> String {
 
 impl Prepared {
     fn build(request: &AttackRequest) -> Result<Prepared, String> {
+        Self::build_inner(request)
+    }
+
+    fn build_inner(request: &AttackRequest) -> Result<Prepared, String> {
         match request.attack_type.as_str() {
             "dictionary" => {
                 let path = request
@@ -146,10 +150,10 @@ impl Prepared {
                 }
 
                 if offsets.len() as u64 > INDEX_THRESHOLD {
-                    Prepared::Indexed {
-                        path: path.clone().into(),
+                    Ok(Prepared::Indexed {
+                        path: std::path::PathBuf::from(path),
                         offsets,
-                    }
+                    })
                 } else {
                     let mut reader = BufReader::new(
                         File::open(path).map_err(|e| format!("cannot open wordlist {path}: {e}"))?,
@@ -163,7 +167,7 @@ impl Prepared {
                         }
                         line.clear();
                     }
-                    Prepared::Words(words)
+                    Ok(Prepared::Words(words))
                 }
             }
             "bruteforce" => {
@@ -173,7 +177,7 @@ impl Prepared {
                     .ok_or_else(|| "a brute force attack needs a mask".to_string())?;
                 let mask = Mask::parse(spec, &[])
                     .map_err(|e| format!("mask {spec:?} is not usable: {e:?}"))?;
-                Prepared::Brute(mask)
+                Ok(Prepared::Brute(mask))
             }
             other => Err(format!("unknown attack type {other:?}")),
         }
@@ -304,12 +308,10 @@ impl AttackExecutor for EngineExecutor {
         let mut by_type: HashMap<HashType, Vec<(usize, HashEntry)>> = HashMap::new();
         let mut cracker_for: HashMap<HashType, Box<dyn HashCracker>> = HashMap::new();
         for (index, cracker, entry) in resolved {
-            by_type
-                .entry(entry.hash_type)
-                .or_default()
-                .push((index, entry));
+            let hash_type = entry.hash_type;
+            by_type.entry(hash_type).or_default().push((index, entry));
             cracker_for
-                .entry(entry.hash_type)
+                .entry(hash_type)
                 .or_insert_with(|| clone_cracker_box(cracker.as_ref()));
         }
 
@@ -400,9 +402,8 @@ mod tests {
     fn a_brute_force_batch_finds_a_real_candidate() {
         let ex = EngineExecutor::cpu();
         let request = brute_request("?a?a?a");
-        let candidates = ex
-            .candidates(&request, 0, 100_000)
-            .expect("candidates");
+        let size = ex.keyspace_size(&request).expect("a finite keyspace");
+        let candidates = ex.candidates(&request, 0, size).expect("candidates");
         let outcome = ex.test_batch(&request, &candidates).expect("test");
         assert!(
             outcome.cracked.iter().any(|h| h.password == "abc"),
@@ -516,11 +517,19 @@ mod tests {
         assert!(e.contains("cannot open wordlist"), "{e}");
     }
 
+    /// `?z` is not a defined token, and an unterminated `?[` has no closing
+    /// bracket. Either is refused rather than silently treated as literals,
+    /// which is what a mask parser that never errors would do.
     #[test]
     fn a_bad_mask_is_an_error() {
         let ex = EngineExecutor::cpu();
-        let request = brute_request("not a mask at all ###");
-        assert!(ex.candidates(&request, 0, 10).is_err());
+        for bad in ["?z", "?[abc", "?z?z?z"] {
+            let request = brute_request(bad);
+            assert!(
+                ex.candidates(&request, 0, 10).is_err(),
+                "{bad:?} was accepted as a mask"
+            );
+        }
     }
 
     /// A brute force keyspace big enough to overflow u64 must not become a
@@ -544,12 +553,21 @@ mod tests {
     }
 
     /// Two target hashes of the same type go through one engine call.
+    ///
+    /// The candidate list is the whole keyspace, not a prefix of it. `?a` is the
+    /// printable ASCII set at 92 characters wide, so `?a?a?a` holds 778688
+    /// candidates and "xyz" sits near index 194672. Asking for fewer than that
+    /// would look like a detection failure rather than an exhausted search.
     #[test]
     fn several_targets_are_all_tested() {
         let ex = EngineExecutor::cpu();
         let mut request = brute_request("?a?a?a");
         request.target_hashes = vec![md5("abc"), md5("xyz")];
-        let candidates = ex.candidates(&request, 0, 100_000).expect("candidates");
+        let size = ex.keyspace_size(&request).expect("a finite keyspace");
+        let candidates = ex
+            .candidates(&request, 0, size)
+            .expect("candidates");
+        assert_eq!(candidates.len() as u64, size, "the whole keyspace was generated");
         let outcome = ex.test_batch(&request, &candidates).expect("test");
         let found: Vec<&str> = outcome.cracked.iter().map(|h| h.password.as_str()).collect();
         assert!(found.contains(&"abc"), "{found:?}");

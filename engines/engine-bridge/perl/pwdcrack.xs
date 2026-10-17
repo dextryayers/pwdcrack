@@ -1,56 +1,92 @@
 /*
  * Perl XS bindings for pwdcrack.
  *
- * Exposes the same C ABI that engines/engine-bridge/src/c_api.rs exports, so
- * the Perl surface has identical semantics to the C and Python bridges:
- * every function returns a defined value on failure and never throws across
- * the FFI boundary.
+ * These bind to the ABI that engines/engine-bridge/src/c_api.rs actually
+ * exports. The previous version of this file declared a different ABI and could
+ * not have linked:
  *
- * Ownership rules:
- *   - Strings returned by this module are copied into Perl scalars, so the
- *     caller owns them and must not free them.
- *   - The caller owns any buffer it passes in, and it must stay alive for the
- *     duration of the call only.
+ *   declared                         actual
+ *   crack_load_hashes(u8*, int)      hash_load_file(const char *)
+ *   crack_hash_count()               crack_total_hashes()
+ *   crack_verify(u8*,int,u8*,int)    did not exist at all
+ *   crack_dictionary_attack(...)     attack_dictionary(const char*, const char*, int)
+ *   crack_bruteforce_attack(...)     attack_bruteforce(const char*, u64, u64, int)
+ *   crack_get_result(7 arguments)    crack_get_result(3 arguments)
+ *   crack_hashes_per_second() -> int crack_hashes_per_second() -> double
  *
- * Build:
- *   cd engines/engine-bridge/perl
- *   perl Makefile.PL
- *   make
+ * Six wrong names, a wrong arity, a wrong return type, and one function that was
+ * invented. Nothing here was ever compiled, which is the only reason it stayed
+ * wrong for that long. `crack_verify` has been added to the C API so this
+ * surface can offer it; it is the same code path the CLI's `verify` subcommand
+ * uses.
  *
- * The Makefile.PL links against libpwdcrack, which is the library target name
- * produced by the pwdcrack cdylib, not libcrack_core.
+ * Ownership:
+ *   - Strings returned as Perl scalars are copies. The caller owns them and must
+ *     not free anything.
+ *   - Every C string this module receives is copied into a Perl SV first, so the
+ *     caller's buffer only has to live for the duration of the call.
+ *
+ * Build and test:
+ *   scripts/test-perl-bridge.sh
+ *
+ * Error codes: every function that can fail returns either a Perl exception or
+ * an explicit code. Nothing signals failure by returning NULL where a value was
+ * expected, except where a Perl undef is the natural answer.
  */
 
 #include <EXTERN.h>
 #include <perl.h>
 #include <XSUB.h>
 
-/* The C ABI header contract is declared inline here so this XS file builds
- * without requiring a generated header to be installed first. Only the types
- * the Perl surface actually uses are declared. */
-typedef struct {
-    const unsigned char *ptr;
-    int len;
-} pwdcrack_buf;
+/* The C ABI, declared inline so this file builds without a generated header
+ * being installed first. Kept in step with c_api.rs by hand; the C test suite at
+ * engines/engine-bridge/tests/c/test_bridge.c declares the same symbols, so a
+ * mismatch shows up when either is compiled. */
+extern int crack_init(void);
+extern void crack_shutdown(void);
+extern int hash_load_file(const char *path);
+extern int hash_load_buffer(const unsigned char *data, int len);
+extern int attack_dictionary(const char *wordlist, const char *rules, int threads);
+extern int attack_bruteforce(const char *mask, unsigned long long start,
+                             unsigned long long end, int threads);
+extern int crack_verify(const unsigned char *hash, int hash_len,
+                        const unsigned char *password, int pass_len);
+extern int crack_found_count(void);
+extern int crack_total_hashes(void);
+extern int crack_get_result(int idx, char **out_hash, char **out_password);
+extern void crack_free_string(char *s);
+extern double crack_hashes_per_second(void);
+extern unsigned long long crack_last_tested(void);
+extern double crack_last_duration_secs(void);
+extern char *crack_version(void);
+extern char *crack_version_owned(void);
+extern char *crack_detect_tier(void);
+extern char *crack_identify_hash(const unsigned char *hash, int len);
+extern int crack_panics_abort(void);
+extern unsigned int crack_abi_version(void);
 
-int  crack_init(void);
-void crack_shutdown(void);
-int  crack_load_hashes(const unsigned char *path, int len);
-int  crack_hash_count(void);
-int  crack_verify(const unsigned char *hash, int hash_len,
-                  const unsigned char *password, int pass_len);
-int  crack_dictionary_attack(const unsigned char *wordlist, int wl_len,
-                            const unsigned char *rules, int rules_len,
-                            int threads);
-int  crack_bruteforce_attack(const unsigned char *mask, int mask_len, int threads);
-int  crack_found_count(void);
-int  crack_get_result(int index,
-                      const unsigned char **out_hash, int *out_hash_len,
-                      const unsigned char **out_password, int *out_pass_len,
-                      const unsigned char **out_type, int *out_type_len);
-char *crack_version(void);
-int  crack_hashes_per_second(void);
-char *crack_detect_tier(void);
+/* Copies a Rust owned C string into a Perl scalar and releases it.
+ * Returns &PL_sv_undef for NULL, so "the library had nothing to say" is
+ * distinguishable from "the library said nothing useful". */
+static SV *own_to_sv(char *owned)
+{
+    SV *out;
+    if (owned == NULL) {
+        return &PL_sv_undef;
+    }
+    out = newSVpv(owned, 0);
+    crack_free_string(owned);
+    return out;
+}
+
+/* Copies a borrowed C string into a Perl scalar. The caller must NOT free it. */
+static SV *borrow_to_sv(const char *borrowed)
+{
+    if (borrowed == NULL) {
+        return &PL_sv_undef;
+    }
+    return newSVpv(borrowed, 0);
+}
 
 MODULE = pwdcrack    PACKAGE = pwdcrack
 
@@ -59,40 +95,72 @@ PROTOTYPES: DISABLE
 # ── Lifecycle ─────────────────────────────────────────────────────────────
 
 int
-_init()
+init()
     CODE:
         RETVAL = crack_init();
     OUTPUT:
         RETVAL
 
 void
-_shutdown()
+shutdown()
     CODE:
         crack_shutdown();
 
 # ── Hash loading ──────────────────────────────────────────────────────────
 
 int
-load_hashes(path)
+load_file(path)
         SV *path
     CODE:
     {
         STRLEN len;
-        const char *p = SvPV(path, len);
-        RETVAL = crack_load_hashes((const unsigned char *)p, (int)len);
+        const char *p;
+        if (!SvOK(path)) {
+            croak("load_file: path is required");
+        }
+        p = SvPV(path, len);
+        RETVAL = hash_load_file(p);
+        if (RETVAL < 0) {
+            croak("load_file: the library refused with code %d", RETVAL);
+        }
     }
     OUTPUT:
         RETVAL
 
 int
-hash_count()
+load_string(text)
+        SV *text
     CODE:
-        RETVAL = crack_hash_count();
+    {
+        STRLEN len;
+        const char *p;
+        if (!SvOK(text)) {
+            croak("load_string: text is required");
+        }
+        p = SvPV(text, len);
+        RETVAL = hash_load_buffer((const unsigned char *)p, (int)len);
+        if (RETVAL < 0) {
+            croak("load_string: the library refused with code %d", RETVAL);
+        }
+    }
+    OUTPUT:
+        RETVAL
+
+int
+total_hashes()
+    CODE:
+        RETVAL = crack_total_hashes();
+        if (RETVAL < 0) {
+            croak("total_hashes: the engine lock is unusable");
+        }
     OUTPUT:
         RETVAL
 
 # ── Verification ──────────────────────────────────────────────────────────
 
+# Returns 1 for a match, 0 for a mismatch, and croaks when the question could
+# not be answered. A caller must never see a mismatch reported for a hash that
+# was not understood.
 int
 verify(hash, password)
         SV *hash
@@ -100,10 +168,17 @@ verify(hash, password)
     CODE:
     {
         STRLEN hlen, plen;
-        const char *h = SvPV(hash, hlen);
-        const char *p = SvPV(password, plen);
+        const char *h, *p;
+        if (!SvOK(hash) || !SvOK(password)) {
+            croak("verify: both a hash and a password are required");
+        }
+        h = SvPV(hash, hlen);
+        p = SvPV(password, plen);
         RETVAL = crack_verify((const unsigned char *)h, (int)hlen,
                               (const unsigned char *)p, (int)plen);
+        if (RETVAL < 0) {
+            croak("verify: the hash was not recognised (code %d)", RETVAL);
+        }
     }
     OUTPUT:
         RETVAL
@@ -118,28 +193,48 @@ dictionary_attack(wordlist, rules = &PL_sv_undef, threads = 0)
     CODE:
     {
         STRLEN wlen, rlen;
-        const char *w = SvPV(wordlist, wlen);
-        const unsigned char *r = NULL;
-
-        if (SvOK(rules)) {
-            r = (const unsigned char *)SvPV(rules, rlen);
+        const char *w, *r = NULL;
+        if (!SvOK(wordlist)) {
+            croak("dictionary_attack: a wordlist path is required");
         }
-        RETVAL = crack_dictionary_attack((const unsigned char *)w, (int)wlen,
-                                         r, SvOK(rules) ? (int)rlen : 0,
-                                         threads);
+        w = SvPV(wordlist, wlen);
+        if (SvOK(rules)) {
+            r = SvPV(rules, rlen);
+        }
+        RETVAL = attack_dictionary(w, r, threads);
+        if (RETVAL < 0) {
+            croak("dictionary_attack: the library refused with code %d", RETVAL);
+        }
     }
     OUTPUT:
         RETVAL
 
+# The keyspace bounds are `unsigned long long` in C, which the standard Perl
+# typemap has no entry for: xsubpp refuses to compile rather than guess, which
+# is the right behaviour and also why this file was never built. `UV` is Perl's
+# own unsigned integer and is 64 bit on every platform this crate targets, so it
+# is used here with an explicit cast rather than a custom typemap that would hide
+# the width.
 int
-bruteforce_attack(mask, threads = 0)
+bruteforce_attack(mask, start = 0, end = 0, threads = 0)
         SV *mask
+        UV start
+        UV end
         int threads
     CODE:
     {
         STRLEN mlen;
-        const char *m = SvPV(mask, mlen);
-        RETVAL = crack_bruteforce_attack((const unsigned char *)m, (int)mlen, threads);
+        const char *m;
+        if (!SvOK(mask)) {
+            croak("bruteforce_attack: a mask is required");
+        }
+        m = SvPV(mask, mlen);
+        /* end == 0 means the whole keyspace, which is what the C API documents. */
+        RETVAL = attack_bruteforce(m, (unsigned long long)start,
+                                 (unsigned long long)end, threads);
+        if (RETVAL < 0) {
+            croak("bruteforce_attack: the library refused with code %d", RETVAL);
+        }
     }
     OUTPUT:
         RETVAL
@@ -150,28 +245,66 @@ int
 found_count()
     CODE:
         RETVAL = crack_found_count();
+        if (RETVAL < 0) {
+            croak("found_count: the engine lock is unusable");
+        }
     OUTPUT:
         RETVAL
 
+# Returns a hash reference with keys hash, password and hash_type, or undef
+# when there is no such result. Every string is a copy, so nothing here needs
+# freeing.
 SV *
 get_result(index)
         int index
     CODE:
     {
-        const unsigned char *hash = NULL, *pass = NULL, *type = NULL;
-        int hash_len = 0, pass_len = 0, type_len = 0;
+        char *hash = NULL;
+        char *password = NULL;
+        HV *hv;
 
-        if (crack_get_result(index, &hash, &hash_len, &pass, &pass_len,
-                             &type, &type_len) != 0) {
+        if (crack_get_result(index, &hash, &password) != 0) {
             RETVAL = &PL_sv_undef;
         } else {
-            HV *hv = newHV();
-            (void)hv_store(hv, "hash", 4, newSVpvn((const char *)hash, hash_len), 0);
-            (void)hv_store(hv, "password", 8, newSVpvn((const char *)pass, pass_len), 0);
-            (void)hv_store(hv, "hash_type", 9, newSVpvn((const char *)type, type_len), 0);
+            hv = newHV();
+            (void)hv_stores(hv, "hash", own_to_sv(hash));
+            (void)hv_stores(hv, "password", own_to_sv(password));
+            /* The C API's crack_get_result does not return the type, so it is
+             * asked for separately rather than invented here. */
+            if (hash != NULL) {
+                STRLEN hlen = strlen(hash);
+                char *type = crack_identify_hash((const unsigned char *)hash,
+                                                 (int)hlen);
+                (void)hv_stores(hv, "hash_type", own_to_sv(type));
+            } else {
+                (void)hv_stores(hv, "hash_type", newSV(0));
+            }
             RETVAL = newRV_noinc((SV *)hv);
         }
     }
+    OUTPUT:
+        RETVAL
+
+# ── Statistics ────────────────────────────────────────────────────────────
+
+double
+hashes_per_second()
+    CODE:
+        RETVAL = crack_hashes_per_second();
+    OUTPUT:
+        RETVAL
+
+UV
+last_tested()
+    CODE:
+        RETVAL = crack_last_tested();
+    OUTPUT:
+        RETVAL
+
+double
+last_duration_secs()
+    CODE:
+        RETVAL = crack_last_duration_secs();
     OUTPUT:
         RETVAL
 
@@ -180,26 +313,45 @@ get_result(index)
 SV *
 version()
     CODE:
-    {
-        char *v = crack_version();
-        RETVAL = v ? newSVpv(v, 0) : &PL_sv_undef;
-    }
+        /* Borrowed, never freed: the string lives for the life of the process. */
+        RETVAL = borrow_to_sv(crack_version());
     OUTPUT:
         RETVAL
 
 SV *
 detect_tier()
     CODE:
+        RETVAL = borrow_to_sv(crack_detect_tier());
+    OUTPUT:
+        RETVAL
+
+SV *
+identify_hash(hash)
+        SV *hash
+    CODE:
     {
-        char *t = crack_detect_tier();
-        RETVAL = t ? newSVpv(t, 0) : &PL_sv_undef;
+        STRLEN len;
+        const char *h;
+        if (!SvOK(hash)) {
+            croak("identify_hash: a hash is required");
+        }
+        h = SvPV(hash, len);
+        /* Owned by the caller, so copied and released inside own_to_sv. */
+        RETVAL = own_to_sv(crack_identify_hash((const unsigned char *)h, (int)len));
     }
     OUTPUT:
         RETVAL
 
-double
-hashes_per_second()
+int
+panics_abort()
     CODE:
-        RETVAL = (double)crack_hashes_per_second();
+        RETVAL = crack_panics_abort();
+    OUTPUT:
+        RETVAL
+
+unsigned int
+abi_version()
+    CODE:
+        RETVAL = crack_abi_version();
     OUTPUT:
         RETVAL

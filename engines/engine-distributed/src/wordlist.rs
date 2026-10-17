@@ -88,16 +88,6 @@ impl std::fmt::Display for PathDenied {
     }
 }
 
-fn self_path(d: &PathDenied) -> String {
-    match d {
-        PathDenied::OutsideGrant { resolved, .. } => resolved.display().to_string(),
-        PathDenied::Unresolvable { path, .. } => path.display().to_string(),
-        PathDenied::NotAFile { path } => path.display().to_string(),
-        PathDenied::NotRelative { path } => path.display().to_string(),
-        PathDenied::NoRootsGranted => "any path".to_string(),
-    }
-}
-
 impl std::error::Error for PathDenied {}
 
 /// Decides which files a worker will open on a master's instruction.
@@ -284,7 +274,7 @@ pub fn content_digest(bytes: &[u8]) -> String {
 /// contents or the pair. A worker that trusts the pair can verify what it was
 /// given. A worker that only trusts the contents has nothing to verify, which is
 /// why the path was removed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WordlistManifest {
     pub name: String,
     pub byte_len: u64,

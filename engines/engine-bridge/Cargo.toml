@@ -1,11 +1,16 @@
 [package]
 name = "engine-bridge"
-version = "0.1.0"
+version = "1.2.0"
 edition = "2021"
 description = "FFI bridges: C, Python (PyO3), Perl (XS), Node.js (N-API), Ruby"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# `rlib` is here so `cargo test` can link the crate for integration tests.
+# Without it an integration test cannot name the crate at all, because a cdylib
+# and a staticlib are both final artefacts and neither is importable by Rust.
+# It changes what lands in target/, not what is shipped: the C and Python builds
+# consume the cdylib and the staticlib, which are still produced.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 pwdcrack = { path = "../.." }

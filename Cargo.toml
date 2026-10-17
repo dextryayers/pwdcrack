@@ -85,7 +85,10 @@ engine-power = ["dep:engine-power"]
 # async `run()` on its own runtime. Without it the binary cannot drive the
 # distributed engine at all.
 engine-distributed = ["dep:engine-distributed", "dep:tokio"]
-engine-web  = ["dep:engine-web"]
+# `dep:tokio` for the same reason as engine-distributed: the CLI is synchronous,
+# so it has to build a runtime to host the dashboard's async server. Without it
+# the `web` subcommand cannot exist.
+engine-web  = ["dep:engine-web", "dep:tokio"]
 engine-android = ["dep:engine-android"]
 engine-cuda = ["dep:engine-cuda"]
 engine-opencl = ["dep:engine-opencl"]
@@ -238,7 +241,30 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
-panic = "abort"
+# `panic` is deliberately NOT "abort", which is what this profile used to set.
+#
+# B-36. engine-bridge builds a cdylib and a staticlib, and both are loaded into
+# somebody else's process. Three consequences of aborting:
+#
+# 1. A panic anywhere in the library kills the host program. A cracker parses
+#    attacker supplied hash strings, so a panic below is a thing that will
+#    eventually happen, and taking the embedder's process down is not an
+#    acceptable failure mode for a library.
+# 2. `catch_unwind` becomes inert, so the guard around each attack in
+#    engines/engine-bridge/src/c_api.rs could not catch anything. It would have
+#    looked like it worked and turned every panic into an abort.
+# 3. An unwind crossing the FFI boundary is undefined behaviour, so "abort" is
+#    not even the safe choice at an FFI edge; it is the one that removes the
+#    possibility of handling it at all.
+#
+# The cost is a little binary size and no abort on the CLI's own paths. What
+# that buys is that the CLI still reports a failed hash parse as a message
+# instead of a core dump, which is the behaviour a user expects from a tool that
+# is pointed at untrusted input.
+#
+# `engine_bridge::c_api::crack_panics_abort` reports the strategy actually in
+# force, so a caller can see which guarantee it has rather than infer it.
+panic = "unwind"
 
 # Smaller binary for low-end targets
 [profile.release-low]

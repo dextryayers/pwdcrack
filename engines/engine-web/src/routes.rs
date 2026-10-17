@@ -367,14 +367,40 @@ async fn get_audit(State(state): State<Arc<AppState>>) -> Json<Vec<auth::AuditEn
 // Mutating routes
 // ---------------------------------------------------------------------------
 
+/// The body of `POST /api/start`.
+///
+/// `target_hashes` is one text field rather than a repeated field because
+/// `serde_urlencoded` cannot build a `Vec` from a form body. Asking for
+/// `Option<Vec<String>>` produces "invalid type: string, expected a sequence"
+/// for every request, which reads as a client bug rather than a shape mismatch.
+/// One field split on whitespace or commas also matches how the CLI reads a hash
+/// file, so the same text works in both places.
 #[derive(Deserialize)]
 pub struct StartRequest {
     pub attack_type: String,
     pub hash_type: Option<String>,
-    pub target_hashes: Option<Vec<String>>,
+    pub target_hashes: Option<String>,
     pub mask: Option<String>,
     pub wordlist: Option<String>,
     pub rules: Option<String>,
+}
+
+impl StartRequest {
+    /// Splits the target field into individual hashes.
+    ///
+    /// Whitespace and commas, because both are natural to type and neither can
+    /// appear inside a hash. Empty entries are dropped so a trailing comma or a
+    /// blank line does not become an empty target.
+    fn targets(&self) -> Vec<String> {
+        self.target_hashes
+            .as_deref()
+            .unwrap_or("")
+            .split(|c: char| c.is_whitespace() || c == ',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    }
 }
 
 /// Starts a real attack.
@@ -400,7 +426,7 @@ async fn start_attack(
     let request = AttackRequest {
         attack_type: req.attack_type.clone(),
         hash_type: req.hash_type.clone().unwrap_or_else(|| "MD5".into()),
-        target_hashes: req.target_hashes.clone().unwrap_or_default(),
+        target_hashes: req.targets(),
         mask: req.mask.clone(),
         wordlist: req.wordlist.clone(),
         rules: req
@@ -473,6 +499,17 @@ async fn pause_attack(State(state): State<Arc<AppState>>) -> Response {
             )
                 .into_response()
         }
+        // A run that already ended cannot be paused. Answering 200 would report
+        // a state change that did not happen, which is the sort of thing this
+        // phase exists to stop.
+        Some(handle) if handle.is_concluded() => {
+            drop(slot);
+            (
+                StatusCode::CONFLICT,
+                Json(ApiResult::refused("the attack has already finished")),
+            )
+                .into_response()
+        }
         Some(handle) => {
             // The handle reports whether the state actually changed, so a second
             // pause is told so rather than reported as a success that did
@@ -504,6 +541,14 @@ async fn resume_attack(State(state): State<Arc<AppState>>) -> Response {
             (
                 StatusCode::CONFLICT,
                 Json(ApiResult::refused("no attack is running")),
+            )
+                .into_response()
+        }
+        Some(handle) if handle.is_concluded() => {
+            drop(slot);
+            (
+                StatusCode::CONFLICT,
+                Json(ApiResult::refused("the attack has already finished")),
             )
                 .into_response()
         }
@@ -579,6 +624,8 @@ pub fn build(state: Arc<AppState>) -> Router {
         .route("/app.js", get(js_handler))
         .nest("/api", api)
         .nest("/dashboard", dashboard())
+        // The dashboard page itself, so /dashboard and /dashboard/ both resolve.
+        .route("/dashboard/", get(dashboard_page))
         .layer(axum::middleware::from_fn(security_headers))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
@@ -919,11 +966,12 @@ function connectWs() {
 }
 
 async function startAttack() {
-    const hashes = el('target-hashes').value.split(/\s+/).filter(Boolean);
+    // One text field. The server splits it, because a form body cannot carry a
+    // repeated field in the shape serde expects.
     const result = await post('/api/start', {
         attack_type: el('attack-type').value,
         hash_type: el('hash-type').value,
-        target_hashes: hashes,
+        target_hashes: el('target-hashes').value,
         mask: el('mask').value,
         wordlist: el('wordlist').value
     });
@@ -1141,13 +1189,33 @@ mod tests {
     }
 
     #[test]
-    fn the_start_route_sends_target_hashes_as_repeated_fields() {
-        // `Form` with `Option<Vec<String>>` needs one field per value, which is
-        // what `URLSearchParams` from a repeated key produces.
+    fn the_start_route_sends_target_hashes_as_one_field() {
+        // `Form` with `Option<Vec<String>>` cannot be deserialised from a form
+        // body at all, so the field is text and the server splits it.
         assert!(JS.contains("target_hashes"), "the form field must be present");
         assert!(
-            JS.contains("target_hashes: hashes"),
-            "the array must be sent, not stringified into one field"
+            JS.contains("target_hashes: el('target-hashes').value"),
+            "the textarea's text must be sent verbatim"
         );
+    }
+
+    /// Splitting is the server's job, so it is tested here rather than assumed.
+    #[test]
+    fn the_target_field_splits_on_whitespace_and_commas() {
+        let make = |s: Option<&str>| StartRequest {
+            attack_type: "bruteforce".into(),
+            hash_type: None,
+            target_hashes: s.map(|v| v.to_string()),
+            mask: Some("?a".into()),
+            wordlist: None,
+            rules: None,
+        };
+        assert_eq!(make(Some("aaa bbb")).targets(), vec!["aaa", "bbb"]);
+        assert_eq!(make(Some("aaa,bbb")).targets(), vec!["aaa", "bbb"]);
+        assert_eq!(make(Some("aaa\n bbb\r\nccc")).targets(), vec!["aaa", "bbb", "ccc"]);
+        assert_eq!(make(Some("aaa,,  ,bbb")).targets(), vec!["aaa", "bbb"], "empty entries are dropped");
+        assert!(make(Some("")).targets().is_empty());
+        assert!(make(Some("   \n ")).targets().is_empty(), "whitespace only is no target");
+        assert!(make(None).targets().is_empty());
     }
 }

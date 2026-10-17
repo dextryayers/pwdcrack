@@ -1,0 +1,141 @@
+name: bridges
+
+# The FFI gate: every language binding, compiled and exercised.
+#
+# Each suite runs against a real toolchain rather than a Rust unit test, because
+# that is the only thing that proves the surface exists for the language it is
+# written in. A C binding tested from Rust links the rlib and resolves names at
+# compile time; it cannot show that a C compiler can call them. The Perl suite
+# caught an XS file that had never been compiled and declared an ABI that did
+# not exist. A Rust test would not have.
+#
+# The scripts are the same ones a developer runs locally:
+#
+#   scripts/test-c-bridge.sh        41 checks, compiled with cc
+#   scripts/test-perl-bridge.sh     31 tests,  built with ExtUtils::MakeMaker
+#   scripts/test-python-bridge.sh   22 tests,  built as a wheel and installed
+#   scripts/test-node-bridge.sh     16 tests,  built as an addon and required
+#
+# Nothing here is mocked. Every suite runs a dictionary attack against a
+# wordlist and checks the recovered password against a digest the test computed
+# itself, so two implementations of MD5 agreeing is not the evidence.
+
+on:
+  push:
+    paths:
+      - "engines/engine-bridge/**"
+      - "src/**"
+      - "Cargo.toml"
+      - "scripts/test-*-bridge.sh"
+      - ".github/workflows/bridges.yml"
+  pull_request:
+    paths:
+      - "engines/engine-bridge/**"
+      - "src/**"
+      - "Cargo.toml"
+      - "scripts/test-*-bridge.sh"
+      - ".github/workflows/bridges.yml"
+  workflow_dispatch:
+
+jobs:
+  c-and-rust:
+    name: C ABI and Rust tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install a C compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The Rust side, including the FFI round trip. Every attack in these runs
+      # on a worker thread with a deadline, so a lock that is taken twice fails
+      # as a test rather than hanging the job.
+      - name: Rust tests
+        run: |
+          cargo test --workspace
+          cargo test -p engine-bridge --features python
+          cargo test -p engine-bridge --features node
+
+      - name: The C suite
+        run: ./scripts/test-c-bridge.sh
+
+  perl:
+    name: Perl bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # libperl-dev supplies xsubpp and the headers. Without it the XS file
+      # cannot be generated at all, which is why the previous binding went
+      # unnoticed: it had never been compiled.
+      - name: Install the Perl development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libperl-dev
+
+      - name: Report the Perl version
+        run: perl -e 'print "perl $^V\n"'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and test the XS binding
+        run: ./scripts/test-perl-bridge.sh
+
+  python:
+    name: Python bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: python -m pip install --upgrade pip maturin
+
+      - name: Report the toolchain
+        run: |
+          maturin --version
+          python --version
+
+      # The script builds a wheel, installs it into a throwaway prefix and runs
+      # the suite against that. Importing from a cargo target directory instead
+      # would pass even if the wheel were missing a file, which is how py.typed
+      # going missing would go unnoticed.
+      - name: Build the wheel and test it
+        run: ./scripts/test-python-bridge.sh
+
+  node:
+    name: Node bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Report the toolchain
+        run: node --version
+
+      # The script copies the cdylib to pwdcrack.node and runs node --test. The
+      # promise tests need a real event loop, which a Rust test cannot provide.
+      - name: Build the addon and test it
+        run: ./scripts/test-node-bridge.sh

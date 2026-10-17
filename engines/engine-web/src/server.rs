@@ -156,14 +156,31 @@ impl AppState {
     }
 
     /// The status derived from the live attack, never from a stored value.
+    ///
+    /// Four questions, in the order they matter:
+    ///
+    ///   1. did the executor refuse? Report that, because an attack that never
+    ///      ran and an attack that is running look identical otherwise.
+    ///   2. did the candidate space run out on its own?
+    ///   3. was it paused?
+    ///   4. otherwise it is running.
+    ///
+    /// Question 1 comes first because a failure recorded late would otherwise be
+    /// masked by a status that still said Running.
     pub async fn status(&self) -> AttackStatus {
         let slot = self.attack.0.lock().await;
         match slot.as_ref() {
             None => AttackStatus::Idle,
             Some(handle) => {
-                if handle.control().is_stopped() {
+                let control = handle.control();
+                if let Some(why) = control.failure() {
+                    return AttackStatus::Error(why);
+                }
+                if control.is_complete() {
                     AttackStatus::Finished
-                } else if handle.control().is_paused() {
+                } else if control.is_stopped() {
+                    AttackStatus::Finished
+                } else if control.is_paused() {
                     AttackStatus::Paused
                 } else {
                     AttackStatus::Running
@@ -326,6 +343,7 @@ mod tests {
     struct Stub {
         total: u64,
         calls: AtomicU64,
+        refuse: bool,
     }
 
     impl Stub {
@@ -333,6 +351,17 @@ mod tests {
             Stub {
                 total,
                 calls: AtomicU64::new(0),
+                refuse: false,
+            }
+        }
+
+        /// Refuses every batch, which is how an executor reports a real problem
+        /// rather than returning no hits.
+        fn failing(total: u64) -> Self {
+            Stub {
+                total,
+                calls: AtomicU64::new(0),
+                refuse: true,
             }
         }
     }
@@ -350,6 +379,9 @@ mod tests {
         }
         fn test_batch(&self, _r: &AttackRequest, c: &[String]) -> Result<BatchOutcome, String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.refuse {
+                return Err("this executor refuses: no device is available".into());
+            }
             Ok(BatchOutcome {
                 tested: c.len() as u64,
                 cracked: vec![Hit {
@@ -501,6 +533,56 @@ mod tests {
         let (tested, cracked) = state.counters().await;
         assert_eq!(tested, 40, "every candidate was tested");
         assert!(cracked >= 1, "the stub reports a hit per batch");
+    }
+
+    /// An executor that refuses must reach the operator as an error, not as a
+    /// run that is going fine.
+    #[tokio::test]
+    async fn a_failed_run_is_reported_as_an_error() {
+        let state = AppState::new(
+            Some("t".into()),
+            WebBindPolicy::default(),
+            // A real keyspace, so the runner reaches test_batch. A zero
+            // keyspace would finish before the executor was ever called, which
+            // is correct behaviour and would make this test pass for the wrong
+            // reason.
+            Arc::new(Stub::failing(1000)),
+        );
+        let handle = crate::attack::spawn(state.executor.clone(), request()).expect("starts");
+        state.attack.replace(handle).await;
+        for _ in 0..200 {
+            if matches!(state.status().await, AttackStatus::Error(_)) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        match state.status().await {
+            AttackStatus::Error(why) => assert!(
+                why.contains("this executor refuses"),
+                "the status must carry the reason: {why}"
+            ),
+            other => panic!("a refusing executor must be an error, got {other}"),
+        }
+    }
+
+    /// A run that exhausts its keyspace must read as Finished, not Running.
+    #[tokio::test]
+    async fn an_exhausted_run_reads_as_finished() {
+        let state = AppState::new(
+            Some("t".into()),
+            WebBindPolicy::default(),
+            Arc::new(Stub::new(8)),
+        );
+        let handle = crate::attack::spawn(state.executor.clone(), request()).expect("starts");
+        state.attack.replace(handle).await;
+        for _ in 0..200 {
+            if state.status().await == AttackStatus::Finished {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(state.status().await, AttackStatus::Finished);
+        assert_eq!(state.counters().await.0, 8, "the work is still counted afterwards");
     }
 
     #[tokio::test]

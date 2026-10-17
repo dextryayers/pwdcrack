@@ -14,8 +14,12 @@ pub mod python;
 #[cfg(feature = "node")]
 pub mod node;
 
-/// Version string for all bridges
-pub const BRIDGE_VERSION: &str = "1.1.0";
+/// Version of the wrapped library, for every bridge.
+///
+/// Derived rather than written down. The constant said "1.1.0" while
+/// `pwdcrack` was 1.2.0, so a C or Python caller comparing versions got an
+/// answer about a release that no longer existed.
+pub const BRIDGE_VERSION: &str = pwdcrack::VERSION;
 
 /// Returns the ABI version for bridge compatibility checks
 pub fn abi_version() -> u32 { 1 }
