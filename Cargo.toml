@@ -44,8 +44,14 @@ repository = "https://github.com/pwdcrack/pwdcrack"
 [features]
 default = ["tier-auto"]
 
-# Auto-detect hardware tier at runtime
-tier-auto = []
+# Auto-detect hardware tier at runtime.
+#
+# `engine-simd` is in the default set because the whole point of the kernel is
+# that a user does not have to know their CPU: the kernels fall back to scalar
+# per candidate hashing on a host without AVX2, and the batch route in
+# `src/hash/simd.rs` refuses to take the vector path there, so enabling this
+# cannot make a run slower or change an answer.
+tier-auto = ["engine-simd"]
 
 # Manual tier selection
 tier-low   = ["simd-scalar", "io-stream", "progress-simple"]

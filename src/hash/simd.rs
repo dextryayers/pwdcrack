@@ -65,6 +65,8 @@ pub(crate) fn batch_matches<'a>(
         return None;
     }
 
+    announce(kernel);
+
     let refs: Vec<&[u8]> = passwords.iter().map(|p| p.as_bytes()).collect();
     let flags = match kernel {
         Kernel::Md5 => engine_simd::dispatch::md5_batch_verify_one(&refs, target_hex),
@@ -74,6 +76,29 @@ pub(crate) fn batch_matches<'a>(
     };
 
     Some(passwords.iter().zip(flags).filter(|(_, ok)| *ok).map(|(pw, _)| *pw).collect())
+}
+
+/// Logs, once per process and per kernel, that the vector path is in use.
+///
+/// `verify_batch` is called for every group of candidates, so logging
+/// unconditionally would emit millions of identical lines. A bitmask makes the
+/// line appear exactly once per kernel, at debug level, which is what `--verbose`
+/// shows. The point is that a user can confirm acceleration is active without
+/// reading the source, and a run that silently fell back to scalar emits nothing.
+#[cfg(feature = "engine-simd")]
+fn announce(kernel: Kernel) {
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    static ANNOUNCED: AtomicU8 = AtomicU8::new(0);
+    let bit = match kernel {
+        Kernel::Md5 => 1u8,
+        Kernel::Md4 => 2u8,
+        Kernel::Ntlm => 4u8,
+        Kernel::None => return,
+    };
+    if ANNOUNCED.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+        log::debug!("SIMD: {kernel:?} batch path uses the AVX2 multi-buffer kernel");
+    }
 }
 
 /// Without the engine there is no kernel, so the caller always runs its loop.

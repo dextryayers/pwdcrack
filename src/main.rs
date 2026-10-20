@@ -11,6 +11,20 @@ use std::sync::Arc;
 
 /// Brings up whichever engines the build has, and logs what each one reported.
 ///
+#[cfg(feature = "engine-simd")]
+fn kernel_summary() -> &'static str {
+    // Only names kernels the host can actually run. The extension check is the
+    // same one the batch route uses, so this line cannot claim acceleration on a
+    // machine that would take the scalar path.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if engine_simd::x86::avx2_md5::avx2_available() {
+            return "MD5, MD4, NTLM (AVX2, 8 lanes)";
+        }
+    }
+    "none, the scalar path is used"
+}
+
 /// `args` is only read by the engine-gpu and engine-power branches below, so with
 /// neither feature enabled it is an unused parameter. The alias keeps the
 /// signature honest without sprinkling underscores at call sites.
@@ -22,6 +36,11 @@ fn init_verbose_engines(args: &Cli) {
     {
         engine_simd::init();
         log::info!("SIMD: {:?}", engine_simd::current_level());
+        // Naming the kernels that are actually reachable, rather than the
+        // extension the CPU reports, is what lets a user confirm acceleration is
+        // active. The extension alone says nothing: SSE4.2 and the SHA extension
+        // are detected and have no kernel behind them.
+        log::info!("SIMD: multi-buffer kernels available for {}", kernel_summary());
     }
 
     #[cfg(feature = "engine-gpu")]
@@ -328,6 +347,11 @@ fn main() {
     // not also run it. Running both would search the whole keyspace twice: the
     // master works its own share of the cluster's queue, and a separate local run
     // would overlap every chunk the cluster assigns.
+    //
+    // The whole block is gated on the feature because `cluster_only` and
+    // `run_cluster_and_report` only exist with it. Without the gate the default
+    // build, which has no distributed engine, failed to compile at all.
+    #[cfg(feature = "engine-distributed")]
     if cluster_only {
         run_cluster_and_report(&detector, &args, _dist_handle);
         #[cfg(feature = "engine-android")]

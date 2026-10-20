@@ -3,6 +3,9 @@ pub mod raw;
 pub mod raw_ext;
 pub mod unix;
 
+/// Batch verification through the SIMD engine, used by `verify_batch`.
+pub(crate) mod simd;
+
 /// Tests that enforce honesty about which hash types can actually be verified.
 #[cfg(test)]
 pub mod audit;

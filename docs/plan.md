@@ -410,14 +410,14 @@ The central technique: process N independent messages in parallel lanes so instr
 
 | Task | Action |
 |------|--------|
-| P4.1.01 | Implement an 8 lane AVX2 MD5 kernel in `engines/engine-simd/src/x86/avx2/md5.rs`. Unroll the message schedule so all 8 lanes advance simultaneously. Use `_mm256_loadu_si256` for input and rotate intrinsics for the step function. |
-| P4.1.02 | Implement an 8 lane AVX2 SHA-1 kernel in `engines/engine-simd/src/x86/avx2/sha1.rs`. |
-| P4.1.03 | Implement an 8 lane AVX2 NTLM kernel in `engines/engine-simd/src/x86/avx2/ntlm.rs`. NTLM is MD4, which is fully parallelisable and gives the largest win. |
-| P4.1.04 | Implement an 8 lane AVX2 SHA-256 kernel in `engines/engine-simd/src/x86/avx2/sha256.rs`. |
-| P4.1.05 | Implement a 16 lane AVX-512 variant of each kernel in `engines/engine-simd/src/x86/avx512/`, gated on `is_x86_feature_detected!("avx512f")`. |
-| P4.1.06 | Implement an 8 lane SSE2 SHA-1 baseline for pre AVX2 hosts. |
-| P4.1.07 | Message padding: implement a shared `pad_messages` helper that takes a slice of variable length messages and produces fixed size 64 byte or 128 byte blocks, handling the length field correctly. This is the part most naive implementations get wrong. |
-| P4.1.08 | Differential test: for 10,000 random inputs of length 0 through 200, assert every lane equals the scalar reference. This catches padding and endianness bugs. |
+| P4.1.01 | Implement an 8 lane AVX2 MD5 kernel in `engines/engine-simd/src/x86/avx2/md5.rs`. Unroll the message schedule so all 8 lanes advance simultaneously. Use `_mm256_loadu_si256` for input and rotate intrinsics for the step function. **done, verified.** `x86/avx2_md5.rs`, 8 lanes, differentially tested for every length 0 through 200. Measured 2.2x the `md-5` crate. See `docs/PHASE4_STATUS.md`. |
+| P4.1.02 | Implement an 8 lane AVX2 SHA-1 kernel in `engines/engine-simd/src/x86/avx2/sha1.rs`. **Not started.** `x86/shani.rs` remains a documented pass through. |
+| P4.1.03 | Implement an 8 lane AVX2 NTLM kernel in `engines/engine-simd/src/x86/avx2/ntlm.rs`. NTLM is MD4, which is fully parallelisable and gives the largest win. **done, verified.** `x86/avx2_md4.rs` is one MD4 kernel serving MD4 and NTLM, tested against RFC 1320 and against the `md4` crate for every length. Measured 1.8x kernel level and 1.87x end to end over 64 NTLM targets. |
+| P4.1.04 | Implement an 8 lane AVX2 SHA-256 kernel in `engines/engine-simd/src/x86/avx2/sha256.rs`. **Not started.** |
+| P4.1.05 | Implement a 16 lane AVX-512 variant of each kernel in `engines/engine-simd/src/x86/avx512/`, gated on `is_x86_feature_detected!("avx512f")`. **Not started.** |
+| P4.1.06 | Implement an 8 lane SSE2 SHA-1 baseline for pre AVX2 hosts. **Not started.** |
+| P4.1.07 | Message padding: implement a shared `pad_messages` helper that takes a slice of variable length messages and produces fixed size 64 byte or 128 byte blocks, handling the length field correctly. This is the part most naive implementations get wrong. **done, verified.** `x86/md_pad.rs` is shared by the MD5 and MD4 kernels, with tests for the 55/56 and 119/120 boundaries, a message that is an exact multiple of 64, and a 60 byte length field. |
+| P4.1.08 | Differential test: for 10,000 random inputs of length 0 through 200, assert every lane equals the scalar reference. This catches padding and endianness bugs. **done, verified.** `x86::tests::ten_thousand_random_messages_agree_with_the_scalar_reference`, covering MD5 and MD4 with arbitrary bytes. |
 
 ### 8.2 P4.2 Hardware Accelerated Single Buffer
 
@@ -441,9 +441,9 @@ The central technique: process N independent messages in parallel lanes so instr
 
 | Task | Action |
 |------|--------|
-| P4.4.01 | Replace the current dispatch, which selects a path by hash name, with a dispatch table keyed by `(HashType, CpuFeatures)`. |
-| P4.4.02 | `CpuFeatures` is computed once per process by `raw-cpuid` and cached in a `OnceLock`. Remove any per call detection. |
-| P4.4.03 | Emit a `log::debug!` line naming the selected kernel per hash type when `--verbose` is set, so users can confirm acceleration is active. |
+| P4.4.01 | Replace the current dispatch, which selects a path by hash name, with a dispatch table keyed by `(HashType, CpuFeatures)`. **Partly done.** `src/hash/simd.rs` now maps a hash type to a kernel (`Md5`, `Md4`, `Ntlm`, `None`) and each cracker passes its own entry, so the choice is per hash type rather than per hash name string. The feature half is a capability check at the top of the same function, not a table keyed by the pair. |
+| P4.4.02 | `CpuFeatures` is computed once per process by `raw-cpuid` and cached in a `OnceLock`. Remove any per call detection. **done.** `detect.rs` caches the level in an `AtomicU8`, and the kernel gate uses `is_x86_feature_detected!`, which `std` caches in its own static, so no CPUID is issued per group. |
+| P4.4.03 | Emit a `log::debug!` line naming the selected kernel per hash type when `--verbose` is set, so users can confirm acceleration is active. **done, verified.** `announce()` in `src/hash/simd.rs` logs once per process per kernel, and `kernel_summary()` in `src/main.rs` names the kernels the host can run at startup. |
 
 ---
 

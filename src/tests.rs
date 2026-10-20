@@ -3,6 +3,120 @@ use crate::hash::raw::Md5Hash;
 use crate::hash::{HashEntry, HashCracker, HashType};
 use crate::potfile::Potfile;
 
+/// Builds a parser-backed entry for a hex digest of the given type.
+fn entry_for(hash_type: HashType, hex_digest: &str) -> HashEntry {
+    HashEntry {
+        raw: hex_digest.to_string(),
+        hash_type,
+        hash_bytes: hex::decode(hex_digest).unwrap_or_default(),
+        salt: None,
+        username: None,
+        cracked: false,
+        password: None,
+    }
+}
+
+/// MD5, MD4 and NTLM hex digests of a candidate, computed with the digest
+/// crates directly rather than through the cracker under test.
+fn md5_of(word: &str) -> String {
+    use md5::Digest;
+    let mut h = md5::Md5::new();
+    h.update(word.as_bytes());
+    hex::encode(h.finalize())
+}
+
+fn md4_of(word: &str) -> String {
+    use md4::Digest;
+    let mut h = md4::Md4::new();
+    h.update(word.as_bytes());
+    hex::encode(h.finalize())
+}
+
+fn ntlm_of(word: &str) -> String {
+    use md4::Digest;
+    let mut h = md4::Md4::new();
+    for unit in word.encode_utf16() {
+        h.update(unit.to_le_bytes());
+    }
+    hex::encode(h.finalize())
+}
+
+#[test]
+fn verify_batch_matches_verify_for_every_kernel_backed_type() {
+    // A group larger than one kernel pass and larger than the attack loop's
+    // group, with the match deliberately not in the first eight lanes, so a
+    // batch that only looked at its first group would miss it.
+    let words: Vec<String> = (0..600).map(|i| format!("word{i:04}")).collect();
+    let refs: Vec<&str> = words.iter().map(|s| s.as_str()).collect();
+    let target_word = "word0513";
+    let mut one_at_a_time = Vec::new();
+
+    let cases: [(&str, Box<dyn HashCracker>, String); 5] = [
+        ("md5", Box::new(Md5Hash), md5_of(target_word)),
+        ("md4", Box::new(crate::hash::app::Md4Hash), md4_of(target_word)),
+        ("ntlm", Box::new(crate::hash::raw::NtlmHash), ntlm_of(target_word)),
+        ("sha1", Box::new(crate::hash::raw::Sha1Hash), {
+            use sha1::Digest;
+            let mut h = sha1::Sha1::new();
+            h.update(target_word.as_bytes());
+            hex::encode(h.finalize())
+        }),
+        ("sha256", Box::new(crate::hash::raw::Sha256Hash), {
+            use sha2::Digest;
+            let mut h = sha2::Sha256::new();
+            h.update(target_word.as_bytes());
+            hex::encode(h.finalize())
+        }),
+    ];
+
+    for (label, cracker, digest) in cases {
+        let entry = entry_for(cracker.hash_type(), &digest);
+        let batched = cracker.verify_batch(&refs, &entry);
+        assert_eq!(batched, vec![target_word], "{label} batch disagreed");
+
+        one_at_a_time.clear();
+        for w in &refs {
+            if cracker.verify(w, &entry) {
+                one_at_a_time.push(*w);
+            }
+        }
+        assert_eq!(batched, one_at_a_time, "{label} batch differs from the per candidate loop");
+    }
+}
+
+#[test]
+fn dictionary_attack_finds_a_match_past_the_first_verification_group() {
+    // 1200 lines is more than two groups of 512, so the matching word is found
+    // only if the loop batches correctly across group boundaries. The wordlist
+    // is written to a real file because that is how the attack reads one, which
+    // is what covers the mmap and streaming paths rather than a synthetic slice.
+    let dir = std::env::temp_dir();
+    let path = dir.join("pwdcrack_test_wordlist_groups.txt");
+    let mut body = String::new();
+    for i in 0..1200 {
+        body.push_str(&format!("word{i:04}\n"));
+    }
+    std::fs::write(&path, body).expect("failed to write the wordlist");
+
+    let target = "word0900";
+    let entry = entry_for(HashType::MD5, &md5_of(target));
+    let results = crate::attack::dictionary::run_dictionary(
+        std::slice::from_ref(&entry),
+        &Md5Hash,
+        path.to_str().unwrap(),
+        None,
+        1,
+        true,
+        false,
+    );
+
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(results.len(), 1, "expected exactly one cracked result");
+    assert_eq!(results[0].password.as_deref(), Some(target));
+    assert_eq!(results[0].original, md5_of(target));
+}
+
 fn detect_type(hash_str: &str) -> HashType {
     Detector::new().detect(hash_str).map(|(c, _)| c.hash_type()).unwrap_or(HashType::Unknown)
 }

@@ -74,3 +74,63 @@ pub fn dispatch_sha256(level: SimdLevel) -> fn(&[u8], &str) -> bool {
     let _ = level;
     scalar_sha256_verify
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// xorshift64*, a deterministic generator with a fixed seed.
+    ///
+    /// A random number dependency is not worth it here, and a fixed seed means a
+    /// failure can be reproduced exactly rather than "sometimes".
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545F4914F6CDD1D)
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n as u64) as usize
+        }
+    }
+
+    #[test]
+    fn ten_thousand_random_messages_agree_with_the_scalar_reference() {
+        // P4.1.08. Lengths 0 through 200, arbitrary content including NUL and
+        // high bytes, both kernels, every lane checked. Lengths above 119 take
+        // the scalar fallback by design, so the cases that exercise the vector
+        // path are 0 through 119 and the rest pin the boundary.
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let messages: Vec<Vec<u8>> = (0..10_000)
+            .map(|_| {
+                let len = rng.below(201);
+                (0..len).map(|_| (rng.next() & 0xff) as u8).collect()
+            })
+            .collect();
+        let refs: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
+
+        let md5 = avx2_md5::md5_batch(&refs);
+        let md4 = avx2_md4::md4_batch(&refs);
+
+        for (i, message) in messages.iter().enumerate() {
+            assert_eq!(
+                md5[i],
+                avx2_md5::scalar_digest(message),
+                "MD5 disagreed at case {i}, length {}",
+                message.len()
+            );
+            assert_eq!(
+                md4[i],
+                avx2_md4::scalar_digest(message),
+                "MD4 disagreed at case {i}, length {}",
+                message.len()
+            );
+        }
+    }
+}
