@@ -12,14 +12,22 @@ use crate::{GpuEngine, pipeline::ComputePipeline, error::GpuError, buffer::{GpuB
 
 const WGSL_MD5: &str = include_str!("shaders/md5.wgsl");
 const WGSL_SHA1: &str = include_str!("shaders/sha1.wgsl");
+const WGSL_SHA224: &str = include_str!("shaders/sha224.wgsl");
 const WGSL_SHA256: &str = include_str!("shaders/sha256.wgsl");
+const WGSL_SHA3_224: &str = include_str!("shaders/sha3_224.wgsl");
+const WGSL_SHA3_256: &str = include_str!("shaders/sha3_256.wgsl");
+const WGSL_SHA3_384: &str = include_str!("shaders/sha3_384.wgsl");
+const WGSL_SHA3_512: &str = include_str!("shaders/sha3_512.wgsl");
 const WGSL_SHA512: &str = include_str!("shaders/sha512.wgsl");
 const WGSL_SHA384: &str = include_str!("shaders/sha384.wgsl");
 const WGSL_SHA512_224: &str = include_str!("shaders/sha512_224.wgsl");
 const WGSL_SHA512_256: &str = include_str!("shaders/sha512_256.wgsl");
 const WGSL_MD4: &str = include_str!("shaders/md4.wgsl");
+const WGSL_RIPEMD128: &str = include_str!("shaders/ripemd128.wgsl");
 const WGSL_RIPEMD160: &str = include_str!("shaders/ripemd160.wgsl");
 const WGSL_BLAKE2B: &str = include_str!("shaders/blake2b.wgsl");
+const WGSL_BLAKE2B_256: &str = include_str!("shaders/blake2b_256.wgsl");
+const WGSL_BLAKE2S_256: &str = include_str!("shaders/blake2s_256.wgsl");
 const WGSL_MD2: &str = include_str!("shaders/md2.wgsl");
 
 /// Bytes per packed candidate: 16 message words and the byte length.
@@ -30,27 +38,38 @@ pub const MAX_MESSAGE: usize = 64;
 const TARGET_BYTES: usize = 64;
 
 /// Hash types that have a working kernel.
-pub const HASH_TYPES: [&str; 12] = [
+pub const HASH_TYPES: [&str; 20] = [
     "md2",
     "md5",
     "md4",
     "ntlm",
     "sha1",
+    "sha224",
     "sha256",
+    "sha3_224",
+    "sha3_256",
+    "sha3_384",
+    "sha3_512",
     "sha384",
     "sha512",
     "sha512_224",
     "sha512_256",
+    "ripemd128",
     "ripemd160",
     "blake2b",
+    "blake2b_256",
+    "blake2s_256",
 ];
 
 /// Digest size in bytes for a supported hash type.
 pub fn digest_len(hash_type: &str) -> Option<usize> {
     match hash_type {
-        "md2" | "md5" | "md4" | "ntlm" => Some(16),
+        "md2" | "md5" | "md4" | "ntlm" | "ripemd128" => Some(16),
         "sha1" | "ripemd160" => Some(20),
-        "sha256" | "sha512_256" => Some(32),
+        "sha256" | "sha512_256" | "sha3_256" | "blake2b_256" | "blake2s_256" => Some(32),
+        "sha224" | "sha3_224" => Some(28),
+        "sha3_384" => Some(48),
+        "sha3_512" => Some(64),
         "sha384" => Some(48),
         "sha512" | "blake2b" => Some(64),
         "sha512_224" => Some(28),
@@ -78,18 +97,26 @@ impl GpuCracker {
     }
 
     pub async fn new(engine: Arc<GpuEngine>) -> Self {
-        let sources: [(&str, &str); 11] = [
+        let sources: [(&str, &str); 19] = [
             ("md2", WGSL_MD2),
             ("md5", WGSL_MD5),
             ("sha1", WGSL_SHA1),
+            ("sha224", WGSL_SHA224),
             ("sha256", WGSL_SHA256),
+            ("sha3_224", WGSL_SHA3_224),
+            ("sha3_256", WGSL_SHA3_256),
+            ("sha3_384", WGSL_SHA3_384),
+            ("sha3_512", WGSL_SHA3_512),
             ("sha384", WGSL_SHA384),
             ("sha512", WGSL_SHA512),
             ("sha512_224", WGSL_SHA512_224),
             ("sha512_256", WGSL_SHA512_256),
             ("md4", WGSL_MD4),
+            ("ripemd128", WGSL_RIPEMD128),
             ("ripemd160", WGSL_RIPEMD160),
             ("blake2b", WGSL_BLAKE2B),
+            ("blake2b_256", WGSL_BLAKE2B_256),
+            ("blake2s_256", WGSL_BLAKE2S_256),
         ];
 
         let mut pipelines = Vec::new();
@@ -448,8 +475,33 @@ impl GpuCracker {
                 h.update(password);
                 Some(h.finalize().to_vec())
             }
+            "sha224" => {
+                let mut h = sha2::Sha224::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
             "sha256" => {
                 let mut h = sha2::Sha256::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha3_224" => {
+                let mut h = sha3::Sha3_224::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha3_256" => {
+                let mut h = sha3::Sha3_256::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha3_384" => {
+                let mut h = sha3::Sha3_384::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha3_512" => {
+                let mut h = sha3::Sha3_512::new();
                 h.update(password);
                 Some(h.finalize().to_vec())
             }
@@ -487,6 +539,11 @@ impl GpuCracker {
                 }
                 Err(_) => None,
             },
+            "ripemd128" => {
+                let mut h = ripemd::Ripemd128::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
             "ripemd160" => {
                 let mut h = ripemd::Ripemd160::new();
                 h.update(password);
@@ -494,6 +551,16 @@ impl GpuCracker {
             }
             "blake2b" => {
                 let mut h = blake2::Blake2b512::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "blake2b_256" => {
+                let mut h = blake2::Blake2b::<blake2::digest::consts::U32>::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "blake2s_256" => {
+                let mut h = blake2::Blake2s256::new();
                 h.update(password);
                 Some(h.finalize().to_vec())
             }

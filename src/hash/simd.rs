@@ -40,6 +40,14 @@ pub(crate) enum Kernel {
     Sha1,
     /// GPU SHA-256.
     Sha256,
+    /// GPU SHA3-224.
+    Sha3_224,
+    /// GPU SHA3-256.
+    Sha3_256,
+    /// GPU SHA3-384.
+    Sha3_384,
+    /// GPU SHA3-512.
+    Sha3_512,
     /// GPU SHA-384.
     Sha384,
     /// GPU SHA-512.
@@ -48,6 +56,8 @@ pub(crate) enum Kernel {
     Sha512_224,
     /// GPU SHA-512/256.
     Sha512_256,
+    /// GPU RIPEMD-128.
+    Ripemd128,
     /// GPU RIPEMD-160.
     Ripemd160,
     /// GPU BLAKE2b-512.
@@ -72,10 +82,15 @@ impl Kernel {
             Kernel::Ntlm => Some("ntlm"),
             Kernel::Sha1 => Some("sha1"),
             Kernel::Sha256 => Some("sha256"),
+            Kernel::Sha3_224 => Some("sha3_224"),
+            Kernel::Sha3_256 => Some("sha3_256"),
+            Kernel::Sha3_384 => Some("sha3_384"),
+            Kernel::Sha3_512 => Some("sha3_512"),
             Kernel::Sha384 => Some("sha384"),
             Kernel::Sha512 => Some("sha512"),
             Kernel::Sha512_224 => Some("sha512_224"),
             Kernel::Sha512_256 => Some("sha512_256"),
+            Kernel::Ripemd128 => Some("ripemd128"),
             Kernel::Ripemd160 => Some("ripemd160"),
             Kernel::Blake2b => Some("blake2b"),
             Kernel::None => None,
@@ -221,10 +236,15 @@ fn announce_gpu(name: &str) {
         "ntlm" => 1 << 2,
         "sha1" => 1 << 3,
         "sha256" => 1 << 4,
+        "sha3_224" => 1 << 13,
+        "sha3_256" => 1 << 14,
+        "sha3_384" => 1 << 15,
+        "sha3_512" => 1 << 16,
         "sha384" => 1 << 5,
         "sha512" => 1 << 6,
         "sha512_224" => 1 << 7,
         "sha512_256" => 1 << 8,
+        "ripemd128" => 1 << 12,
         "ripemd160" => 1 << 9,
         "blake2b" => 1 << 10,
         _ => return,
@@ -408,10 +428,15 @@ mod tests {
         };
         let sha1_target = hex::encode(sha1::Sha1::digest(password));
         let sha256_target = hex::encode(sha2::Sha256::digest(password));
+        let sha3_224_target = hex::encode(sha3::Sha3_224::digest(password));
+        let sha3_256_target = hex::encode(sha3::Sha3_256::digest(password));
+        let sha3_384_target = hex::encode(sha3::Sha3_384::digest(password));
+        let sha3_512_target = hex::encode(sha3::Sha3_512::digest(password));
         let sha384_target = hex::encode(sha2::Sha384::digest(password));
         let sha512_target = hex::encode(sha2::Sha512::digest(password));
         let sha512_224_target = hex::encode(sha2::Sha512_224::digest(password));
         let sha512_256_target = hex::encode(sha2::Sha512_256::digest(password));
+        let ripemd128_target = hex::encode(ripemd::Ripemd128::digest(password));
         let ripemd_target = hex::encode(ripemd::Ripemd160::digest(password));
         let blake2b_target = hex::encode(blake2::Blake2b512::digest(password));
 
@@ -422,10 +447,15 @@ mod tests {
             (Kernel::Ntlm, ntlm_target),
             (Kernel::Sha1, sha1_target),
             (Kernel::Sha256, sha256_target),
+            (Kernel::Sha3_224, sha3_224_target),
+            (Kernel::Sha3_256, sha3_256_target),
+            (Kernel::Sha3_384, sha3_384_target),
+            (Kernel::Sha3_512, sha3_512_target),
             (Kernel::Sha384, sha384_target),
             (Kernel::Sha512, sha512_target),
             (Kernel::Sha512_224, sha512_224_target),
             (Kernel::Sha512_256, sha512_256_target),
+            (Kernel::Ripemd128, ripemd128_target),
             (Kernel::Ripemd160, ripemd_target),
             (Kernel::Blake2b, blake2b_target),
         ] {
