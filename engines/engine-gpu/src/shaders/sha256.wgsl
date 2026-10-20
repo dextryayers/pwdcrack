@@ -115,10 +115,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let byte_offset = c.len % 4u;
     let keep = (1u << (byte_offset * 8u)) - 1u;
     w[byte_index] = (w[byte_index] & keep) | (0x80u << (byte_offset * 8u));
+    // The 64 bit length is big endian. The block is assembled as little endian
+    // words, so the length word has to be byte swapped like the message words.
     if (c.len < 56u) {
-        w[15] = c.len * 8u;
+        w[15] = bswap(c.len * 8u);
     }
-    w[31] = c.len * 8u;
+    w[31] = bswap(c.len * 8u);
 
     var st = array<u32, 8>(
         0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,

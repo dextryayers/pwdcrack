@@ -107,8 +107,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     v[12] = xor(v[12], U64(0u, c.len));
     v[14] = xor(v[14], U64(0xffffffffu, 0xffffffffu));
 
-    // Build the 128 byte block: the message, a 0x80 terminator, then zeros. The
-    // length is carried in v[12], not in the block, so there is no length field.
+    // BLAKE2 pads the final block with zeros only: no 0x80 terminator and no
+    // length field. The byte count is carried in v[12].
     var w: array<u32, 32>;
     for (var i = 0u; i < 16u; i = i + 1u) {
         w[i] = c.data[i];
@@ -116,10 +116,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var i = 16u; i < 32u; i = i + 1u) {
         w[i] = 0u;
     }
-    let byte_index = c.len / 4u;
-    let byte_offset = c.len % 4u;
-    let keep = (1u << (byte_offset * 8u)) - 1u;
-    w[byte_index] = (w[byte_index] & keep) | (0x80u << (byte_offset * 8u));
 
     var m: array<U64, 16>;
     for (var i = 0u; i < 16u; i = i + 1u) {

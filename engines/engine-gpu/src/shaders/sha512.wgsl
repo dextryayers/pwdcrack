@@ -184,8 +184,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let byte_offset = c.len % 4u;
     let keep = (1u << (byte_offset * 8u)) - 1u;
     w[byte_index] = (w[byte_index] & keep) | (0x80u << (byte_offset * 8u));
-    // 128 bit length field: the high 96 bits are zero for a message this short.
-    w[31] = c.len * 8u;
+    // The 128 bit length is big endian; the high 96 bits are zero for a message
+    // this short. The block is assembled as little endian words, so the low word
+    // of the length is byte swapped.
+    w[31] = bswap(c.len * 8u);
 
     var m: array<U64, 16>;
     for (var i = 0u; i < 16u; i = i + 1u) {
