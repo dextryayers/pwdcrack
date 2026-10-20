@@ -115,8 +115,8 @@ impl GpuCracker {
 
         let pipeline_layout = engine.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(&format!("{label} pipeline layout")),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
         });
 
         let pipeline = engine.device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -207,7 +207,7 @@ impl GpuCracker {
             let readback_slice = readback_buf.buffer.slice(..);
             let (tx, rx) = std::sync::mpsc::channel();
             readback_slice.map_async(MapMode::Read, move |r| { let _ = tx.send(r); });
-            self.engine.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).ok();
+            self.engine.device.poll(wgpu::PollType::Wait).ok();
 
             if rx.recv().is_err() {
                 pool.return_buffer(input_buf, PoolType::Storage);
@@ -216,15 +216,8 @@ impl GpuCracker {
                 return Err(GpuError::Timeout);
             }
 
-            let data = match readback_slice.get_mapped_range() {
-                Ok(view) => view,
-                Err(_) => {
-                    pool.return_buffer(input_buf, PoolType::Storage);
-                    pool.return_buffer(output_buf, PoolType::Storage);
-                    pool.return_buffer(target_buf, PoolType::Storage);
-                    return Err(GpuError::Timeout);
-                }
-            };
+            // wgpu 26 returns the view directly; the fallible form is gone.
+            let data = readback_slice.get_mapped_range();
             let r: Vec<bool> = data.chunks(4)
                 .map(|chunk| {
                     if chunk.len() < 4 { return false; }
