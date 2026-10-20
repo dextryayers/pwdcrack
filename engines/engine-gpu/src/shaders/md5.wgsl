@@ -111,10 +111,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let byte_offset = c.len % 4u;
     let keep = (1u << (byte_offset * 8u)) - 1u;
     w[byte_index] = (w[byte_index] & keep) | (0x80u << (byte_offset * 8u));
+    // MD5 family length field: 64 bit little endian, so the low word goes in
+    // word 14 of the block and the high word in word 15.
     if (c.len < 56u) {
-        w[15] = c.len * 8u;
+        w[14] = c.len * 8u;
     }
-    w[31] = c.len * 8u;
+    w[30] = c.len * 8u;
 
     var st = array<u32, 4>(0x67452301u, 0xefcdab89u, 0x98badcfeu, 0x10325476u);
 
