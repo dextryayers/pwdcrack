@@ -5,6 +5,8 @@ pub mod buffer;
 pub mod error;
 pub mod scheduler;
 
+mod hw;
+
 use std::sync::Arc;
 use wgpu::*;
 
@@ -22,10 +24,10 @@ impl GpuEngine {
 
     pub fn info(&self) -> String {
         format!(
-            "{} ({}): {} VRAM",
+            "{} ({}): {}",
             self.adapter.name,
             if self.is_integrated { "iGPU" } else { "dGPU" },
-            self.adapter.vram_mb(),
+            self.adapter.memory_summary(),
         )
     }
 
@@ -34,8 +36,9 @@ impl GpuEngine {
     }
 
     pub fn wait(&self) {
-        // wgpu 30 handles submission tracking internally.
-        // No explicit poll needed: GPU work completes asynchronously.
+        // wgpu 30 tracks submission internally; there is no device poll call in
+        // this API. Work completes when the queue is polled by the next submit or
+        // when the caller maps a buffer, which every read here does.
     }
 }
 
@@ -45,14 +48,45 @@ pub struct AdapterInfo {
     pub driver: String,
     pub backend: Backend,
     pub device_type: DeviceType,
+    /// PCI vendor id reported by the backend, or 0 when it reports none.
+    pub vendor: u32,
+    /// PCI device id reported by the backend, or 0 when it reports none.
+    pub device: u32,
+    /// Dedicated video memory in bytes, read from the kernel. `None` when the
+    /// platform or the driver does not report it.
+    pub vram_bytes: Option<u64>,
+    /// System memory the GPU can address, in bytes, read from the kernel.
+    pub gtt_bytes: Option<u64>,
 }
 
 impl AdapterInfo {
-    pub fn vram_mb(&self) -> u64 {
-        match self.device_type {
-            DeviceType::DiscreteGpu => 8192,
-            DeviceType::IntegratedGpu => 512,
-            _ => 128,
+    /// Dedicated video memory in mebibytes, or `None` when it is not known.
+    ///
+    /// An earlier version of this method returned 8192, 512 or 128 depending on
+    /// the device type. Those values were invented here, not read from the
+    /// hardware, and are the reason this returns an `Option` now: an unknown size
+    /// has to be able to say so.
+    pub fn vram_mb(&self) -> Option<u64> {
+        self.vram_bytes.map(|b| b / (1024 * 1024))
+    }
+
+    /// System memory the GPU can address, in mebibytes, or `None`.
+    pub fn gtt_mb(&self) -> Option<u64> {
+        self.gtt_bytes.map(|b| b / (1024 * 1024))
+    }
+
+    /// One line describing the memory the kernel reports.
+    ///
+    /// Unknown sizes are printed as `unknown` rather than left out, so a log line
+    /// that omits a number is never mistaken for a complete report.
+    pub fn memory_summary(&self) -> String {
+        let vram = match self.vram_mb() {
+            Some(m) => format!("{m} MiB dedicated"),
+            None => "dedicated memory unknown".to_string(),
+        };
+        match self.gtt_mb() {
+            Some(m) => format!("{vram}, {m} MiB shared"),
+            None => vram,
         }
     }
 }

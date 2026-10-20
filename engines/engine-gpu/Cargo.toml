@@ -5,9 +5,10 @@ edition = "2024"
 description = "GPU-accelerated hash cracking via wgpu/Vulkan: pure Rust, no C"
 
 [dependencies]
-wgpu = "30"
-naga = "30"
-naga_oil = "0.23"
+# 26.0.1 is the newest release whose `rust-version` (1.84) the toolchain here
+# satisfies. wgpu 27 and later need 1.88, wgpu 30 needs 1.87 through naga's use
+# of unstable `const Vec::len`. Do not bump without checking `rustc --version`.
+wgpu = "26.0.1"
 pollster = "0.4"
 log = "0.4"
 hex = "0.4"
@@ -17,3 +18,8 @@ md-5 = "0.10"
 sha2 = "0.10"
 sha-1 = "0.10"
 md4 = "0.10"
+
+[dev-dependencies]
+# Parses and validates every `.wgsl` file in `src/shaders` without a GPU, so the
+# shader suite is checked on hosts that cannot create a device.
+naga = { version = "26", features = ["wgsl-in"] }
