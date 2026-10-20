@@ -95,6 +95,15 @@ impl ClusterJob {
         let path = path.as_ref();
         let body = std::fs::read(path)
             .map_err(|e| format!("cannot read the wordlist {}: {e}", path.display()))?;
+        // The canonical form is the candidate set joined by newlines, and the
+        // digest is taken over *that*, not over the file's bytes.
+        //
+        // The first version hashed the file and shipped `words.join("\n")`, which
+        // differ by the trailing newline, so every worker refused the wordlist the
+        // master had just signed: "expected 320045 bytes, got 320044". The master
+        // checked it too and should have refused at submit time, which means the
+        // check that mattered was not where it was thought to be. Both now digest
+        // the same string, and there is a test that submits and verifies.
         let text = String::from_utf8_lossy(&body);
         let words: Vec<String> = text
             .lines()
@@ -103,11 +112,12 @@ impl ClusterJob {
         if words.is_empty() {
             return Err(format!("{} has no lines", path.display()));
         }
+        let canonical = words.join("\n");
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "wordlist".to_string());
-        let manifest = WordlistManifest::from_bytes(name, text.as_bytes());
+        let manifest = WordlistManifest::from_bytes(name, canonical.as_bytes());
         let digest = manifest.sha256.clone();
         Ok(ClusterJob {
             targets,
@@ -325,7 +335,7 @@ impl DistributedConfig {
         let listen_addr = decision.addr;
         let transport = self.transport()?;
 
-        if self.is_master() {
+        let master = if self.is_master() {
             let built = master::MasterNode::with_policy(
                 &listen_addr.to_string(),
                 CheckpointStore::new(&self.checkpoint_path),
@@ -363,6 +373,12 @@ impl DistributedConfig {
 
                 if let Err(e) = local.run_local_worker(&name).await {
                     log::error!("Cluster master local worker '{name}' stopped: {e}");
+                }
+                // The periodic writer may never have fired: a small job finishes
+                // in less than one interval. Saving here means a finished run
+                // always leaves a record of what it found.
+                if let Err(e) = master.save_checkpoint().await {
+                    log::error!("{e}");
                 }
                 let cracked = master.cracked().await;
                 let unsearched = master.free_total().await;
@@ -412,8 +428,17 @@ impl DistributedConfig {
     }
 }
 
-fn hostname() -> String {
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string())
+/// This node's name in the cluster.
+///
+/// Falls back to the process id rather than a fixed string. Several workers with
+/// no `HOSTNAME` all named themselves `unknown`, which made them collide in the
+/// master's worker table: one entry, whichever connected last, and the others
+/// invisible. The pid is unique among live processes, which is all this needs.
+pub fn hostname() -> String {
+    std::env::var("HOSTNAME")
+        .ok()
+        .filter(|h| !h.trim().is_empty())
+        .unwrap_or_else(|| format!("node-{}", std::process::id()))
 }
 
 #[cfg(test)]
@@ -555,6 +580,37 @@ mod tests {
         assert_eq!(job.keyspace().unwrap(), 4);
         assert_eq!(job.wordlist.as_ref().unwrap().1.len(), 4);
         assert!(matches!(job.attack, AttackType::Inline { .. }));
+    }
+
+    /// The defect the live run found: the digest was taken over the file's bytes
+    /// and the words were shipped joined by newlines, which differ by the
+    /// trailing newline, so every worker refused the wordlist the master had
+    /// signed a moment earlier.
+    #[tokio::test]
+    async fn the_manifest_covers_exactly_the_bytes_that_travel() {
+        for body in [
+            &b"a\nb\nc\nd\n"[..],
+            &b"a\nb\nc\nd"[..],
+            &b"a\r\nb\r\n"[..],
+            &b"\n\n\n"[..].get(..0).unwrap_or(b""),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path().join("w.txt");
+            std::fs::write(&p, body).unwrap();
+            let job = ClusterJob::dictionary(
+                &p,
+                vec![],
+                vec![TargetHash::new("MD5", "5d41402abc4b2a76b9719d911017c592")],
+            )
+            .unwrap();
+            let (manifest, words) = job.wordlist.as_ref().expect("a wordlist job ships one");
+            assert!(
+                manifest.verify(words.join("\n").as_bytes()).is_ok(),
+                "manifest {:?} does not describe the {} words it ships",
+                manifest.sha256,
+                words.len()
+            );
+        }
     }
 
     #[test]

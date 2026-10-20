@@ -720,6 +720,33 @@ pub async fn handle_worker(
                     break Err(format!("{peer} sent an unusable worker name"));
                 }
                 worker_name = node_name.clone();
+
+                // Two workers with one name would silently share an identity: one
+                // entry in the table, whichever connected last, and the other
+                // holding batches the master believes belong to its twin.
+                let taken = shared
+                    .workers
+                    .lock()
+                    .await
+                    .get(&node_name)
+                    .map(|i| i.addr != peer)
+                    .unwrap_or(false);
+                if taken {
+                    let detail = format!(
+                        "worker name '{node_name}' is already registered on another \
+                         connection. Give each node a distinct --node-name."
+                    );
+                    let _ = codec::write_msg(
+                        &mut link,
+                        &Message::Error {
+                            code: ErrorCode::NotAdmitted,
+                            detail: detail.clone(),
+                        },
+                    )
+                    .await;
+                    break Err(detail);
+                }
+
                 log::info!(
                     "Worker '{node_name}' joined: tier={tier}, gpu={}, fpga={}, threads={}",
                     caps.gpu, caps.fpga, caps.max_threads

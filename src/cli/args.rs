@@ -134,6 +134,14 @@ pub struct Cli {
     #[arg(long, global = true, help_heading = "Engines", help = "Pin the master's TLS certificate on first use instead of being given a CA. Refused for a master that is not on loopback")]
     pub tls_tofu: bool,
 
+    /// This node's name in the cluster.
+    ///
+    /// Two workers with the same name share one entry in the master's worker
+    /// table, so the master refuses the second one rather than letting it steal
+    /// batches. Defaults to `HOSTNAME` and then to the process id.
+    #[arg(long, global = true, value_name = "NAME", help_heading = "Engines", help = "Name this node uses in the cluster. Must be distinct across workers; defaults to HOSTNAME")]
+    pub node_name: Option<String>,
+
     /// Sustained handshake attempts accepted from one source address.
     #[arg(long, global = true, default_value_t = 2.0, value_name = "RATE", help_heading = "Engines", help = "Cluster handshake attempts accepted per second from one source address before it is throttled")]
     pub handshake_rate: f64,

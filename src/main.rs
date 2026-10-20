@@ -166,6 +166,9 @@ fn main() {
             chunk_seconds: args.chunk_seconds,
             ..Default::default()
         };
+        if let Some(n) = &args.node_name {
+            cfg.node_name = n.clone();
+        }
 
         if args.tls {
             cfg.tls = engine_distributed::TlsMode::Enabled {
