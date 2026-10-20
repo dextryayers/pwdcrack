@@ -10,6 +10,11 @@ use engine_gpu::cracker::{self, GpuCracker, HASH_TYPES};
 fn digest(hash_type: &str, password: &[u8]) -> Vec<u8> {
     use sha2::Digest;
     match hash_type {
+        "md2" => {
+            let mut h = md2::Md2::new();
+            h.update(password);
+            h.finalize().to_vec()
+        }
         "md5" => {
             let mut h = md5::Md5::new();
             h.update(password);
@@ -186,7 +191,9 @@ fn gpu_matches_published_vectors() {
     };
     let cracker = pollster::block_on(GpuCracker::new(std::sync::Arc::new(engine)));
 
-    let vectors: [(&str, &[u8], &str); 12] = [
+    let vectors: [(&str, &[u8], &str); 14] = [
+        ("md2", b"", "8350e5a3e24c153df2275c9f80692773"),
+        ("md2", b"abc", "da853b0d3f88d99b30283a69e6ded6bb"),
         ("md5", b"", "d41d8cd98f00b204e9800998ecf8427e"),
         ("md5", b"abc", "900150983cd24fb0d6963f7d28e17f72"),
         ("md4", b"abc", "a448017aaf21d8525fc10ae87aa6729d"),

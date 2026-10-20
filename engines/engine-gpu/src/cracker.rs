@@ -20,6 +20,7 @@ const WGSL_SHA512_256: &str = include_str!("shaders/sha512_256.wgsl");
 const WGSL_MD4: &str = include_str!("shaders/md4.wgsl");
 const WGSL_RIPEMD160: &str = include_str!("shaders/ripemd160.wgsl");
 const WGSL_BLAKE2B: &str = include_str!("shaders/blake2b.wgsl");
+const WGSL_MD2: &str = include_str!("shaders/md2.wgsl");
 
 /// Bytes per packed candidate: 16 message words and the byte length.
 pub const CANDIDATE_BYTES: usize = 68;
@@ -29,7 +30,8 @@ pub const MAX_MESSAGE: usize = 64;
 const TARGET_BYTES: usize = 64;
 
 /// Hash types that have a working kernel.
-pub const HASH_TYPES: [&str; 11] = [
+pub const HASH_TYPES: [&str; 12] = [
+    "md2",
     "md5",
     "md4",
     "ntlm",
@@ -46,7 +48,7 @@ pub const HASH_TYPES: [&str; 11] = [
 /// Digest size in bytes for a supported hash type.
 pub fn digest_len(hash_type: &str) -> Option<usize> {
     match hash_type {
-        "md5" | "md4" | "ntlm" => Some(16),
+        "md2" | "md5" | "md4" | "ntlm" => Some(16),
         "sha1" | "ripemd160" => Some(20),
         "sha256" | "sha512_256" => Some(32),
         "sha384" => Some(48),
@@ -76,7 +78,8 @@ impl GpuCracker {
     }
 
     pub async fn new(engine: Arc<GpuEngine>) -> Self {
-        let sources: [(&str, &str); 10] = [
+        let sources: [(&str, &str); 11] = [
+            ("md2", WGSL_MD2),
             ("md5", WGSL_MD5),
             ("sha1", WGSL_SHA1),
             ("sha256", WGSL_SHA256),
@@ -430,6 +433,11 @@ impl GpuCracker {
     fn verify_on_cpu(&self, hash_type: &str, password: &[u8], target_hex: &str) -> bool {
         use sha2::Digest;
         let computed: Option<Vec<u8>> = match hash_type {
+            "md2" => {
+                let mut h = md2::Md2::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
             "md5" => {
                 let mut h = md5::Md5::new();
                 h.update(password);

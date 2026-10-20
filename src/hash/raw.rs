@@ -188,10 +188,25 @@ pub struct Md2Hash;
 impl HashCracker for Md2Hash {
     fn hash_type(&self) -> HashType { HashType::MD2 }
     fn name(&self) -> &'static str { "MD2" }
-    fn verify(&self, _: &str, _: &HashEntry) -> bool { false }
-    /// Recognises the format but cannot compute the digest.
-    /// Reports no matches by design instead of pretending to try.
-    fn is_verifiable(&self) -> bool { false }
+    fn verify(&self, password: &str, entry: &HashEntry) -> bool {
+        use md2::Digest;
+        let mut hasher = md2::Md2::new();
+        hasher.update(password.as_bytes());
+        let result = hasher.finalize();
+        if entry.raw.len() != 32 { return false; }
+        let mut buf = [0u8; 32];
+        hex::encode_to_slice(result, &mut buf).ok();
+        entry.raw.as_bytes().eq_ignore_ascii_case(&buf)
+    }
+
+    fn verify_batch<'a>(&self, passwords: &[&'a str], entry: &HashEntry) -> Vec<&'a str> {
+        if let Some(hits) =
+            crate::hash::simd::batch_matches(crate::hash::simd::Kernel::Md2, passwords, &entry.raw)
+        {
+            return hits;
+        }
+        passwords.iter().filter(|pw| self.verify(pw, entry)).copied().collect()
+    }
 
     fn clone_box(&self) -> Box<dyn HashCracker> { Box::new(Self) }
 }

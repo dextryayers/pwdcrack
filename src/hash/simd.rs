@@ -28,6 +28,8 @@
 pub(crate) enum Kernel {
     /// No kernel handles this hash type in the engine.
     None,
+    /// GPU MD2.
+    Md2,
     /// AVX2 multi-buffer MD5.
     Md5,
     /// AVX2 multi-buffer MD4.
@@ -64,6 +66,7 @@ impl Kernel {
     /// The name `engine-gpu` uses for this hash type, when it supports it.
     fn gpu_name(self) -> Option<&'static str> {
         match self {
+            Kernel::Md2 => Some("md2"),
             Kernel::Md5 => Some("md5"),
             Kernel::Md4 => Some("md4"),
             Kernel::Ntlm => Some("ntlm"),
@@ -212,6 +215,7 @@ fn announce_gpu(name: &str) {
 
     static ANNOUNCED: AtomicU64 = AtomicU64::new(0);
     let bit = match name {
+        "md2" => 1 << 11,
         "md5" => 1 << 0,
         "md4" => 1 << 1,
         "ntlm" => 1 << 2,
@@ -392,6 +396,7 @@ mod tests {
         let refs: Vec<&str> = words.iter().map(|s| s.as_str()).collect();
         let password = b"candidate4137";
 
+        let md2_target = hex::encode(md2::Md2::digest(password));
         let md5_target = hex::encode(md5::Md5::digest(password));
         let md4_target = hex::encode(md4::Md4::digest(password));
         let ntlm_target = {
@@ -411,6 +416,7 @@ mod tests {
         let blake2b_target = hex::encode(blake2::Blake2b512::digest(password));
 
         for (kernel, target) in [
+            (Kernel::Md2, md2_target),
             (Kernel::Md5, md5_target),
             (Kernel::Md4, md4_target),
             (Kernel::Ntlm, ntlm_target),
