@@ -25,8 +25,23 @@ fn digest(hash_type: &str, password: &[u8]) -> Vec<u8> {
             h.update(password);
             h.finalize().to_vec()
         }
+        "sha384" => {
+            let mut h = sha2::Sha384::new();
+            h.update(password);
+            h.finalize().to_vec()
+        }
         "sha512" => {
             let mut h = sha2::Sha512::new();
+            h.update(password);
+            h.finalize().to_vec()
+        }
+        "sha512_224" => {
+            let mut h = sha2::Sha512_224::new();
+            h.update(password);
+            h.finalize().to_vec()
+        }
+        "sha512_256" => {
+            let mut h = sha2::Sha512_256::new();
             h.update(password);
             h.finalize().to_vec()
         }
@@ -171,14 +186,17 @@ fn gpu_matches_published_vectors() {
     };
     let cracker = pollster::block_on(GpuCracker::new(std::sync::Arc::new(engine)));
 
-    let vectors: [(&str, &[u8], &str); 9] = [
+    let vectors: [(&str, &[u8], &str); 12] = [
         ("md5", b"", "d41d8cd98f00b204e9800998ecf8427e"),
         ("md5", b"abc", "900150983cd24fb0d6963f7d28e17f72"),
         ("md4", b"abc", "a448017aaf21d8525fc10ae87aa6729d"),
         ("ntlm", b"password", "8846f7eaee8fb117ad06bdd830b7586c"),
         ("sha1", b"abc", "a9993e364706816aba3e25717850c26c9cd0d89d"),
         ("sha256", b"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        ("sha384", b"abc", "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"),
         ("sha512", b"abc", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"),
+        ("sha512_224", b"abc", "4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa"),
+        ("sha512_256", b"abc", "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23"),
         ("ripemd160", b"abc", "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"),
         ("blake2b", b"abc", "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"),
     ];

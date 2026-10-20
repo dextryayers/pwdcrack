@@ -45,10 +45,10 @@ fn init_verbose_engines(args: &Cli) {
 
     #[cfg(feature = "engine-gpu")]
     if args.gpu {
-        match pollster::block_on(engine_gpu::GpuEngine::init()) {
-            Some(gpu) => log::info!("GPU: {}", gpu.info()),
-            None => log::warn!("GPU: no compatible device found"),
-        }
+        // The device is created once, in `main`, and installed as the batch
+        // verifier. Creating a second one here only to log its name would double
+        // the VRAM use and leave two live devices for the rest of the run.
+        log::debug!("GPU: device creation is logged by the batch installer in main");
     }
 
     #[cfg(feature = "engine-power")]
@@ -137,9 +137,24 @@ fn main() {
     // ── Always-init engines ──
     #[cfg(feature = "engine-gpu")]
     let _gpu_engine = if args.gpu {
-        match pollster::block_on(engine_gpu::GpuEngine::init()) {
-            Some(gpu) => Some(std::sync::Arc::new(gpu)),
-            None => None,
+        match engine_gpu::GpuEngine::init_blocking() {
+            Some(gpu) => {
+                let gpu = std::sync::Arc::new(gpu);
+                if !args.quiet {
+                    eprintln!("[*] GPU: {}", gpu.info());
+                }
+                let count = pwdcrack::hash::install_gpu_engine(std::sync::Arc::clone(&gpu));
+                if !args.quiet {
+                    eprintln!("[*] GPU: {count} hash kernels ready for batch verification");
+                }
+                Some(gpu)
+            }
+            None => {
+                if !args.quiet {
+                    eprintln!("[!] GPU: no compatible device found, staying on the CPU");
+                }
+                None
+            }
         }
     } else { None };
 

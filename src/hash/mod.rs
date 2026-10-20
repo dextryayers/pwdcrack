@@ -6,6 +6,17 @@ pub mod unix;
 /// Batch verification through the SIMD engine, used by `verify_batch`.
 pub(crate) mod simd;
 
+/// Installs the GPU batch verifier for this process.
+///
+/// `engine` is the device created by the `--gpu` path. The return value is the
+/// number of hash types whose pipeline compiled; zero means the device exists
+/// but every batch stays on the CPU. Calling this more than once does not create
+/// a second device.
+#[cfg(feature = "engine-gpu")]
+pub fn install_gpu_engine(engine: std::sync::Arc<engine_gpu::GpuEngine>) -> usize {
+    simd::install_gpu(engine)
+}
+
 /// Tests that enforce honesty about which hash types can actually be verified.
 #[cfg(test)]
 pub mod audit;

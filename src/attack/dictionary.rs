@@ -119,7 +119,8 @@ pub fn run_dictionary(
             pbar: pb.as_ref(),
         };
 
-        plines.par_chunks(VERIFY_GROUP).for_each(|chunk| batch.verify_lines(chunk));
+        let verify_group = crate::hash::simd::preferred_group_size(VERIFY_GROUP);
+        plines.par_chunks(verify_group).for_each(|chunk| batch.verify_lines(chunk));
 
         #[cfg(feature = "progress-rich")]
         eprintln!();
@@ -327,7 +328,8 @@ fn run_streaming(
     // with `par_bridge`, which hands one candidate to one worker at a time and
     // therefore has no group to give a batch verifier, so nothing in this path
     // could be accelerated.
-    let mut block: Vec<String> = Vec::with_capacity(STREAM_BLOCK);
+    let block_size = crate::hash::simd::preferred_group_size(STREAM_BLOCK);
+    let mut block: Vec<String> = Vec::with_capacity(block_size);
     for line_result in reader.lines() {
         let line = match line_result {
             Ok(l) => l,
@@ -338,7 +340,7 @@ fn run_streaming(
             continue;
         }
         block.push(word.to_string());
-        if block.len() == STREAM_BLOCK {
+        if block.len() == block_size {
             verify_block(&batch, &block);
             block.clear();
         }
@@ -357,7 +359,8 @@ fn run_streaming(
 
 /// Verifies one block of decoded lines, one group at a time, in parallel.
 fn verify_block(batch: &WordBatch<'_>, block: &[String]) {
-    block.par_chunks(VERIFY_GROUP).for_each(|chunk| {
+    let verify_group = crate::hash::simd::preferred_group_size(VERIFY_GROUP);
+    block.par_chunks(verify_group).for_each(|chunk| {
         let refs: Vec<&str> = chunk.iter().map(|s| s.as_str()).collect();
         batch.verify_group(&refs);
     });

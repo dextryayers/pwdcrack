@@ -66,11 +66,21 @@ pub async fn init_gpu() -> Option<GpuEngine> {
         info.memory_summary(),
     );
 
+    let lost = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let lost = Arc::clone(&lost);
+        device.set_device_lost_callback(move |reason, message| {
+            lost.store(true, std::sync::atomic::Ordering::Relaxed);
+            log::error!("GPU: device lost ({reason:?}): {message}");
+        });
+    }
+
     Some(GpuEngine {
         device: Arc::new(device),
         queue: Arc::new(queue),
         adapter: info,
         is_integrated,
+        lost,
     })
 }
 

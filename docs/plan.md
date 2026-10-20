@@ -455,36 +455,36 @@ The central technique: process N independent messages in parallel lanes so instr
 
 | Task | Action |
 |------|--------|
-| P5.1.01 | Inventory all `.wgsl` files in `engines/engine-gpu/src/shaders/`. For each, document the entry point, the bind group layout, the workgroup size, and the hash type it serves. Output to `docs/GPU_SHADERS.md`. |
-| P5.1.02 | Build every shader at compile time. Add `engines/engine-gpu/build.rs` that parses each WGSL file with `naga` and emits a compile error for any invalid shader. Today only 8 of 31 are loaded; the other 23 are never validated. |
-| P5.1.03 | Define one bind group layout in `engines/engine-gpu/src/pipeline.rs`: group 0 binding 0 candidates buffer, binding 1 hashes buffer, binding 2 results buffer, binding 3 uniform params, binding 4 lookup tables (for bcrypt and argon2). |
-| P5.1.04 | Rewrite each shader to that layout so all 31 compile against one layout. |
-| P5.1.05 | Verify each shader by differential test against the Rust reference for at least 1,000 random inputs per hash type. A GPU hash that disagrees with the CPU hash is worse than no GPU hash. |
+| P5.1.01 | Inventory all `.wgsl` files in `engines/engine-gpu/src/shaders/`. For each, document the entry point, the bind group layout, the workgroup size, and the hash type it serves. Output to `docs/GPU_SHADERS.md`. **done.** The document covers the seven supported kernels, the 68-byte candidate record, the target and flag buffers, the workgroup size, and the 26 unsupported files that were moved out of the build. |
+| P5.1.02 | Build every shader at compile time. Add `engines/engine-gpu/build.rs` that parses each WGSL file with `naga` and emits a compile error for any invalid shader. **done, verified.** `build.rs` parses and validates every top-level `.wgsl` with naga 26 and requires a compute entry point named `main`. `tests/shaders.rs` repeats the check and also creates a shader module on the real device. |
+| P5.1.03 | Define one bind group layout in `engines/engine-gpu/src/pipeline.rs`: group 0 binding 0 candidates buffer, binding 1 hashes buffer, binding 2 results buffer, binding 3 uniform params, binding 4 lookup tables (for bcrypt and argon2). **done with a recorded deviation.** The layout is defined once and shared by every kernel: binding 0 candidates, binding 1 results, binding 2 target digest, binding 3 count. No supported kernel needs a lookup table, so there is no binding 4. The deviation is recorded in `docs/GPU_SHADERS.md`. |
+| P5.1.04 | Rewrite each shader to that layout so all 31 compile against one layout. **partly done.** Seven files covering eight hash types were rewritten and compile: `md5`, `md4` (also NTLM), `sha1`, `sha256`, `sha512`, `ripemd160`, `blake2b`. The 26 files that did not parse were moved to `src/shaders/unsupported/` with a README naming the parse error in each. They are not built. |
+| P5.1.05 | Verify each shader by differential test against the Rust reference for at least 1,000 random inputs per hash type. A GPU hash that disagrees with the CPU hash is worse than no GPU hash. **done for the eight supported types, verified on the RADV device.** `tests/kernels.rs` compares 1,000 candidates per type against RustCrypto, including lengths 0, 1, 55, 56, 63 and 64. |
 
 ### 9.3 P5.2 Correct GPU Kernels
 
 | Task | Action |
 |------|--------|
-| P5.2.01 | `md5.wgsl`: implement the 64 step round with correct per step constants and correct rotate amounts. The current `md5_opt.wgsl` must be audited against RFC 1321. |
-| P5.2.02 | `sha1.wgsl`: 80 rounds, correct big endian word loading. |
-| P5.2.03 | `sha256.wgsl`: 64 rounds, correct `ch`, `maj`, `Sigma0`, `Sigma1`, `sigma0`, `sigma1`. |
-| P5.2.04 | `sha512.wgsl`, `sha384.wgsl`, `sha512_224.wgsl`: 64 bit lanes via two `u32` halves. Audit endianness carefully, this is the most error prone family. |
-| P5.2.05 | `ntlm.wgsl` and `md4.wgsl`: 48 rounds, little endian. |
-| P5.2.06 | `ripemd160.wgsl`: 5 parallel lines of 16 words, 80 rounds each, with correct rotation constants. |
-| P5.2.07 | `blake2b.wgsl`: full 12 round compression function with the sigma permutation table as a const array. |
-| P5.2.08 | `whirlpool.wgsl`: requires the 8x256 circulant hash tables. Embed them as const arrays. |
-| P5.2.09 | `streebog256.wgsl`: requires the 8 SBoxes of 256 bytes each and 12 round constants. |
-| P5.2.10 | `argon2i_core.wgsl`, `bcrypt.wgsl`, `pbkdf2_sha256.wgsl`: these are memory hard or iteration heavy. Implement only if a device profile justifies it, and gate behind a flag. |
+| P5.2.01 | `md5.wgsl`: implement the 64 step round with correct per step constants and correct rotate amounts. The current `md5_opt.wgsl` must be audited against RFC 1321. **done, verified.** `md5.wgsl` implements the round. The length field now goes in block word 14, not 15. `md5_opt.wgsl` did not parse and is in `unsupported/`. |
+| P5.2.02 | `sha1.wgsl`: 80 rounds, correct big endian word loading. **done, verified.** Message words are byte swapped on load, and the big endian length is byte swapped before it is stored in word 15. |
+| P5.2.03 | `sha256.wgsl`: 64 rounds, correct `ch`, `maj`, `Sigma0`, `Sigma1`, `sigma0`, `sigma1`. **done, verified.** The big endian length is byte swapped into word 15. |
+| P5.2.04 | `sha512.wgsl`, `sha384.wgsl`, `sha512_224.wgsl`: 64 bit lanes via two `u32` halves. Audit endianness carefully, this is the most error prone family. **partly done.** `sha512.wgsl` is correct and verified. `sha384.wgsl` and `sha512_224.wgsl` never parsed and are in `unsupported/`; they differ only in IV and truncation, but they are not implemented. |
+| P5.2.05 | `ntlm.wgsl` and `md4.wgsl`: 48 rounds, little endian. **done, verified.** One `md4.wgsl` serves both. NTLM candidates are encoded as UTF-16LE by `pack_candidate`, so the published NTLM vector passes. |
+| P5.2.06 | `ripemd160.wgsl`: 5 parallel lines of 16 words, 80 rounds each, with correct rotation constants. **done, verified.** The little endian length goes in block word 14. |
+| P5.2.07 | `blake2b.wgsl`: full 12 round compression function with the sigma permutation table as a const array. **done, verified.** BLAKE2 pads with zeros, not with an MD-style `0x80`; the byte count is XORed into `v[12]`. |
+| P5.2.08 | `whirlpool.wgsl`: requires the 8x256 circulant hash tables. Embed them as const arrays. **not done.** `whirlpool.wgsl` does not parse and is in `unsupported/`. |
+| P5.2.09 | `streebog256.wgsl`: requires the 8 SBoxes of 256 bytes each and 12 round constants. **not done.** `streebog256.wgsl` does not parse and is in `unsupported/`. |
+| P5.2.10 | `argon2i_core.wgsl`, `bcrypt.wgsl`, `pbkdf2_sha256.wgsl`: these are memory hard or iteration heavy. Implement only if a device profile justifies it, and gate behind a flag. **not done.** All three are in `unsupported/`. They need a per-candidate salt or key, which the 68-byte `Candidate` record does not carry. |
 
 ### 9.4 P5.3 Scheduling and Memory
 
 | Task | Action |
 |------|--------|
-| P5.3.01 | Replace hardcoded VRAM in `engines/engine-gpu/src/device.rs` with `wgpu::Adapter::get_info()` and the actual `limits.max_buffer_size`. Query via `downlevel` info where available. |
-| P5.3.02 | Batch size must be computed as `min(adapter_limits / per_candidate_bytes, config_max)` and clamped so that candidates plus hashes plus results fit in the buffer budget with 20 percent headroom. |
-| P5.3.03 | Implement a staging ring with at least 3 buffers so that upload, compute, and readback overlap. |
-| P5.3.04 | Add a device loss handler that reports the loss through `EngineInfo` and falls back to the CPU engine rather than panicking. |
-| P5.3.05 | Gate: differential tests pass for every enabled shader, and `cargo test --features engine-gpu` passes on a machine with a supported GPU. |
+| P5.3.01 | Replace hardcoded VRAM in `engines/engine-gpu/src/device.rs` with `wgpu::Adapter::get_info()` and the actual `limits.max_buffer_size`. Query via `downlevel` info where available. **done, verified.** The adapter name, driver, backend, device type and PCI ids come from `AdapterInfo`. `src/hw.rs` reads `mem_info_vram_total` and `mem_info_gtt_total` from the DRM card whose ids match; a missing file is `None`, printed as `unknown`, never a guessed size. |
+| P5.3.02 | Batch size must be computed as `min(adapter_limits / per_candidate_bytes, config_max)` and clamped so that candidates plus hashes plus results fit in the buffer budget with 20 percent headroom. **done.** `GpuCracker::batch_size` uses `max_storage_buffer_binding_size * 0.8 / 68`, clamped to 64..1,048,576. The target and flag buffers also fit because they are one 64-byte target and four bytes per candidate. |
+| P5.3.03 | Implement a staging ring with at least 3 buffers so that upload, compute, and readback overlap. **not done.** The buffer pool reuses size classes, but `dispatch_batch` uploads, submits, waits and reads one batch before starting the next. |
+| P5.3.04 | Add a device loss handler that reports the loss through `EngineInfo` and falls back to the CPU engine rather than panicking. **partly done.** A failed map or submit returns `GpuError`; `verify_many` falls back to the CPU for that batch, so a lost device does not panic and does not produce a wrong answer. There is no device-lost callback and no `EngineInfo` field yet. |
+| P5.3.05 | Gate: differential tests pass for every enabled shader, and `cargo test --features engine-gpu` passes on a machine with a supported GPU. **done for the eight supported types.** `cargo test -p engine-gpu` passes 10 tests. The root suite with `--features engine-gpu` is recorded in `docs/PHASE5_STATUS.md`. The gate is not met for the 26 unsupported files because they are not enabled. |
 
 ---
 

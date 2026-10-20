@@ -14,6 +14,9 @@ const WGSL_MD5: &str = include_str!("shaders/md5.wgsl");
 const WGSL_SHA1: &str = include_str!("shaders/sha1.wgsl");
 const WGSL_SHA256: &str = include_str!("shaders/sha256.wgsl");
 const WGSL_SHA512: &str = include_str!("shaders/sha512.wgsl");
+const WGSL_SHA384: &str = include_str!("shaders/sha384.wgsl");
+const WGSL_SHA512_224: &str = include_str!("shaders/sha512_224.wgsl");
+const WGSL_SHA512_256: &str = include_str!("shaders/sha512_256.wgsl");
 const WGSL_MD4: &str = include_str!("shaders/md4.wgsl");
 const WGSL_RIPEMD160: &str = include_str!("shaders/ripemd160.wgsl");
 const WGSL_BLAKE2B: &str = include_str!("shaders/blake2b.wgsl");
@@ -26,8 +29,18 @@ pub const MAX_MESSAGE: usize = 64;
 const TARGET_BYTES: usize = 64;
 
 /// Hash types that have a working kernel.
-pub const HASH_TYPES: [&str; 8] = [
-    "md5", "md4", "ntlm", "sha1", "sha256", "sha512", "ripemd160", "blake2b",
+pub const HASH_TYPES: [&str; 11] = [
+    "md5",
+    "md4",
+    "ntlm",
+    "sha1",
+    "sha256",
+    "sha384",
+    "sha512",
+    "sha512_224",
+    "sha512_256",
+    "ripemd160",
+    "blake2b",
 ];
 
 /// Digest size in bytes for a supported hash type.
@@ -35,8 +48,10 @@ pub fn digest_len(hash_type: &str) -> Option<usize> {
     match hash_type {
         "md5" | "md4" | "ntlm" => Some(16),
         "sha1" | "ripemd160" => Some(20),
-        "sha256" => Some(32),
+        "sha256" | "sha512_256" => Some(32),
+        "sha384" => Some(48),
         "sha512" | "blake2b" => Some(64),
+        "sha512_224" => Some(28),
         _ => None,
     }
 }
@@ -46,15 +61,29 @@ pub struct GpuCracker {
     pipelines: Vec<(String, ComputePipeline)>,
     pool: std::sync::Mutex<GpuBufferPool>,
     batch_size: usize,
+    /// Set after the first failed dispatch, so a lost device logs one line
+    /// instead of one per candidate group.
+    warned: std::sync::atomic::AtomicBool,
 }
 
 impl GpuCracker {
+    /// Builds the cracker from synchronous code.
+    ///
+    /// The core crate owns no async runtime and does not depend on `pollster`;
+    /// this keeps the one blocking call next to the device constructor.
+    pub fn new_blocking(engine: Arc<GpuEngine>) -> Self {
+        pollster::block_on(Self::new(engine))
+    }
+
     pub async fn new(engine: Arc<GpuEngine>) -> Self {
-        let sources: [(&str, &str); 7] = [
+        let sources: [(&str, &str); 10] = [
             ("md5", WGSL_MD5),
             ("sha1", WGSL_SHA1),
             ("sha256", WGSL_SHA256),
+            ("sha384", WGSL_SHA384),
             ("sha512", WGSL_SHA512),
+            ("sha512_224", WGSL_SHA512_224),
+            ("sha512_256", WGSL_SHA512_256),
             ("md4", WGSL_MD4),
             ("ripemd160", WGSL_RIPEMD160),
             ("blake2b", WGSL_BLAKE2B),
@@ -89,12 +118,25 @@ impl GpuCracker {
             pipelines,
             pool: std::sync::Mutex::new(pool),
             batch_size,
+            warned: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     /// Names of the hash types whose pipeline was created.
+    ///
+    /// NTLM is listed when MD4 is available, because the same pipeline serves
+    /// both and a caller should not have to know that.
     pub fn available(&self) -> Vec<&str> {
-        self.pipelines.iter().map(|(n, _)| n.as_str()).collect()
+        let mut names: Vec<&str> = self.pipelines.iter().map(|(n, _)| n.as_str()).collect();
+        if names.contains(&"md4") {
+            names.push("ntlm");
+        }
+        names
+    }
+
+    /// Whether one hash type can run on the device.
+    pub fn supports(&self, hash_type: &str) -> bool {
+        digest_len(hash_type).is_some() && self.find_pipeline(hash_type).is_some()
     }
 
     /// Batch size used by [`Self::verify_many`].
@@ -243,6 +285,9 @@ impl GpuCracker {
     /// by [`Self::pack_candidate`]. An error is returned rather than an empty
     /// success, so a caller can tell a missing kernel from a batch with no match.
     pub fn dispatch_batch(&self, hash_type: &str, candidates: &[u8], target_hex: &str) -> Result<Vec<bool>, GpuError> {
+        if self.engine.is_lost() {
+            return Err(GpuError::DeviceLost);
+        }
         let pipeline = self.find_pipeline(hash_type).ok_or(GpuError::UnsupportedHash)?;
         let digest_len = digest_len(hash_type).ok_or(GpuError::UnsupportedHash)?;
         if candidates.len() % CANDIDATE_BYTES != 0 {
@@ -350,7 +395,14 @@ impl GpuCracker {
                     log::warn!("GPU: {} flags for {} candidates", flags.len(), indices.len());
                 }
                 Err(e) => {
-                    log::warn!("GPU dispatch failed, using CPU for this batch: {e}");
+                    if !self
+                        .warned
+                        .swap(true, std::sync::atomic::Ordering::Relaxed)
+                    {
+                        log::warn!(
+                            "GPU dispatch failed, using the CPU for this and later batches: {e}"
+                        );
+                    }
                 }
             }
             packed.clear();
@@ -393,8 +445,23 @@ impl GpuCracker {
                 h.update(password);
                 Some(h.finalize().to_vec())
             }
+            "sha384" => {
+                let mut h = sha2::Sha384::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
             "sha512" => {
                 let mut h = sha2::Sha512::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha512_224" => {
+                let mut h = sha2::Sha512_224::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha512_256" => {
+                let mut h = sha2::Sha512_256::new();
                 h.update(password);
                 Some(h.finalize().to_vec())
             }

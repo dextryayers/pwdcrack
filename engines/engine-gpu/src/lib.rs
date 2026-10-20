@@ -15,6 +15,10 @@ pub struct GpuEngine {
     pub queue: Arc<Queue>,
     pub adapter: AdapterInfo,
     pub is_integrated: bool,
+    /// Set by the device-lost callback. A lost device cannot be used again; the
+    /// flag lets callers stop submitting and fall back without a failed wait per
+    /// batch.
+    lost: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl GpuEngine {
@@ -22,13 +26,32 @@ impl GpuEngine {
         device::init_gpu().await
     }
 
+    /// Initialises the engine from synchronous code.
+    ///
+    /// The core crate used to call `pollster::block_on` itself, which meant the
+    /// `engine-gpu` feature also had to add `pollster` to the root manifest. The
+    /// runtime dependency belongs here, with the only crate that owns a device.
+    pub fn init_blocking() -> Option<Self> {
+        pollster::block_on(Self::init())
+    }
+
     pub fn info(&self) -> String {
-        format!(
+        let base = format!(
             "{} ({}): {}",
             self.adapter.name,
             if self.is_integrated { "iGPU" } else { "dGPU" },
             self.adapter.memory_summary(),
-        )
+        );
+        if self.is_lost() {
+            format!("{base} (device lost)")
+        } else {
+            base
+        }
+    }
+
+    /// Whether the backend has reported that the device was lost.
+    pub fn is_lost(&self) -> bool {
+        self.lost.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn submit(&self, encoder: CommandEncoder) {

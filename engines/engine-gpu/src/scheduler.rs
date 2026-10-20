@@ -53,8 +53,8 @@ impl GpuScheduler {
     }
 
     pub fn wait_all(&self) {
-        // wgpu 30 handles submission tracking internally.
-        // GPU work completes asynchronously without explicit polling.
+        // wgpu tracks submissions internally, and this scheduler has no readback
+        // to wait for. A caller that maps a buffer polls the device itself.
     }
 
     pub fn batch_size(&self) -> u64 {

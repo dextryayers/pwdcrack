@@ -85,24 +85,24 @@ macro_rules! impl_raw_hash {
 }
 
 impl_raw_hash!(Md5Hash, HashType::MD5, Md5, 128, crate::hash::simd::Kernel::Md5);
-impl_raw_hash!(Sha1Hash, HashType::SHA1, Sha1, 160);
+impl_raw_hash!(Sha1Hash, HashType::SHA1, Sha1, 160, crate::hash::simd::Kernel::Sha1);
 impl_raw_hash!(Sha224Hash, HashType::SHA224, Sha224, 224);
-impl_raw_hash!(Sha256Hash, HashType::SHA256, Sha256, 256);
-impl_raw_hash!(Sha384Hash, HashType::SHA384, Sha384, 384);
-impl_raw_hash!(Sha512Hash, HashType::SHA512, Sha512, 512);
+impl_raw_hash!(Sha256Hash, HashType::SHA256, Sha256, 256, crate::hash::simd::Kernel::Sha256);
+impl_raw_hash!(Sha384Hash, HashType::SHA384, Sha384, 384, crate::hash::simd::Kernel::Sha384);
+impl_raw_hash!(Sha512Hash, HashType::SHA512, Sha512, 512, crate::hash::simd::Kernel::Sha512);
 impl_raw_hash!(Sha3_512Hash, HashType::SHA3512, Sha3_512, 512);
 impl_raw_hash!(Blake2b256Hash, HashType::BLAKE2B256, Blake2b<digest::consts::U32>, 256);
 impl_raw_hash!(Blake2s256Hash, HashType::BLAKE2S256, Blake2s256, 256);
-impl_raw_hash!(Blake2b512Hash, HashType::BLAKE2B512, Blake2b512, 512);
+impl_raw_hash!(Blake2b512Hash, HashType::BLAKE2B512, Blake2b512, 512, crate::hash::simd::Kernel::Blake2b);
 impl_raw_hash!(Ripemd128Hash, HashType::RIPEMD128, Ripemd128, 128);
-impl_raw_hash!(Ripemd160Hash, HashType::RIPEMD160, Ripemd160, 160);
+impl_raw_hash!(Ripemd160Hash, HashType::RIPEMD160, Ripemd160, 160, crate::hash::simd::Kernel::Ripemd160);
 impl_raw_hash!(Ripemd256Hash, HashType::RIPEMD256, Ripemd256, 256);
 impl_raw_hash!(Ripemd320Hash, HashType::RIPEMD320, Ripemd320, 320);
 impl_raw_hash!(Sha3_224Hash, HashType::SHA3224, Sha3_224, 224);
 impl_raw_hash!(Sha3_256Hash, HashType::SHA3256, Sha3_256, 256);
 impl_raw_hash!(Sha3_384Hash, HashType::SHA3384, Sha3_384, 384);
-impl_raw_hash!(Sha512_224Hash, HashType::SHA512_224, Sha512_224, 224);
-impl_raw_hash!(Sha512_256Hash, HashType::SHA512_256, Sha512_256, 256);
+impl_raw_hash!(Sha512_224Hash, HashType::SHA512_224, Sha512_224, 224, crate::hash::simd::Kernel::Sha512_224);
+impl_raw_hash!(Sha512_256Hash, HashType::SHA512_256, Sha512_256, 256, crate::hash::simd::Kernel::Sha512_256);
 impl_raw_hash!(WhirlpoolHash, HashType::WHIRLPOOL, Whirlpool, 512);
 impl_raw_hash!(Streebog256Hash, HashType::STREEBOG256, Streebog256, 256);
 impl_raw_hash!(Streebog512Hash, HashType::STREEBOG512, Streebog512, 512);
