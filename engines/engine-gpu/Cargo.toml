@@ -21,6 +21,10 @@ md4 = "0.10"
 ripemd = "0.1"
 blake2 = "0.10"
 
+[build-dependencies]
+# Same parser the driver path uses through wgpu 26's naga.
+naga = { version = "26", features = ["wgsl-in"] }
+
 [dev-dependencies]
 # Parses and validates every `.wgsl` file in `src/shaders` without a GPU, so the
 # shader suite is checked on hosts that cannot create a device.
