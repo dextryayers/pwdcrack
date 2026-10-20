@@ -1,3 +1,10 @@
+//! Hash dispatch onto the GPU.
+//!
+//! Every supported kernel uses one bind layout, documented in `md5.wgsl`:
+//! candidates, a per candidate match flag, the target digest, and the count.
+//! NTLM is MD4 over UTF-16LE input, so it shares the MD4 pipeline and differs
+//! only in how the host packs each candidate.
+
 use std::sync::Arc;
 use wgpu::*;
 
@@ -7,54 +14,92 @@ const WGSL_MD5: &str = include_str!("shaders/md5.wgsl");
 const WGSL_SHA1: &str = include_str!("shaders/sha1.wgsl");
 const WGSL_SHA256: &str = include_str!("shaders/sha256.wgsl");
 const WGSL_SHA512: &str = include_str!("shaders/sha512.wgsl");
-const WGSL_NTLM: &str = include_str!("shaders/ntlm.wgsl");
 const WGSL_MD4: &str = include_str!("shaders/md4.wgsl");
 const WGSL_RIPEMD160: &str = include_str!("shaders/ripemd160.wgsl");
 const WGSL_BLAKE2B: &str = include_str!("shaders/blake2b.wgsl");
+
+/// Bytes per packed candidate: 16 message words and the byte length.
+pub const CANDIDATE_BYTES: usize = 68;
+/// Longest message the kernels accept.
+pub const MAX_MESSAGE: usize = 64;
+/// Bytes the target digest buffer is declared with.
+const TARGET_BYTES: usize = 64;
+
+/// Hash types that have a working kernel.
+pub const HASH_TYPES: [&str; 8] = [
+    "md5", "md4", "ntlm", "sha1", "sha256", "sha512", "ripemd160", "blake2b",
+];
+
+/// Digest size in bytes for a supported hash type.
+pub fn digest_len(hash_type: &str) -> Option<usize> {
+    match hash_type {
+        "md5" | "md4" | "ntlm" => Some(16),
+        "sha1" | "ripemd160" => Some(20),
+        "sha256" => Some(32),
+        "sha512" | "blake2b" => Some(64),
+        _ => None,
+    }
+}
 
 pub struct GpuCracker {
     engine: Arc<GpuEngine>,
     pipelines: Vec<(String, ComputePipeline)>,
     pool: std::sync::Mutex<GpuBufferPool>,
-    batch_size: u32,
+    batch_size: usize,
 }
 
 impl GpuCracker {
     pub async fn new(engine: Arc<GpuEngine>) -> Self {
+        let sources: [(&str, &str); 7] = [
+            ("md5", WGSL_MD5),
+            ("sha1", WGSL_SHA1),
+            ("sha256", WGSL_SHA256),
+            ("sha512", WGSL_SHA512),
+            ("md4", WGSL_MD4),
+            ("ripemd160", WGSL_RIPEMD160),
+            ("blake2b", WGSL_BLAKE2B),
+        ];
+
         let mut pipelines = Vec::new();
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_MD5, "md5").await {
-            pipelines.push(("md5".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_SHA1, "sha1").await {
-            pipelines.push(("sha1".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_SHA256, "sha256").await {
-            pipelines.push(("sha256".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_SHA512, "sha512").await {
-            pipelines.push(("sha512".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_NTLM, "ntlm").await {
-            pipelines.push(("ntlm".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_MD4, "md4").await {
-            pipelines.push(("md4".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_RIPEMD160, "ripemd160").await {
-            pipelines.push(("ripemd160".to_string(), p));
-        }
-        if let Ok(p) = Self::build_pipeline(&engine, WGSL_BLAKE2B, "blake2b").await {
-            pipelines.push(("blake2b".to_string(), p));
+        for (name, source) in sources {
+            match Self::build_pipeline(&engine, source, name).await {
+                Ok(p) => pipelines.push((name.to_string(), p)),
+                // A shader that does not compile must be named. Silently dropping
+                // it, as the previous version did, turns a GPU into a CPU engine
+                // without saying so.
+                Err(e) => log::warn!("GPU: {name} pipeline unavailable: {e}"),
+            }
         }
         let count = pipelines.len();
-        log::info!("GPU: {} compute pipelines built", count);
+
+        // P5.3.02: size the batch so the input buffer stays under 80 percent of
+        // the adapter's storage binding limit, with a floor of one workgroup and
+        // a ceiling that keeps a single dispatch's readback small.
+        let limit = engine.device.limits().max_storage_buffer_binding_size as usize;
+        let batch_size = ((limit / 10) * 8 / CANDIDATE_BYTES).clamp(64, 1 << 20);
+
+        log::info!(
+            "GPU: {count} of {} compute pipelines built, batch {batch_size}",
+            sources.len()
+        );
+
         let pool = GpuBufferPool::new(engine.device.clone(), 32);
         GpuCracker {
             engine,
             pipelines,
             pool: std::sync::Mutex::new(pool),
-            batch_size: 64,
+            batch_size,
         }
+    }
+
+    /// Names of the hash types whose pipeline was created.
+    pub fn available(&self) -> Vec<&str> {
+        self.pipelines.iter().map(|(n, _)| n.as_str()).collect()
+    }
+
+    /// Batch size used by [`Self::verify_many`].
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
     }
 
     async fn build_pipeline(
@@ -67,49 +112,24 @@ impl GpuCracker {
             source: ShaderSource::Wgsl(source.into()),
         });
 
+        let buffer_entry = |binding: u32, ty: BufferBindingType| BindGroupLayoutEntry {
+            binding,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+
         let bind_group_layout = engine.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some(&format!("{label} bind group layout")),
             entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                buffer_entry(0, BufferBindingType::Storage { read_only: true }),
+                buffer_entry(1, BufferBindingType::Storage { read_only: false }),
+                buffer_entry(2, BufferBindingType::Storage { read_only: true }),
+                buffer_entry(3, BufferBindingType::Uniform),
             ],
         });
 
@@ -135,8 +155,10 @@ impl GpuCracker {
         })
     }
 
-    fn find_pipeline(&self, name: &str) -> Option<&ComputePipeline> {
-        self.pipelines.iter().find(|(n, _)| n == name).map(|(_, p)| p)
+    fn find_pipeline(&self, hash_type: &str) -> Option<&ComputePipeline> {
+        // NTLM is MD4 over UTF-16LE; one kernel serves both.
+        let kernel = if hash_type == "ntlm" { "md4" } else { hash_type };
+        self.pipelines.iter().find(|(n, _)| n == kernel).map(|(_, p)| p)
     }
 
     fn create_bind_group(&self, pipeline: &ComputePipeline, input: &Buffer, output: &Buffer, target: &Buffer, count: &Buffer) -> BindGroup {
@@ -152,30 +174,92 @@ impl GpuCracker {
         })
     }
 
-    fn make_target_bytes(target_hex: &str) -> Vec<u8> {
+    /// Decodes a target digest into the 64 byte buffer the kernels bind.
+    ///
+    /// Every digest byte keeps its position, and each four byte group is read by
+    /// the shader as one little endian word. Kernels whose standard output is big
+    /// endian byte swap their state before comparing.
+    fn target_words(target_hex: &str, digest_len: usize) -> Result<[u32; 16], GpuError> {
         let hex = target_hex.trim();
-        let bytes = hex::decode(hex).unwrap_or_default();
-        let mut data = vec![0u8; 32];
-        let len = bytes.len().min(32);
-        data[..len].copy_from_slice(&bytes[..len]);
-        data
+        let bytes = hex::decode(hex)
+            .map_err(|e| GpuError::Other(format!("target is not hex: {e}")))?;
+        if bytes.len() != digest_len {
+            return Err(GpuError::Other(format!(
+                "target is {} bytes, this hash needs {digest_len}",
+                bytes.len()
+            )));
+        }
+        let mut words = [0u32; 16];
+        for (i, chunk) in bytes.chunks(4).enumerate() {
+            let mut four = [0u8; 4];
+            four[..chunk.len()].copy_from_slice(chunk);
+            words[i] = u32::from_le_bytes(four);
+        }
+        Ok(words)
     }
 
-    pub fn dispatch_batch(&self, hash_type: &str, candidates: &[u8], target_hex: &str) -> Result<Vec<bool>, GpuError> {
-        let pipeline = self.find_pipeline(hash_type)
-            .ok_or(GpuError::UnsupportedHash)?;
+    /// Packs one candidate. Returns [`None`] when it cannot be represented: more
+    /// than 64 bytes, or NTLM input that is not valid UTF-8.
+    fn pack(hash_type: &str, password: &[u8], out: &mut [u8; CANDIDATE_BYTES]) -> Option<()> {
+        let mut message = [0u8; MAX_MESSAGE];
+        let len = if hash_type == "ntlm" {
+            let text = std::str::from_utf8(password).ok()?;
+            let mut n = 0;
+            for unit in text.encode_utf16() {
+                if n + 2 > MAX_MESSAGE {
+                    return None;
+                }
+                message[n..n + 2].copy_from_slice(&unit.to_le_bytes());
+                n += 2;
+            }
+            n
+        } else {
+            if password.len() > MAX_MESSAGE {
+                return None;
+            }
+            message[..password.len()].copy_from_slice(password);
+            password.len()
+        };
+
+        for i in 0..16 {
+            let word = u32::from_le_bytes([
+                message[4 * i],
+                message[4 * i + 1],
+                message[4 * i + 2],
+                message[4 * i + 3],
+            ]);
+            out[4 * i..4 * i + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        out[64..68].copy_from_slice(&(len as u32).to_le_bytes());
+        Some(())
+    }
+
+    /// Runs one packed batch and returns one flag per candidate.
+    fn dispatch_batch(&self, hash_type: &str, candidates: &[u8], target_hex: &str) -> Result<Vec<bool>, GpuError> {
+        let pipeline = self.find_pipeline(hash_type).ok_or(GpuError::UnsupportedHash)?;
+        let digest_len = digest_len(hash_type).ok_or(GpuError::UnsupportedHash)?;
+        if candidates.len() % CANDIDATE_BYTES != 0 {
+            return Err(GpuError::Other(format!(
+                "packed input is {} bytes, not a multiple of {CANDIDATE_BYTES}",
+                candidates.len()
+            )));
+        }
+        let num_candidates = candidates.len() / CANDIDATE_BYTES;
+        if num_candidates == 0 {
+            return Ok(Vec::new());
+        }
+        let target = Self::target_words(target_hex, digest_len)?;
 
         let input_size = candidates.len() as u64;
-        let num_candidates = (candidates.len() / 68) as u32;
-        let workgroups = (num_candidates + 63) / 64;
         let output_size = (num_candidates as u64) * 4;
+        let workgroups = (num_candidates as u32).div_ceil(64);
 
         let mut pool = self.pool.lock().unwrap();
 
-        let input_buf = pool.get_storage_buffer(input_size.max(68));
+        let input_buf = pool.get_storage_buffer(input_size.max(4));
         let output_buf = pool.get_storage_buffer(output_size.max(4));
         let readback_buf = pool.get_readback_buffer(output_size.max(4));
-        let target_buf = pool.get_storage_buffer(32);
+        let target_buf = pool.get_storage_buffer(TARGET_BYTES as u64);
         let count_buf = self.engine.device.create_buffer(&BufferDescriptor {
             label: Some("count uniform"),
             size: 4,
@@ -184,8 +268,8 @@ impl GpuCracker {
         });
 
         self.engine.queue.write_buffer(&input_buf.buffer, 0, candidates);
-        self.engine.queue.write_buffer(&target_buf.buffer, 0, &Self::make_target_bytes(target_hex));
-        self.engine.queue.write_buffer(&count_buf, 0, &num_candidates.to_ne_bytes());
+        self.engine.queue.write_buffer(&target_buf.buffer, 0, bytemuck::cast_slice(&target));
+        self.engine.queue.write_buffer(&count_buf, 0, &(num_candidates as u32).to_ne_bytes());
 
         let mut encoder = self.engine.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("gpu compute encoder"),
@@ -216,14 +300,9 @@ impl GpuCracker {
                 return Err(GpuError::Timeout);
             }
 
-            // wgpu 26 returns the view directly; the fallible form is gone.
             let data = readback_slice.get_mapped_range();
-            let r: Vec<bool> = data.chunks(4)
-                .map(|chunk| {
-                    if chunk.len() < 4 { return false; }
-                    let val = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    val != 0
-                })
+            let r: Vec<bool> = data.chunks_exact(4)
+                .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) != 0)
                 .collect();
             drop(data);
             r
@@ -238,80 +317,106 @@ impl GpuCracker {
         Ok(results)
     }
 
-    pub fn verify_md5(&self, password: &[u8], target_hex: &str) -> bool {
-        use md5::{Md5, Digest};
-        let mut hasher = Md5::new();
-        hasher.update(password);
-        let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(target_hex)
-    }
+    /// Checks many candidates against one target, on the GPU when possible.
+    ///
+    /// This is the shape an attack uses: one digest, a stream of candidates. It
+    /// replaces `batch_verify`, which paired each password with a different
+    /// target and then fed every password to one target on the GPU.
+    pub fn verify_many(&self, hash_type: &str, passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+        let mut out: Vec<Option<bool>> = vec![None; passwords.len()];
+        let mut packed = Vec::with_capacity(self.batch_size * CANDIDATE_BYTES);
+        let mut indices = Vec::with_capacity(self.batch_size);
 
-    pub fn verify_sha256(&self, password: &[u8], target_hex: &str) -> bool {
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(password);
-        let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(target_hex)
-    }
-
-    pub fn verify_ntlm(&self, password: &[u8], target_hex: &str) -> bool {
-        use md4::{Md4, Digest};
-        let pw_str = std::str::from_utf8(password).unwrap_or("");
-        let utf16: Vec<u8> = pw_str.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-        let mut hasher = Md4::new();
-        hasher.update(&utf16);
-        let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(target_hex)
-    }
-
-    pub fn verify_sha1(&self, password: &[u8], target_hex: &str) -> bool {
-        use sha1::{Sha1, Digest};
-        let mut hasher = Sha1::new();
-        hasher.update(password);
-        let result = hasher.finalize();
-        let computed = hex::encode(result);
-        computed.eq_ignore_ascii_case(target_hex)
-    }
-
-    pub fn batch_verify(&self, hash_type: &str, passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
-        if passwords.is_empty() || targets.is_empty() {
-            return Vec::new();
-        }
-        let target_hex = targets[0];
-        let batch = passwords.len().min(1024);
-        let mut packed = Vec::with_capacity(batch * 64);
-        for pw in passwords.iter().take(batch) {
-            let mut buf = [0u8; 68];
-            let len = pw.len().min(64);
-            buf[..len].copy_from_slice(&pw[..len]);
-            buf[64..68].copy_from_slice(&(len as u32).to_le_bytes());
-            packed.extend_from_slice(&buf[..68]);
-        }
-
-        if let Ok(gpu_results) = self.dispatch_batch(hash_type, &packed, target_hex) {
-            let mut all: Vec<bool> = gpu_results;
-            for (pw, target) in passwords.iter().skip(batch).zip(targets.iter().skip(batch)) {
-                let ok = match hash_type {
-                    "md5" => self.verify_md5(pw, target),
-                    "sha256" => self.verify_sha256(pw, target),
-                    "sha1" => self.verify_sha1(pw, target),
-                    "ntlm" => self.verify_ntlm(pw, target),
-                    _ => false,
-                };
-                all.push(ok);
+        let flush = |packed: &mut Vec<u8>, indices: &mut Vec<usize>, out: &mut Vec<Option<bool>>| {
+            if indices.is_empty() {
+                return;
             }
-            all
-        } else {
-            passwords.iter().zip(targets).map(|(pw, target)| match hash_type {
-                "md5" => self.verify_md5(pw, target),
-                "sha256" => self.verify_sha256(pw, target),
-                "sha1" => self.verify_sha1(pw, target),
-                "ntlm" => self.verify_ntlm(pw, target),
-                _ => false,
-            }).collect()
+            match self.dispatch_batch(hash_type, packed, target_hex) {
+                Ok(flags) if flags.len() == indices.len() => {
+                    for (i, flag) in indices.iter().zip(flags) {
+                        out[*i] = Some(flag);
+                    }
+                }
+                Ok(flags) => {
+                    log::warn!("GPU: {} flags for {} candidates", flags.len(), indices.len());
+                }
+                Err(e) => {
+                    log::warn!("GPU dispatch failed, using CPU for this batch: {e}");
+                }
+            }
+            packed.clear();
+            indices.clear();
+        };
+
+        for (i, password) in passwords.iter().enumerate() {
+            let mut buf = [0u8; CANDIDATE_BYTES];
+            if Self::pack(hash_type, password, &mut buf).is_none() {
+                continue;
+            }
+            packed.extend_from_slice(&buf);
+            indices.push(i);
+            if indices.len() == self.batch_size {
+                flush(&mut packed, &mut indices, &mut out);
+            }
+        }
+        flush(&mut packed, &mut indices, &mut out);
+
+        out.into_iter()
+            .zip(passwords)
+            .map(|(flag, password)| flag.unwrap_or_else(|| self.verify_on_cpu(hash_type, password, target_hex)))
+            .collect()
+    }
+
+    fn verify_on_cpu(&self, hash_type: &str, password: &[u8], target_hex: &str) -> bool {
+        use sha2::Digest;
+        let computed: Option<Vec<u8>> = match hash_type {
+            "md5" => {
+                let mut h = md5::Md5::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha1" => {
+                let mut h = sha1::Sha1::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha256" => {
+                let mut h = sha2::Sha256::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "sha512" => {
+                let mut h = sha2::Sha512::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "md4" => {
+                let mut h = md4::Md4::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "ntlm" => {
+                let mut h = md4::Md4::new();
+                let text = std::str::from_utf8(password).ok()?;
+                let utf16: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+                h.update(&utf16);
+                Some(h.finalize().to_vec())
+            }
+            "ripemd160" => {
+                let mut h = ripemd::Ripemd160::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            "blake2b" => {
+                let mut h = blake2::Blake2b512::new();
+                h.update(password);
+                Some(h.finalize().to_vec())
+            }
+            _ => None,
+        };
+        match computed {
+            Some(bytes) => hex::encode(bytes).eq_ignore_ascii_case(target_hex.trim()),
+            None => false,
         }
     }
 }
