@@ -83,12 +83,12 @@ fn every_shader_compiles_on_the_gpu() {
         // Uncapped device errors surface through the error scope rather than as a
         // panic inside `create_shader_module`, so a broken shader is reported with
         // its file name instead of a backtrace from the driver.
-        let scope = engine.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        engine.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let _module = engine.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&name),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
-        if let Some(error) = pollster::block_on(scope.pop()) {
+        if let Some(error) = pollster::block_on(engine.device.pop_error_scope()) {
             failures.push(format!("{name}: {error}"));
         }
     }

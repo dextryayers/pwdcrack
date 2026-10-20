@@ -1,19 +1,15 @@
-// SHA-256 compute shader: 64 passwords per workgroup
+// SHA-256, one candidate per invocation. FIPS 180-4 section 6.2.
+//
+// Layout: see md5.wgsl.
 
 struct Candidate {
-    password: array<u32, 16>,
+    data: array<u32, 16>,
     len: u32,
 }
 
-struct HashResult {
-    found: u32,
-    idx: u32,
-    digest: vec4<u32>,
-}
-
 @group(0) @binding(0) var<storage, read> candidates: array<Candidate>;
-@group(0) @binding(1) var<storage, read_write> results: array<HashResult>;
-@group(0) @binding(2) var<storage, read> target: array<u32, 8>;
+@group(0) @binding(1) var<storage, read_write> results: array<u32>;
+@group(0) @binding(2) var<storage, read> expected: array<u32, 16>;
 @group(0) @binding(3) var<uniform> count: u32;
 
 const K: array<u32, 64> = array(
@@ -35,75 +31,112 @@ const K: array<u32, 64> = array(
     0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u,
 );
 
-fn shr(x: u32, n: u32) -> u32 { return x >> n; }
-fn rotr(x: u32, n: u32) -> u32 { return (x >> n) | (x << (32u - n)); }
-fn ch(x: u32, y: u32, z: u32) -> u32 { return (x & y) ^ ((~x) & z); }
-fn maj(x: u32, y: u32, z: u32) -> u32 { return (x & y) ^ (x & z) ^ (y & z); }
-fn sigma0(x: u32) -> u32 { return rotr(x, 2u) ^ rotr(x, 13u) ^ rotr(x, 22u); }
-fn sigma1(x: u32) -> u32 { return rotr(x, 6u) ^ rotr(x, 11u) ^ rotr(x, 25u); }
-fn gamma0(x: u32) -> u32 { return rotr(x, 7u) ^ rotr(x, 18u) ^ shr(x, 3u); }
-fn gamma1(x: u32) -> u32 { return rotr(x, 17u) ^ rotr(x, 19u) ^ shr(x, 10u); }
+fn rotr(x: u32, c: u32) -> u32 {
+    return (x >> c) | (x << (32u - c));
+}
 
-fn sha256_verify(password: array<u32, 16>, len: u32) -> u32 {
+fn bswap(x: u32) -> u32 {
+    return (x >> 24u) | ((x >> 8u) & 0xff00u) | ((x << 8u) & 0xff0000u) | (x << 24u);
+}
+
+fn compress(st: ptr<function, array<u32, 8>>, m: array<u32, 16>) {
     var w: array<u32, 64>;
-    for (var i: u32 = 0u; i < 16u; i++) {
-        w[i] = password[i];
+    for (var i = 0u; i < 16u; i = i + 1u) {
+        w[i] = bswap(m[i]);
+    }
+    for (var i = 16u; i < 64u; i = i + 1u) {
+        let s0 = rotr(w[i - 15u], 7u) ^ rotr(w[i - 15u], 18u) ^ (w[i - 15u] >> 3u);
+        let s1 = rotr(w[i - 2u], 17u) ^ rotr(w[i - 2u], 19u) ^ (w[i - 2u] >> 10u);
+        w[i] = w[i - 16u] + s0 + w[i - 7u] + s1;
     }
 
-    let bit_len: u32 = len * 8u;
-    let byte_off: u32 = len % 4u;
-    let word_idx: u32 = len / 4u;
+    var a = (*st)[0];
+    var b = (*st)[1];
+    var c = (*st)[2];
+    var d = (*st)[3];
+    var e = (*st)[4];
+    var f = (*st)[5];
+    var g = (*st)[6];
+    var h = (*st)[7];
 
-    var mask: u32 = 0xffffffffu << (byte_off * 8u);
-    w[word_idx] = (w[word_idx] & mask) | (0x80u << (byte_off * 8u));
-
-    if len < 56u {
-        w[15] = bit_len;
+    for (var i = 0u; i < 64u; i = i + 1u) {
+        let s1 = rotr(e, 6u) ^ rotr(e, 11u) ^ rotr(e, 25u);
+        let ch = (e & f) ^ ((~e) & g);
+        let t1 = h + s1 + ch + K[i] + w[i];
+        let s0 = rotr(a, 2u) ^ rotr(a, 13u) ^ rotr(a, 22u);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let t2 = s0 + maj;
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
     }
 
-    for (var i: u32 = 16u; i < 64u; i++) {
-        w[i] = gamma1(w[i-2]) + w[i-7] + gamma0(w[i-15]) + w[i-16];
+    (*st)[0] = (*st)[0] + a;
+    (*st)[1] = (*st)[1] + b;
+    (*st)[2] = (*st)[2] + c;
+    (*st)[3] = (*st)[3] + d;
+    (*st)[4] = (*st)[4] + e;
+    (*st)[5] = (*st)[5] + f;
+    (*st)[6] = (*st)[6] + g;
+    (*st)[7] = (*st)[7] + h;
+}
+
+fn compare(st: array<u32, 8>) -> bool {
+    for (var i = 0u; i < 8u; i = i + 1u) {
+        if (bswap(st[i]) != expected[i]) {
+            return false;
+        }
     }
-
-    var h0: u32 = 0x6a09e667u;
-    var h1: u32 = 0xbb67ae85u;
-    var h2: u32 = 0x3c6ef372u;
-    var h3: u32 = 0xa54ff53au;
-    var h4: u32 = 0x510e527fu;
-    var h5: u32 = 0x9b05688cu;
-    var h6: u32 = 0x1f83d9abu;
-    var h7: u32 = 0x5be0cd19u;
-
-    var a: u32 = h0; var b: u32 = h1; var c: u32 = h2; var d: u32 = h3;
-    var e: u32 = h4; var f: u32 = h5; var g: u32 = h6; var h: u32 = h7;
-
-    for (var i: u32 = 0u; i < 64u; i++) {
-        let S1 = sigma1(e);
-        let ch_val = ch(e, f, g);
-        let temp1 = h + S1 + ch_val + K[i] + w[i];
-        let S0 = sigma0(a);
-        let maj_val = maj(a, b, c);
-        let temp2 = S0 + maj_val;
-
-        h = g; g = f; f = e; e = d + temp1;
-        d = c; c = b; b = a; a = temp1 + temp2;
-    }
-
-    h0 += a; h1 += b; h2 += c; h3 += d;
-    h4 += e; h5 += f; h6 += g; h7 += h;
-
-    if h0 == target[0] && h1 == target[1] && h2 == target[2] && h3 == target[3] &&
-       h4 == target[4] && h5 == target[5] && h6 == target[6] && h7 == target[7] {
-        return 1u;
-    }
-    return 0u;
+    return true;
 }
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let idx = id.x;
-    if idx >= count { return; }
-    let cand = candidates[idx];
-    let found = sha256_verify(cand.password, cand.len);
-    results[idx] = HashResult(found, idx, vec4(0u));
+    if (idx >= count) {
+        return;
+    }
+
+    let c = candidates[idx];
+
+    var w: array<u32, 32>;
+    for (var i = 0u; i < 16u; i = i + 1u) {
+        w[i] = c.data[i];
+    }
+    for (var i = 16u; i < 32u; i = i + 1u) {
+        w[i] = 0u;
+    }
+    let byte_index = c.len / 4u;
+    let byte_offset = c.len % 4u;
+    let keep = (1u << (byte_offset * 8u)) - 1u;
+    w[byte_index] = (w[byte_index] & keep) | (0x80u << (byte_offset * 8u));
+    if (c.len < 56u) {
+        w[15] = c.len * 8u;
+    }
+    w[31] = c.len * 8u;
+
+    var st = array<u32, 8>(
+        0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
+        0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u,
+    );
+
+    var m: array<u32, 16>;
+    for (var i = 0u; i < 16u; i = i + 1u) {
+        m[i] = w[i];
+    }
+    compress(&st, m);
+
+    if (c.len >= 56u) {
+        for (var i = 0u; i < 16u; i = i + 1u) {
+            m[i] = w[16u + i];
+        }
+        compress(&st, m);
+    }
+
+    results[idx] = select(0u, 1u, compare(st));
 }
