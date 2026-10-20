@@ -70,63 +70,12 @@ pub fn scalar_digest(message: &[u8]) -> [u8; 16] {
     d
 }
 
-/// Encodes one message into the fixed 64 byte block layout MD5 needs.
-///
-/// MD5 pads with a `0x80` byte, then zeros, then the bit length as a little
-/// endian `u64` in the final eight bytes. For a message longer than 55 bytes the
-/// padding needs a second block. A message of exactly 56 bytes therefore
-/// produces two blocks, and a message of 55 produces one, which is the boundary
-/// most naive implementations get wrong.
-fn block_count(len: usize) -> usize {
-    // 55 is the largest length that fits in one block once padding is added.
-    if len + 9 <= 64 { 1 } else { (len + 9).div_ceil(64) }
-}
-
-/// Builds the padded block sequence for one message.
-///
-/// Returned as a fixed two block buffer because multi-buffer MD5 only handles
-/// messages up to 119 bytes in a single pass. Anything longer must be processed
-/// through the scalar path.
-fn pad_message(msg: &[u8], out: &mut [[u8; 64]; 2]) -> Option<usize> {
-    let blocks = block_count(msg.len());
-    if blocks > 2 {
-        return None;
-    }
-    out[0] = [0u8; 64];
-    out[1] = [0u8; 64];
-    if msg.len() > out[0].len() * 2 - 9 {
-        return None;
-    }
-
-    // Copy across block boundaries.
-    let mut written = 0usize;
-    for block in out.iter_mut().take(blocks) {
-        let start = written;
-        let end = (start + 64).min(msg.len());
-        if start < end {
-            block[..end - start].copy_from_slice(&msg[start..end]);
-        }
-        written = end;
-    }
-
-    // 0x80 marker, then zeros, then the bit length.
-    //
-    // The marker sits at byte offset `msg.len()` within the padded stream,
-    // which may be exactly a block boundary. The first version of this code
-    // walked blocks looking for one with `pos < 64`, which skipped the marker
-    // entirely when `msg.len()` was a multiple of 64, so every 64 byte message
-    // produced a wrong digest.
-    let marker_pos = msg.len();
-    if marker_pos < blocks * 64 {
-        let block = marker_pos / 64;
-        let off = marker_pos % 64;
-        out[block][off] = 0x80;
-    }
-    let bit_len = (msg.len() as u64).wrapping_mul(8);
-    let last = blocks - 1;
-    out[last][56..64].copy_from_slice(&bit_len.to_le_bytes());
-    Some(blocks)
-}
+// MD4 pads with the same bytes MD5 does, so the padding lives in one module
+// that both kernels call. A second copy here would be a second chance at the
+// defects this file's original version carried: a terminator skipped when the
+// length was an exact multiple of 64, a bit length written to the wrong block,
+// and a message accepted past the two block window.
+use super::md_pad::pad_message;
 
 /// Rotates each 32 bit lane left by `s` bits.
 ///
@@ -499,18 +448,27 @@ pub fn md5_verify(password: &[u8], target_hex: &str) -> bool {
     hex::encode(d).eq_ignore_ascii_case(target_hex)
 }
 
-/// Verifies a batch of passwords against a batch of hex digests.
+/// Verifies a batch of passwords against a batch of hex digests, pairing them by
+/// position.
+///
+/// The comparison writes each digest into a stack buffer. `hex::encode` would
+/// allocate one `String` per lane, which is pure overhead next to eight hashes.
 pub fn md5_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     let n = passwords.len().min(targets.len());
     let digests = md5_batch(&passwords[..n]);
-    (0..n)
-        .map(|i| hex::encode(digests[i]).eq_ignore_ascii_case(targets[i]))
-        .collect()
+    let mut out = vec![false; n];
+    let mut hexbuf = [0u8; 32];
+    for i in 0..n {
+        let ok = hex::encode_to_slice(digests[i], &mut hexbuf).is_ok();
+        out[i] = ok && targets[i].as_bytes().eq_ignore_ascii_case(&hexbuf);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::x86::md_pad::block_count;
 
     #[test]
     fn scalar_matches_known_vector() {

@@ -30,3 +30,7 @@ raw-cpuid = "11"
 [[bench]]
 name = "md5"
 harness = false
+
+[[bench]]
+name = "md4"
+harness = false

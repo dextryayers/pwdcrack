@@ -71,14 +71,43 @@ pub fn ntlm_verify(password: &[u8], target_hex: &str) -> bool {
 /// else, and for any candidate long enough to fall outside the two block fast
 /// path, `md5_batch` handles it scalar and the result is unchanged. Either way
 /// the per lane answer is the same as hashing each candidate on its own.
+///
+/// The gate is the runtime feature check, not [`crate::current_level`]. Gating
+/// on the detected level made the vector path depend on [`crate::init`] having
+/// run first: every library caller, meaning the dashboard, the C ABI, the
+/// language bindings and the tests, would silently get the scalar path instead,
+/// with no error and no way to tell from the outside. The feature check is the
+/// ground truth and needs no setup.
 pub fn md5_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if crate::current_level() >= SimdLevel::Avx2 {
+        if crate::x86::avx2_md5::avx2_available() {
             return crate::x86::avx2_md5::md5_batch_verify(passwords, targets);
         }
     }
     passwords.iter().zip(targets).map(|(pw, t)| md5_verify(pw, t)).collect()
+}
+
+/// Verifies one MD4 candidate.
+///
+/// A single candidate cannot fill eight lanes, so this is the scalar path. Use
+/// [`md4_batch_verify`] for a list.
+pub fn md4_verify(password: &[u8], target_hex: &str) -> bool {
+    scalar_md4_verify(password, target_hex)
+}
+
+/// Verifies a batch of MD4 candidates against their targets.
+///
+/// Reaches the AVX2 multi-buffer kernel, eight candidates per pass, when the
+/// host has AVX2 and the messages fit the two block window.
+pub fn md4_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if crate::x86::avx2_md5::avx2_available() {
+            return crate::x86::avx2_md4::md4_batch_verify(passwords, targets);
+        }
+    }
+    passwords.iter().zip(targets).map(|(pw, t)| scalar_md4_verify(pw, t)).collect()
 }
 
 pub fn sha256_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
@@ -109,11 +138,29 @@ pub fn sha1_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     passwords.iter().zip(targets).map(|(pw, t)| scalar_sha1_verify(pw, t)).collect()
 }
 
+/// Verifies a batch of NTLM candidates against their targets.
+///
+/// NTLM is MD4 over the password encoded as UTF-16LE, so the vector path is the
+/// MD4 kernel with an encoding step in front of it. Candidates that are not
+/// valid UTF-8 have no UTF-16LE form; they are reported as mismatches and do not
+/// disturb the lanes around them.
 pub fn ntlm_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if crate::x86::avx2_md5::avx2_available() {
+            return crate::x86::avx2_md4::ntlm_batch_verify(passwords, targets);
+        }
+    }
     passwords.iter().zip(targets).map(|(pw, t)| ntlm_verify(pw, t)).collect()
 }
 
 // Scalar fallbacks
+pub fn scalar_md4_verify(password: &[u8], target_hex: &str) -> bool {
+    use md4::{Md4, Digest};
+    let mut hasher = Md4::new();
+    hasher.update(password);
+    hex::encode(hasher.finalize()).eq_ignore_ascii_case(target_hex)
+}
 pub fn scalar_md5_verify(password: &[u8], target_hex: &str) -> bool {
     use md5::{Md5, Digest};
     let mut hasher = Md5::new();
@@ -298,5 +345,49 @@ mod tests {
         let d2 = hex::encode(h2.finalize());
         assert!(sha256_verify(b"secret", &d2));
         assert!(!sha256_verify(b"secre", &d2));
+    }
+
+    #[test]
+    fn md4_batch_verify_agrees_with_single_verify() {
+        let candidates: Vec<Vec<u8>> =
+            (0..32u32).map(|i| format!("candidate{i}").into_bytes()).collect();
+        let refs: Vec<&[u8]> = candidates.iter().map(|m| m.as_slice()).collect();
+        let digests: Vec<String> = candidates
+            .iter()
+            .map(|m| hex::encode(crate::x86::avx2_md4::scalar_digest(m)))
+            .collect();
+        let targets: Vec<&str> = digests.iter().map(|s| s.as_str()).collect();
+
+        assert_eq!(md4_batch_verify(&refs, &targets), {
+            let one_at_a_time: Vec<bool> =
+                refs.iter().zip(targets.iter()).map(|(pw, t)| md4_verify(pw, t)).collect();
+            one_at_a_time
+        });
+        assert!(md4_batch_verify(&refs, &targets).iter().all(|&b| b));
+    }
+
+    #[test]
+    fn ntlm_batch_verify_agrees_with_single_verify() {
+        // Multi-byte and invalid UTF-8 candidates in one batch, so the result
+        // vector has to stay aligned with the input rather than dropping lanes.
+        let candidates: Vec<Vec<u8>> = vec![
+            b"password".to_vec(),
+            b"P@ssw0rd".to_vec(),
+            "café".as_bytes().to_vec(),
+            "日本語".as_bytes().to_vec(),
+            vec![0x80],
+            "🔑pass".as_bytes().to_vec(),
+        ];
+        let refs: Vec<&[u8]> = candidates.iter().map(|m| m.as_slice()).collect();
+        let targets: Vec<String> = candidates
+            .iter()
+            .map(|m| match crate::x86::avx2_md4::ntlm_encode(m) {
+                Some(enc) => hex::encode(crate::x86::avx2_md4::scalar_digest(&enc)),
+                None => "0".repeat(32),
+            })
+            .collect();
+        let target_refs: Vec<&str> = targets.iter().map(|s| s.as_str()).collect();
+
+        assert_eq!(ntlm_batch_verify(&refs, &target_refs), vec![true, true, true, true, false, true]);
     }
 }
