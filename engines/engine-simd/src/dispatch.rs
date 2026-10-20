@@ -88,6 +88,41 @@ pub fn md5_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     passwords.iter().zip(targets).map(|(pw, t)| md5_verify(pw, t)).collect()
 }
 
+/// Verifies many MD5 candidates against a single target digest.
+///
+/// The shape the attack loop uses: one target, one group of candidates.
+pub fn md5_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if crate::x86::avx2_md5::avx2_available() {
+            return crate::x86::avx2_md5::md5_batch_verify_one(passwords, target_hex);
+        }
+    }
+    passwords.iter().map(|pw| md5_verify(pw, target_hex)).collect()
+}
+
+/// Verifies many MD4 candidates against a single target digest.
+pub fn md4_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if crate::x86::avx2_md5::avx2_available() {
+            return crate::x86::avx2_md4::md4_batch_verify_one(passwords, target_hex);
+        }
+    }
+    passwords.iter().map(|pw| md4_verify(pw, target_hex)).collect()
+}
+
+/// Verifies many NTLM candidates against a single target digest.
+pub fn ntlm_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if crate::x86::avx2_md5::avx2_available() {
+            return crate::x86::avx2_md4::ntlm_batch_verify_one(passwords, target_hex);
+        }
+    }
+    passwords.iter().map(|pw| ntlm_verify(pw, target_hex)).collect()
+}
+
 /// Verifies one MD4 candidate.
 ///
 /// A single candidate cannot fill eight lanes, so this is the scalar path. Use

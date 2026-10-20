@@ -465,6 +465,24 @@ pub fn md5_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
     out
 }
 
+/// Verifies many candidates against a single target digest.
+///
+/// This is the shape the attack loop has: one target and a stream of
+/// candidates. The two slice API would need a vector repeating the target once
+/// per candidate, which costs an allocation and a compare against the same
+/// string for every lane, so the target is compared directly instead.
+pub fn md5_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    let digests = md5_batch(passwords);
+    let target = target_hex.as_bytes();
+    let mut out = vec![false; digests.len()];
+    let mut hexbuf = [0u8; 32];
+    for (i, d) in digests.iter().enumerate() {
+        let ok = hex::encode_to_slice(d, &mut hexbuf).is_ok();
+        out[i] = ok && target.eq_ignore_ascii_case(&hexbuf);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,6 +593,18 @@ mod tests {
         for (i, e) in expected.iter().enumerate() {
             assert_eq!(&got[i], e, "length {} disagreed", msgs[i].len());
         }
+    }
+
+    #[test]
+    fn single_target_batch_matches_the_paired_api() {
+        let msgs: Vec<Vec<u8>> = (0..24u32).map(|i| format!("pw{i}").into_bytes()).collect();
+        let refs: Vec<&[u8]> = msgs.iter().map(|m| m.as_slice()).collect();
+        let target = hex::encode(scalar_digest(refs[5]));
+        let one = md5_batch_verify_one(&refs, &target);
+        assert!(one[5]);
+        assert_eq!(one.iter().filter(|b| **b).count(), 1);
+        let paired: Vec<&str> = (0..refs.len()).map(|_| target.as_str()).collect();
+        assert_eq!(md5_batch_verify(&refs, &paired), one);
     }
 
     #[test]

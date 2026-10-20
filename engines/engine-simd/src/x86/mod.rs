@@ -37,10 +37,13 @@ pub use avx2_md5::LANES;
 pub use avx2_md5::avx2_available;
 
 /// Batched MD5, which is the entry point that reaches the vector path.
-pub use avx2_md5::{md5_batch, md5_batch_verify, md5_multi8};
+pub use avx2_md5::{md5_batch, md5_batch_verify, md5_batch_verify_one, md5_multi8};
 
 /// Batched MD4 and NTLM, which reach the same vector path.
-pub use avx2_md4::{md4_batch, md4_batch_verify, md4_multi8, ntlm_batch_verify, ntlm_encode};
+pub use avx2_md4::{
+    md4_batch, md4_batch_verify, md4_batch_verify_one, md4_multi8, ntlm_batch_verify,
+    ntlm_batch_verify_one, ntlm_encode,
+};
 
 use crate::SimdLevel;
 use crate::dispatch::{scalar_md5_verify, scalar_sha256_verify};

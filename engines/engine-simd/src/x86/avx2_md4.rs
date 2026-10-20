@@ -410,34 +410,45 @@ pub fn ntlm_encode(password: &[u8]) -> Option<Vec<u8>> {
 
 /// Candidate group size for the NTLM path.
 ///
-/// The batch entry point is called with the whole candidate list, but the encode
-/// arena has to stay cache resident: measured on this host, a single 16384
-/// candidate group ran at 0.96x the scalar path while groups of 512 ran at
-/// 1.36x, because the arena stops fitting in L2 and every lane pays for memory
-/// traffic instead of hashing. The chunk caps that, and the arena, span and
-/// position vectors are reused across chunks so the allocation happens once.
-const NTLM_CHUNK: usize = 1024;
+/// The entry point is called with the whole candidate list, but the encode arena
+/// has to stay cache resident. Measured on this host with a 16 byte password
+/// corpus: one group of 16384 candidates ran at 0.96x the scalar path, a group
+/// of 512 ran at 1.36x. Chunking at this size keeps the 512 figure at every
+/// total input size, 1.39x at 512 candidates and 1.47x at 16384. The arena, span
+/// and position vectors are reused across chunks, so the allocation happens
+/// once per call rather than once per chunk.
+const NTLM_CHUNK: usize = 512;
 
-/// Verifies a batch of NTLM candidates: MD4 over each password as UTF-16LE.
+/// Compares one digest, or the absence of one, against a hex target.
 ///
-/// Candidates that are not valid UTF-8 are reported as mismatches without
-/// reaching the kernel. The remaining ones keep their positions, so the returned
-/// vector lines up with `passwords` even when invalid input is interleaved with
-/// valid input in the same batch.
+/// The hex encoding goes into a stack buffer because `hex::encode` allocates a
+/// `String` per candidate, which for a group of 512 candidates costs more than
+/// hashing them.
+fn matches_hex(digest: Option<[u8; 16]>, target_hex: &str) -> bool {
+    match digest {
+        Some(d) => {
+            let mut hexbuf = [0u8; 32];
+            hex::encode_to_slice(d, &mut hexbuf).is_ok()
+                && target_hex.as_bytes().eq_ignore_ascii_case(&hexbuf)
+        }
+        None => false,
+    }
+}
+
+/// MD4 digest of each candidate encoded as UTF-16LE, or `None` for input that is
+/// not valid UTF-8.
 ///
-/// Every candidate is encoded into a single arena rather than into a `Vec` of
-/// its own. Measured on this host with a 16 byte password corpus, one allocation
-/// per candidate made this function run at 0.65x the scalar path: the encoding
-/// cost is real work that has to happen, but its allocation traffic is not, and
-/// hashing eight lanes at a time cannot pay for sixteen allocations per group.
-pub fn ntlm_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
-    let n = passwords.len().min(targets.len());
-    let mut results = vec![false; n];
+/// Every candidate of a chunk is encoded into one arena, and the arena, the span
+/// list and the position list are reused across chunks. One `Vec` per candidate
+/// was measured at 0.65x the scalar path, because sixteen allocations per group
+/// of eight cannot be paid for by eight hashes.
+fn ntlm_digests(passwords: &[&[u8]]) -> Vec<Option<[u8; 16]>> {
+    let n = passwords.len();
+    let mut out: Vec<Option<[u8; 16]>> = vec![None; n];
 
     let mut arena: Vec<u8> = Vec::new();
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut positions: Vec<usize> = Vec::new();
-    let mut hexbuf = [0u8; 32];
 
     let mut chunk_start = 0usize;
     while chunk_start < n {
@@ -455,15 +466,48 @@ pub fn ntlm_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
         }
 
         let refs: Vec<&[u8]> = spans.iter().map(|&(s, l)| &arena[s..s + l]).collect();
-        let digests = md4_batch(&refs);
-
-        for (k, &i) in positions.iter().enumerate() {
-            let ok = hex::encode_to_slice(digests[k], &mut hexbuf).is_ok();
-            results[i] = ok && targets[i].as_bytes().eq_ignore_ascii_case(&hexbuf);
+        for (k, digest) in md4_batch(&refs).into_iter().enumerate() {
+            out[positions[k]] = Some(digest);
         }
         chunk_start = chunk_end;
     }
-    results
+    out
+}
+
+/// Verifies a batch of NTLM candidates, pairing them with `targets` by position.
+///
+/// Candidates that are not valid UTF-8 are reported as mismatches without
+/// reaching the kernel. The remaining ones keep their positions, so the returned
+/// vector lines up with `passwords` even when invalid input is interleaved with
+/// valid input in the same batch.
+pub fn ntlm_batch_verify(passwords: &[&[u8]], targets: &[&str]) -> Vec<bool> {
+    let n = passwords.len().min(targets.len());
+    let digests = ntlm_digests(&passwords[..n]);
+    digests
+        .into_iter()
+        .enumerate()
+        .map(|(i, d)| matches_hex(d, targets[i]))
+        .collect()
+}
+
+/// Verifies many NTLM candidates against a single target digest.
+///
+/// The shape the attack loop needs. The digests are computed once for the whole
+/// group instead of once per candidate against a repeated target.
+pub fn ntlm_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    ntlm_digests(passwords).into_iter().map(|d| matches_hex(d, target_hex)).collect()
+}
+
+/// Verifies a batch of MD4 candidates against a single target digest.
+pub fn md4_batch_verify_one(passwords: &[&[u8]], target_hex: &str) -> Vec<bool> {
+    let mut out = vec![false; passwords.len()];
+    let mut hexbuf = [0u8; 32];
+    let target = target_hex.as_bytes();
+    for (i, d) in md4_batch(passwords).iter().enumerate() {
+        let ok = hex::encode_to_slice(d, &mut hexbuf).is_ok();
+        out[i] = ok && target.eq_ignore_ascii_case(&hexbuf);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -639,6 +683,35 @@ mod tests {
             assert!(scalar_ntlm_verify(&pw, &want), "scalar disagrees at length {len}");
             assert!(ntlm_batch_verify(&[pw.as_slice()], &[want.as_str()])[0], "batch disagrees at length {len}");
         }
+    }
+
+    #[test]
+    fn the_single_target_variants_agree_with_the_paired_ones() {
+        // The attack loop has one target and many candidates, so the single
+        // target entry points have to return exactly what the paired API returns
+        // when every position holds the same target.
+        let msgs: Vec<Vec<u8>> =
+            (0..40u32).map(|i| format!("candidate{i}").into_bytes()).collect();
+        let refs: Vec<&[u8]> = msgs.iter().map(|m| m.as_slice()).collect();
+        let target = hex::encode(scalar_digest(refs[7]));
+
+        let one = md4_batch_verify_one(&refs, &target);
+        assert!(one[7], "the candidate that produced the target was not reported");
+        assert_eq!(one.iter().filter(|b| **b).count(), 1, "exactly one candidate matches");
+        let paired: Vec<&str> = (0..refs.len()).map(|_| target.as_str()).collect();
+        assert_eq!(md4_batch_verify(&refs, &paired), one);
+
+        // The same for NTLM, with a candidate that is not valid UTF-8 inserted
+        // before the target, so the alignment of the lanes after an invalid one
+        // is covered too.
+        let mut ntlm_msgs: Vec<Vec<u8>> = msgs.clone();
+        ntlm_msgs.insert(3, vec![0x80]);
+        let nrefs: Vec<&[u8]> = ntlm_msgs.iter().map(|m| m.as_slice()).collect();
+        // "candidate5" was at index 5 and moved to index 6.
+        let want = hex::encode(scalar_digest(&ntlm_encode(b"candidate5").unwrap()));
+        let hits = ntlm_batch_verify_one(&nrefs, &want);
+        assert!(hits[6], "the candidate after the invalid one was not reported");
+        assert_eq!(hits.iter().filter(|b| **b).count(), 1);
     }
 
     #[test]
