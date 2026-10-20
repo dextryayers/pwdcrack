@@ -198,9 +198,12 @@ impl GpuCracker {
         Ok(words)
     }
 
-    /// Packs one candidate. Returns [`None`] when it cannot be represented: more
-    /// than 64 bytes, or NTLM input that is not valid UTF-8.
-    fn pack(hash_type: &str, password: &[u8], out: &mut [u8; CANDIDATE_BYTES]) -> Option<()> {
+    /// Packs one candidate for [`Self::dispatch_batch`].
+    ///
+    /// Returns [`None`] when the candidate cannot be represented: more than 64
+    /// bytes, or NTLM input that is not valid UTF-8.
+    pub fn pack_candidate(hash_type: &str, password: &[u8]) -> Option<[u8; CANDIDATE_BYTES]> {
+        let mut out = [0u8; CANDIDATE_BYTES];
         let mut message = [0u8; MAX_MESSAGE];
         let len = if hash_type == "ntlm" {
             let text = std::str::from_utf8(password).ok()?;
@@ -231,11 +234,15 @@ impl GpuCracker {
             out[4 * i..4 * i + 4].copy_from_slice(&word.to_le_bytes());
         }
         out[64..68].copy_from_slice(&(len as u32).to_le_bytes());
-        Some(())
+        Some(out)
     }
 
     /// Runs one packed batch and returns one flag per candidate.
-    fn dispatch_batch(&self, hash_type: &str, candidates: &[u8], target_hex: &str) -> Result<Vec<bool>, GpuError> {
+    ///
+    /// `candidates` must be a whole number of [`CANDIDATE_BYTES`] records built
+    /// by [`Self::pack_candidate`]. An error is returned rather than an empty
+    /// success, so a caller can tell a missing kernel from a batch with no match.
+    pub fn dispatch_batch(&self, hash_type: &str, candidates: &[u8], target_hex: &str) -> Result<Vec<bool>, GpuError> {
         let pipeline = self.find_pipeline(hash_type).ok_or(GpuError::UnsupportedHash)?;
         let digest_len = digest_len(hash_type).ok_or(GpuError::UnsupportedHash)?;
         if candidates.len() % CANDIDATE_BYTES != 0 {
@@ -288,7 +295,9 @@ impl GpuCracker {
         self.engine.queue.submit(std::iter::once(encoder.finish()));
 
         let results = {
-            let readback_slice = readback_buf.buffer.slice(..);
+            // The pool rounds allocations up to a power of two, so map exactly
+            // the region the copy wrote rather than the whole buffer.
+            let readback_slice = readback_buf.buffer.slice(0..output_size);
             let (tx, rx) = std::sync::mpsc::channel();
             readback_slice.map_async(MapMode::Read, move |r| { let _ = tx.send(r); });
             self.engine.device.poll(wgpu::PollType::Wait).ok();
@@ -349,10 +358,9 @@ impl GpuCracker {
         };
 
         for (i, password) in passwords.iter().enumerate() {
-            let mut buf = [0u8; CANDIDATE_BYTES];
-            if Self::pack(hash_type, password, &mut buf).is_none() {
+            let Some(buf) = Self::pack_candidate(hash_type, password) else {
                 continue;
-            }
+            };
             packed.extend_from_slice(&buf);
             indices.push(i);
             if indices.len() == self.batch_size {
@@ -395,13 +403,15 @@ impl GpuCracker {
                 h.update(password);
                 Some(h.finalize().to_vec())
             }
-            "ntlm" => {
-                let mut h = md4::Md4::new();
-                let text = std::str::from_utf8(password).ok()?;
-                let utf16: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-                h.update(&utf16);
-                Some(h.finalize().to_vec())
-            }
+            "ntlm" => match std::str::from_utf8(password) {
+                Ok(text) => {
+                    let mut h = md4::Md4::new();
+                    let utf16: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+                    h.update(&utf16);
+                    Some(h.finalize().to_vec())
+                }
+                Err(_) => None,
+            },
             "ripemd160" => {
                 let mut h = ripemd::Ripemd160::new();
                 h.update(password);

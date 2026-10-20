@@ -26,43 +26,63 @@ impl GpuBufferPool {
         }
     }
 
-    pub fn get_upload_buffer(&mut self, size: u64) -> GpuBuffer {
-        self.upload_pool.pop().unwrap_or_else(|| GpuBuffer {
-            buffer: self.device.create_buffer(&BufferDescriptor {
-                label: Some("upload buffer"),
+    /// Takes a buffer of at least `size` bytes from `pool`, or allocates one.
+    ///
+    /// Sizes are rounded up to a power of two so that a batch of 300 candidates
+    /// can reuse the buffer a batch of 256 allocated. The previous version popped
+    /// whatever was in the pool, even when it was smaller than the request, which
+    /// would have bound a short buffer to a kernel that indexes past its end.
+    fn take(
+        pool: &mut Vec<GpuBuffer>,
+        device: &Device,
+        size: u64,
+        usage: BufferUsages,
+        label: &str,
+    ) -> GpuBuffer {
+        let size = size.max(64).next_power_of_two();
+        if let Some(index) = pool.iter().position(|b| b.size >= size) {
+            return pool.swap_remove(index);
+        }
+        GpuBuffer {
+            buffer: device.create_buffer(&BufferDescriptor {
+                label: Some(label),
                 size,
-                usage: BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
+                usage,
                 mapped_at_creation: false,
             }),
             size,
-            usage: BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
-        })
+            usage,
+        }
+    }
+
+    pub fn get_upload_buffer(&mut self, size: u64) -> GpuBuffer {
+        Self::take(
+            &mut self.upload_pool,
+            &self.device,
+            size,
+            BufferUsages::MAP_WRITE | BufferUsages::COPY_SRC,
+            "upload buffer",
+        )
     }
 
     pub fn get_storage_buffer(&mut self, size: u64) -> GpuBuffer {
-        self.storage_pool.pop().unwrap_or_else(|| GpuBuffer {
-            buffer: self.device.create_buffer(&BufferDescriptor {
-                label: Some("storage buffer"),
-                size,
-                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            }),
+        Self::take(
+            &mut self.storage_pool,
+            &self.device,
             size,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
-        })
+            BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            "storage buffer",
+        )
     }
 
     pub fn get_readback_buffer(&mut self, size: u64) -> GpuBuffer {
-        self.readback_pool.pop().unwrap_or_else(|| GpuBuffer {
-            buffer: self.device.create_buffer(&BufferDescriptor {
-                label: Some("readback buffer"),
-                size,
-                usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }),
+        Self::take(
+            &mut self.readback_pool,
+            &self.device,
             size,
-            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-        })
+            BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            "readback buffer",
+        )
     }
 
     pub fn return_buffer(&mut self, buf: GpuBuffer, pool_type: PoolType) {

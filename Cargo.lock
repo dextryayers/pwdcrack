@@ -1463,6 +1463,7 @@ dependencies = [
 name = "engine-gpu"
 version = "0.1.0"
 dependencies = [
+ "blake2",
  "bytemuck",
  "hex",
  "log",
@@ -1470,6 +1471,7 @@ dependencies = [
  "md4",
  "naga 26.0.0",
  "pollster",
+ "ripemd",
  "sha-1",
  "sha2",
  "thiserror 2.0.19",

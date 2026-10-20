@@ -36,9 +36,8 @@ impl GpuEngine {
     }
 
     pub fn wait(&self) {
-        // wgpu 30 tracks submission internally; there is no device poll call in
-        // this API. Work completes when the queue is polled by the next submit or
-        // when the caller maps a buffer, which every read here does.
+        // wgpu tracks submissions internally. Work completes when the device is
+        // polled, which `GpuCracker::dispatch_batch` does before reading back.
     }
 }
 
